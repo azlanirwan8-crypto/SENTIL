@@ -10,6 +10,7 @@ Dasbor lokal untuk menganalisis sentimen ulasan publik **wondr merchant by BNI**
 - Ringkasan sentimen, Net Sentiment Score (NSS), sebaran bintang, peringkat tema keluhan, faktor pendorong positif, dan cakupan sumber.
 - Detail ulasan menampilkan teks asli, alasan pelabelan, sumber, waktu pengambilan, serta riwayat perubahan.
 - Status setiap sumber dilaporkan secara terpisah. Sumber yang belum terhubung tidak dihitung sebagai nol keluhan.
+- Metrik halaman toko (jumlah penilaian, nilai rata-rata, dan rentang unduhan) dilaporkan terpisah dari hasil analisis sentimen.
 - Tidak ada unggah berkas atau impor data manual.
 
 ## Menjalankan
@@ -37,7 +38,9 @@ Suite pengujian mencakup perhitungan sentimen, filter, klasifikasi, pembacaan su
 - Google Play: <https://play.google.com/store/apps/details?id=id.bni.wfb&hl=id>
 - Apple App Store: <https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?l=id>
 
-Data awal per 23 Oktober 2026 memuat 55 ulasan tertulis Google Play — gabungan 38 ulasan pada kumpulan bahasa Indonesia dan 17 ulasan pada kumpulan bahasa Inggris — dari 73 penilaian halaman toko (18 penilaian tanpa teks), serta 8 ulasan tertulis App Store dari 15 penilaian halaman toko (7 penilaian tanpa teks). Penilaian tanpa teks tidak menyediakan nama atau isi publik sehingga tidak dapat dianalisis. Jumlah ulasan dan penilaian bertambah sewaktu karena ulasan baru terus masuk; setiap penarikan memuat seluruh halaman yang tersedia.
+Data awal per 23 Oktober 2026 memuat 55 ulasan tertulis Google Play — gabungan 38 ulasan pada kumpulan bahasa Indonesia dan 17 ulasan pada kumpulan bahasa Inggris — dari 74 penilaian halaman toko (19 penilaian tanpa teks), serta 9 ulasan tertulis App Store dari 17 penilaian halaman toko (8 penilaian tanpa teks). Penilaian tanpa teks tidak menyediakan nama atau isi publik sehingga tidak dapat dianalisis. Jumlah ulasan dan penilaian bertambah sewaktu karena ulasan baru terus masuk; setiap penarikan memuat seluruh halaman yang tersedia.
+
+Google Play hanya mempublikasikan rentang unduhan, saat ini **10K+**. Apple tidak mempublikasikan jumlah unduhan pada halaman publik, sehingga metrik tersebut dilaporkan **tidak tersedia**, bukan nol.
 
 Kanal media sosial, forum, blog, portal berita, dan Google Reviews belum terhubung. Statusnya **tidak diambil**, bukan nol keluhan.
 

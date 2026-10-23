@@ -17,7 +17,7 @@ const connectedSources = new Set(['play','appstore']);
 export async function createDashboardServer({ storagePath = new URL('./online-data.json', import.meta.url), collector = collectOnline } = {}) {
   let data = {
     reviews: seedReviews, runs: [], lastRun: null,
-    sources: platforms.map(p => ({ id: p.id, status: connectedSources.has(p.id) ? 'snapshot' : 'unsupported', fetched: 0, message: connectedSources.has(p.id) ? 'Data awal dari halaman publik; belum diperbarui pada sesi ini.' : `Belum terhubung; tidak ada pengambilan data. ${p.note}`, ...(p.rating ? { rating: p.rating, ratingCount: p.ratingCount, ratingObservedAt: observationDate } : {}) })),
+    sources: platforms.map(p => ({ id: p.id, status: connectedSources.has(p.id) ? 'snapshot' : 'unsupported', fetched: 0, message: connectedSources.has(p.id) ? 'Data awal dari halaman publik; belum diperbarui pada sesi ini.' : `Belum terhubung; tidak ada pengambilan data. ${p.note}`, ...(p.rating ? { rating: p.rating, ratingCount: p.ratingCount, ratingObservedAt: observationDate, installs: p.installs ?? null } : {}) })),
   };
   try {
     const saved = JSON.parse(await readFile(storagePath,'utf8'));

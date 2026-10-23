@@ -2,20 +2,20 @@
 
 **Periode ulasan:** 20 Agustus – 22 Oktober 2026  
 **Tanggal laporan:** 24 Oktober 2026  
-**Cakupan:** 63 ulasan tertulis dari Google Play dan Apple App Store  
+**Cakupan:** 64 ulasan tertulis dari Google Play dan Apple App Store  
 **Disusun untuk:** Manajemen produk dan operasional
 
 ---
 
 ## Ringkasan Eksekutif
 
-Laporan ini merangkum analisis sentimen atas **63 ulasan tertulis publik** untuk aplikasi **wondr merchant by BNI** (paket Google Play: `id.bni.wfb`; ID App Store: `6741567238`). Sebanyak 55 ulasan berasal dari Google Play dan 8 ulasan dari Apple App Store. Seluruh teks ulasan yang dapat diakses publik pada tanggal laporan dimuat dan dianalisis tanpa pembatasan jumlah ulasan.
+Laporan ini merangkum analisis sentimen atas **64 ulasan tertulis publik** untuk aplikasi **wondr merchant by BNI** (paket Google Play: `id.bni.wfb`; ID App Store: `6741567238`). Sebanyak 55 ulasan berasal dari Google Play dan 9 ulasan dari Apple App Store. Seluruh teks ulasan yang dapat diakses publik pada tanggal laporan dimuat dan dianalisis tanpa pembatasan jumlah ulasan.
 
 Cakupan Google Play diperoleh dengan membaca **kedua kumpulan ulasan yang ditampilkan Google berdasarkan bahasa antarmuka**, yaitu 38 ulasan pada kumpulan bahasa Indonesia dan 17 ulasan pada kumpulan bahasa Inggris. Kedua kumpulan dibaca sampai halaman terakhir lalu digabung berdasarkan ID ulasan. Pada pemeriksaan awal hanya kumpulan bahasa Indonesia yang terbaca, sehingga 16 ulasan tidak masuk analisis. Perbedaan ini ditemukan dan diperbaiki, bukan dibulatkan atau diabaikan.
 
-Pada data ini, **40 ulasan positif (63,5%)**, **22 ulasan negatif (34,9%)**, dan **1 ulasan netral (1,6%)**. Net Sentiment Score (NSS) berada pada **+28,6 poin**, yang menunjukkan kecenderungan positif. Namun, 34,9% ulasan negatif tetap perlu ditangani, terutama karena keluhan terkonsentrasi pada proses pendaftaran.
+Pada data ini, **41 ulasan positif (64,1%)**, **22 ulasan negatif (34,4%)**, dan **1 ulasan netral (1,6%)**. Net Sentiment Score (NSS) berada pada **+29,7 poin**, yang menunjukkan kecenderungan positif. Namun, 34,4% ulasan negatif tetap perlu ditangani, terutama karena keluhan terkonsentrasi pada proses pendaftaran.
 
-Rata-rata penilaian bintang dari 63 ulasan tertulis yang menyertakan bintang adalah **3,81 dari 5**. Angka ini berbeda dari nilai halaman toko, yaitu 3,9/5 dari 73 penilaian di Google Play dan 4,7/5 dari 15 penilaian di App Store. Perbedaan tersebut terjadi karena penilaian tanpa teks tidak menyediakan nama atau isi yang dapat dianalisis.
+Rata-rata penilaian bintang dari 64 ulasan tertulis yang menyertakan bintang adalah **3,83 dari 5**. Angka ini berbeda dari nilai halaman toko, yaitu 4,0/5 dari 74 penilaian di Google Play dan 4,8/5 dari 17 penilaian di App Store. Perbedaan tersebut terjadi karena penilaian tanpa teks tidak menyediakan nama atau isi yang dapat dianalisis.
 
 Tema keluhan yang paling sering muncul adalah **pendaftaran belum tuntas (8 ulasan)**, diikuti **notifikasi dan pembaruan laporan (6 ulasan)**, **akses dan performa aplikasi (5 ulasan)**, serta **migrasi kurang jelas (5 ulasan)**. Tema pujian yang paling sering muncul adalah **kemudahan penggunaan dan manfaat usaha (16 ulasan)**, diikuti **transaksi dan notifikasi yang membantu (8 ulasan)**.
 
@@ -29,48 +29,49 @@ Sembilan kanal lain, yaitu X/Twitter, Instagram, TikTok, YouTube, Facebook, foru
 
 ### 1.1 Cakupan Sumber
 
-| Kanal | Status pengambilan | Ulasan tertulis dianalisis | Penilaian halaman toko | Nilai halaman toko |
-|---|---|---:|---:|---:|
-| Google Play | Tersedia | 55 | 73 | 3,9/5 |
-| Apple App Store | Tersedia | 8 | 15 | 4,7/5 |
-| X/Twitter | Belum terhubung | — | — | — |
-| Instagram | Belum terhubung | — | — | — |
-| TikTok | Belum terhubung | — | — | — |
-| YouTube | Belum terhubung | — | — | — |
-| Facebook | Belum terhubung | — | — | — |
-| Forum publik | Belum terhubung | — | — | — |
-| Blog dan ulasan web | Belum terhubung | — | — | — |
-| Portal berita | Belum terhubung | — | — | — |
-| Google Reviews | Belum terhubung | — | — | — |
-| **Total** | **2 kanal terhubung** | **63** | **88** | **—** |
+| Kanal | Status pengambilan | Ulasan tertulis dianalisis | Penilaian halaman toko | Nilai halaman toko | Rentang unduhan |
+|---|---|---:|---:|---:|---|
+| Google Play | Tersedia | 55 | 74 | 4,0/5 | 10K+ |
+| Apple App Store | Tersedia | 9 | 17 | 4,8/5 | Tidak dipublikasikan |
+| X/Twitter | Belum terhubung | — | — | — | — |
+| Instagram | Belum terhubung | — | — | — | — |
+| TikTok | Belum terhubung | — | — | — | — |
+| YouTube | Belum terhubung | — | — | — | — |
+| Facebook | Belum terhubung | — | — | — | — |
+| Forum publik | Belum terhubung | — | — | — | — |
+| Blog dan ulasan web | Belum terhubung | — | — | — | — |
+| Portal berita | Belum terhubung | — | — | — | — |
+| Google Reviews | Belum terhubung | — | — | — | — |
+| **Total** | **2 kanal terhubung** | **64** | **91** | **—** | **—** |
 
 Keterangan:
 
 - Tanda **—** berarti data tidak diambil, bukan bernilai nol.
 - Google Play memisahkan daftar ulasannya menurut bahasa antarmuka. Pengambilan membaca kumpulan bahasa Indonesia (38 ulasan) dan kumpulan bahasa Inggris (17 ulasan) sampai halaman terakhir, kemudian menggabungkan 55 ulasan unik berdasarkan ID ulasan. Tidak ada tumpang tindih ID di antara kedua kumpulan.
-- Angka **88 penilaian halaman toko** merupakan gabungan 73 penilaian Google Play dan 15 penilaian App Store. Angka ini bukan jumlah ulasan yang dianalisis.
-- Selisih 73 − 55 = **18 penilaian Google Play** dan 15 − 8 = **7 penilaian App Store** tidak menyertakan teks, sehingga nama dan isinya tidak tersedia untuk dianalisis.
+- Angka **91 penilaian halaman toko** merupakan gabungan 74 penilaian Google Play dan 17 penilaian App Store. Angka ini bukan jumlah ulasan yang dianalisis.
+- Selisih 74 − 55 = **19 penilaian Google Play** dan 17 − 9 = **8 penilaian App Store** tidak menyertakan teks, sehingga nama dan isinya tidak tersedia untuk dianalisis.
+- Jumlah penilaian halaman toko berubah setiap saat. Selama penyusunan laporan ini, nilai Google Play berpindah dari 68 → 69 → 73 → 74 penilaian dan jumlah penilaian App Store dari 15 menjadi 17, sedangkan jumlah ulasan tertulis yang dapat dibaca tetap 55 di Google Play dan 9 di App Store. Angka pada laporan mengikuti pemeriksaan terakhir, dan halaman dasbor menampilkan waktu pemeriksaan tersebut.
+- **Unduhan.** Google Play hanya mempublikasikan rentang, saat ini **10K+**, bukan angka pasti. Apple tidak mempublikasikan jumlah unduhan pada halaman publik, sehingga metrik tersebut **tidak tersedia** dan tidak diperkirakan. Keduanya bukan ukuran sentimen maupun jumlah pengguna aktif, dan rasio ulasan-terhadap-unduhan tidak dapat dihitung presisi dari data publik.
 - Data ditarik melalui tombol **Tarik Analisis** dan disimpan di komputer tempat dasbor dijalankan. Pembaruan tidak berlangsung terus-menerus.
-- Jumlah ulasan dan penilaian halaman toko bertambah selama periode pemeriksaan karena ulasan baru terus masuk. Angka pada laporan mengikuti pemeriksaan terakhir dan seluruhnya dihitung, bukan sebagian.
 
 ### 1.2 Rata-rata Penilaian Bintang
 
-Rata-rata keseluruhan dihitung dari 63 ulasan tertulis yang menyertakan bintang:
+Rata-rata keseluruhan dihitung dari 64 ulasan tertulis yang menyertakan bintang:
 
 - Google Play: 55 ulasan × rata-rata 3,64 = 200 poin
-- Apple App Store: 8 ulasan × rata-rata 5,00 = 40 poin
-- Total: 240 poin ÷ 63 ulasan = **3,81 dari 5**
+- Apple App Store: 9 ulasan × rata-rata 5,00 = 45 poin
+- Total: 245 poin ÷ 64 ulasan = **3,83 dari 5**
 
 **Sebaran bintang keseluruhan:**
 
 | Bintang | Jumlah ulasan | Persentase |
 |---|---:|---:|
-| 5 bintang | 40 | 63,5% |
-| 4 bintang | 3 | 4,8% |
-| 3 bintang | 2 | 3,2% |
+| 5 bintang | 41 | 64,1% |
+| 4 bintang | 3 | 4,7% |
+| 3 bintang | 2 | 3,1% |
 | 2 bintang | 4 | 6,3% |
-| 1 bintang | 14 | 22,2% |
-| **Total** | **63** | **100%** |
+| 1 bintang | 14 | 21,9% |
+| **Total** | **64** | **100%** |
 
 Jumlah persentase dapat tidak tepat 100% karena pembulatan.
 
@@ -79,11 +80,11 @@ Jumlah persentase dapat tidak tepat 100% karena pembulatan.
 | Kanal | Ulasan | Rata-rata | 5 bintang | 4 bintang | 3 bintang | 2 bintang | 1 bintang |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Google Play | 55 | 3,64 | 32 | 3 | 2 | 4 | 14 |
-| Apple App Store | 8 | 5,00 | 8 | 0 | 0 | 0 | 0 |
+| Apple App Store | 9 | 5,00 | 9 | 0 | 0 | 0 | 0 |
 
 Tiga ulasan berbintang tinggi tetap berisi keluhan, yaitu **Andry Teguh Aryanto (5 bintang)**, **Tanamo (4 bintang)**, dan **AHMAD WID SANJAYA (4 bintang)**. Karena itu, penilaian bintang tidak digunakan sebagai satu-satunya dasar penentuan sentimen.
 
-Apple App Store hanya menyediakan 8 ulasan tertulis dan seluruhnya bernilai 5 bintang. Jumlah ini terlalu kecil untuk menyimpulkan bahwa pengalaman pengguna iOS lebih baik daripada Android.
+Apple App Store hanya menyediakan 9 ulasan tertulis dan seluruhnya bernilai 5 bintang. Jumlah ini terlalu kecil untuk menyimpulkan bahwa pengalaman pengguna iOS lebih baik daripada Android.
 
 **Sebaran menurut bulan publikasi:**
 
@@ -91,7 +92,7 @@ Apple App Store hanya menyediakan 8 ulasan tertulis dan seluruhnya bernilai 5 bi
 |---|---:|---:|---:|---:|
 | Agustus 2026 | 28 | 24 | 4 | 0 |
 | September 2026 | 18 | 9 | 8 | 1 |
-| Oktober 2026 | 17 | 7 | 10 | 0 |
+| Oktober 2026 | 18 | 8 | 10 | 0 |
 
 Porsi ulasan negatif meningkat pada September–Oktober. Pola ini mengikuti jumlah ulasan yang tersedia pada setiap bulan dan bukan merupakan hasil pengukuran terhadap seluruh pengguna.
 
@@ -99,18 +100,18 @@ Porsi ulasan negatif meningkat pada September–Oktober. Pola ini mengikuti juml
 
 | Metrik | Nilai |
 |---|---:|
-| Total ulasan | 63 |
-| Positif | 40 (63,5%) |
-| Negatif | 22 (34,9%) |
+| Total ulasan | 64 |
+| Positif | 41 (64,1%) |
+| Negatif | 22 (34,4%) |
 | Netral | 1 (1,6%) |
 | Perlu tinjauan | 0 |
-| Net Sentiment Score (NSS) | **+28,6 poin** |
+| Net Sentiment Score (NSS) | **+29,7 poin** |
 
 **Rumus NSS:**
 
 `NSS = (jumlah ulasan positif − jumlah ulasan negatif) ÷ jumlah ulasan berlabel × 100`
 
-Perhitungan: `(40 − 22) ÷ 63 × 100 = 28,5714` → **+28,6 poin**.
+Perhitungan: `(41 − 22) ÷ 64 × 100 = 29,6875` → **+29,7 poin**.
 
 Ulasan berlabel mencakup ulasan positif, negatif, dan netral. Ulasan yang perlu tinjauan tidak dihitung sebagai netral dan tidak masuk ke perhitungan. Pada data akhir ini tidak ada ulasan yang berstatus perlu tinjauan; empat ulasan yang tiba setelah penarikan awal sempat ditandai demikian oleh aturan kata kunci dan kemudian diperiksa manual.
 
@@ -120,12 +121,13 @@ NSS Google Play adalah **+18,2 poin**, sedangkan NSS App Store adalah **+100,0 p
 
 ### 1.4 Sepuluh Ulasan Terbaru
 
-Seluruh 63 nama pengguna pada data ini masing-masing memiliki satu ulasan. Tabel berikut memuat 10 ulasan terbaru berdasarkan tanggal publikasi, dengan urutan yang sama seperti dasbor. Tabel ini **bukan** peringkat pengaruh, popularitas, atau aktivitas pengguna.
+Seluruh 64 nama pengguna pada data ini masing-masing memiliki satu ulasan. Tabel berikut memuat 10 ulasan terbaru berdasarkan tanggal publikasi, dengan urutan yang sama seperti dasbor. Tabel ini **bukan** peringkat pengaruh, popularitas, atau aktivitas pengguna.
 
 | Tanggal | Nama pengguna | Platform | Bintang | Sentimen |
 |---|---|---|---:|---|
 | 22 Oktober 2026 | Hevira Octia | Google Play | 5 | Positif |
 | 22 Oktober 2026 | Mohamad Rifky Pramadanianto | Google Play | 5 | Positif |
+| 22 Oktober 2026 | okerbk | Apple App Store | 5 | Positif |
 | 22 Oktober 2026 | Ribka Mandagi | Google Play | 5 | Positif |
 | 22 Oktober 2026 | Rido oktobriananta | Google Play | 5 | Positif |
 | 22 Oktober 2026 | satria | Google Play | 5 | Positif |
@@ -133,7 +135,6 @@ Seluruh 63 nama pengguna pada data ini masing-masing memiliki satu ulasan. Tabel
 | 21 Oktober 2026 | Prasenda Valentina Ramadhani | Google Play | 1 | Negatif |
 | 21 Oktober 2026 | Yessi Ma | Google Play | 2 | Negatif |
 | 20 Oktober 2026 | Titin Rohayah | Google Play | 4 | Positif |
-| 16 Oktober 2026 | Muhammad K. Alfikhri | Google Play | 1 | Negatif |
 
 ---
 
@@ -307,20 +308,20 @@ Tiga ulasan negatif tidak menyebut objek masalah yang dapat diidentifikasi. Keti
 
 ### 3.1 Sebaran Tema Pujian
 
-| Tema | Ulasan | Persentase dari 40 ulasan positif |
+| Tema | Ulasan | Persentase dari 41 ulasan positif |
 |---|---:|---:|
-| Kemudahan penggunaan dan manfaat usaha | 16 | 40,0% |
-| Transaksi dan notifikasi yang membantu | 8 | 20,0% |
-| Kelengkapan fitur | 3 | 7,5% |
-| Penggunaan terasa lancar | 2 | 5,0% |
-| Pelayanan memuaskan | 1 | 2,5% |
+| Kemudahan penggunaan dan manfaat usaha | 16 | 39,0% |
+| Transaksi dan notifikasi yang membantu | 8 | 19,5% |
+| Kelengkapan fitur | 3 | 7,3% |
+| Penggunaan terasa lancar | 2 | 4,9% |
+| Pelayanan memuaskan | 1 | 2,4% |
 
 Keterangan:
 
 - Total pada tabel (30) lebih besar dari 24 ulasan positif bertema karena enam ulasan membahas lebih dari satu tema.
-- Enam belas ulasan positif lainnya berupa pujian umum tanpa tema spesifik. Karena itu, persentase tema tidak berjumlah 100%.
+- Tujuh belas ulasan positif lainnya berupa pujian umum tanpa tema spesifik. Karena itu, persentase tema tidak berjumlah 100%.
 - Kutipan pada subbagian berikut merupakan contoh perwakilan; seluruh teks tersedia di dasbor.
-- Pujian umum tetap dihitung dalam 40 ulasan positif dan NSS, tetapi tidak dipaksakan ke dalam tema fitur.
+- Pujian umum tetap dihitung dalam 41 ulasan positif dan NSS, tetapi tidak dipaksakan ke dalam tema fitur.
 
 ### 3.2 Kemudahan Penggunaan dan Manfaat Usaha (16 Ulasan)
 
@@ -384,9 +385,9 @@ Keterangan:
 |---|---:|---|---|
 | Titi Duriati | 5 | 22 Agustus 2026 | "pelayanan memuaskan" |
 
-### 3.7 Pujian Umum Tanpa Tema Spesifik (16 Ulasan)
+### 3.7 Pujian Umum Tanpa Tema Spesifik (17 Ulasan)
 
-Enam belas ulasan positif berikut tidak menyebut fitur atau manfaat tertentu, sehingga tidak dimasukkan ke tema di atas: **Iqbal Rasis; Watini Purnomo; Arys 12 Nan mo rua; ABD RASYID AZ Aci; Kantiasih Wulandari; Natalia Natalia; Novia Valentina; Reni Wulandari; Mansion Parfume; Ryan Rahmadiansyah; Eko Hadi; Ribka Mandagi; Zunijar Zunijar; geeslys; klfh88888; IMAAASSSSSAA.**
+Tujuh belas ulasan positif berikut tidak menyebut fitur atau manfaat tertentu, sehingga tidak dimasukkan ke tema di atas: **Iqbal Rasis; Watini Purnomo; Arys 12 Nan mo rua; ABD RASYID AZ Aci; Kantiasih Wulandari; Natalia Natalia; Novia Valentina; Reni Wulandari; Mansion Parfume; Ryan Rahmadiansyah; Eko Hadi; Ribka Mandagi; Zunijar Zunijar; geeslys; klfh88888; IMAAASSSSSAA; okerbk.**
 
 Pujian umum tetap menunjukkan penerimaan, tetapi tidak cukup untuk menjelaskan aspek layanan yang perlu dipertahankan.
 
@@ -394,7 +395,7 @@ Pujian umum tetap menunjukkan penerimaan, tetapi tidak cukup untuk menjelaskan a
 
 ## 4. Penyebutan Lokasi dan Cabang
 
-Tidak ditemukan penyebutan nama kota, daerah, atau cabang BNI yang eksplisit dalam 63 ulasan. Data publik yang diambil juga tidak menyediakan informasi lokasi penulis yang dapat diverifikasi. Karena itu, kolom lokasi pada tabel ulasan diisi **N/A**.
+Tidak ditemukan penyebutan nama kota, daerah, atau cabang BNI yang eksplisit dalam 64 ulasan. Data publik yang diambil juga tidak menyediakan informasi lokasi penulis yang dapat diverifikasi. Karena itu, kolom lokasi pada tabel ulasan diisi **N/A**.
 
 Ketidakhadiran penyebutan lokasi bukan bukti bahwa tidak ada masalah atau keluhan di suatu daerah. Analisis wilayah memerlukan data tambahan, seperti data internal yang berizin atau survei langsung.
 
@@ -406,20 +407,22 @@ Ketidakhadiran penyebutan lokasi bukan bukti bahwa tidak ada masalah atau keluha
 
 | Aspek | Google Play | Apple App Store |
 |---|---|---|
-| Ulasan tertulis dianalisis | 55 | 8 |
-| Positif | 32 (58,2%) | 8 (100,0%) |
+| Ulasan tertulis dianalisis | 55 | 9 |
+| Positif | 32 (58,2%) | 9 (100,0%) |
 | Negatif | 22 (40,0%) | 0 |
 | Netral | 1 (1,8%) | 0 |
 | NSS | +18,2 | +100,0 |
 | Rata-rata bintang ulasan | 3,64 | 5,00 |
-| Penilaian halaman toko | 73 (3,9/5) | 15 (4,7/5) |
+| Penilaian halaman toko | 74 (4,0/5) | 17 (4,8/5) |
+| Rentang unduhan | 10K+ | Tidak dipublikasikan |
 
 **Analisis:**
 
 - Google Play menunjukkan variasi sentimen yang lebih tinggi, dengan 22 ulasan negatif dan 14 ulasan berbintang satu.
-- Apple App Store hanya memiliki 8 ulasan tertulis dan seluruhnya positif. Jumlah ini tidak cukup untuk menyimpulkan bahwa pengguna iOS lebih puas atau aplikasi lebih stabil di iOS.
-- Tidak ada pola gangguan khusus sistem operasi yang dapat disimpulkan dari 63 ulasan ini.
+- Apple App Store hanya memiliki 9 ulasan tertulis dan seluruhnya positif. Jumlah ini tidak cukup untuk menyimpulkan bahwa pengguna iOS lebih puas atau aplikasi lebih stabil di iOS.
+- Tidak ada pola gangguan khusus sistem operasi yang dapat disimpulkan dari 64 ulasan ini.
 - Perbedaan NSS antara kedua kanal dipengaruhi oleh jumlah dan komposisi ulasan, bukan hanya oleh mutu aplikasi.
+- Perbandingan volume tidak dapat dilakukan: Google Play mempublikasikan rentang unduhan (10K+) sedangkan Apple tidak mempublikasikan jumlah unduhan. Karena itu, tidak ada rasio ulasan-terhadap-unduhan yang dapat dihitung secara jujur dari data publik.
 
 ### 5.2 Media Sosial, Forum, dan Web
 
@@ -438,30 +441,30 @@ Dengan cakupan saat ini, perbandingan yang dapat dipertanggungjawabkan hanya ant
 
 ## 6. Dua Puluh Ulasan Terbaru
 
-Tabel berikut memuat 20 ulasan terbaru dari 63 ulasan, dengan urutan yang sama seperti dasbor. Tabel ini bukan sampel acak dan bukan peringkat pengaruh. Seluruh 63 ulasan tersedia dan dapat dicari di dasbor.
+Tabel berikut memuat 20 ulasan terbaru dari 64 ulasan, dengan urutan yang sama seperti dasbor. Tabel ini bukan sampel acak dan bukan peringkat pengaruh. Seluruh 64 ulasan tersedia dan dapat dicari di dasbor.
 
 | No | Tanggal | Nama pengguna | Platform | Bintang | Sentimen | Lokasi | Topik | Ringkasan | Kutipan asli |
 |---:|---|---|---|---:|---|---|---|---|---|
-| 1 | 22 Oktober 2026 | Hevira Octia | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Tampilan dan kemudahan penggunaan dipuji. | "aplikasinya baguusss banget, mudah digunakan" |
-| 2 | 22 Oktober 2026 | Mohamad Rifky Pramadanianto | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Tema baru dinilai tidak sekaku aplikasi lama. | "ini temanya baru ga begitu kaku kaya yang lama ya? pakai yang lama trus coba pindah ke sini feelsnya 11 12 kaya wondr. Tapi overall bagus cakep, bersih aja." |
-| 3 | 22 Oktober 2026 | Ribka Mandagi | Google Play | 5 | Positif | N/A | Penilaian umum | Pujian singkat. | "mantap, keren appsnya" |
-| 4 | 22 Oktober 2026 | Rido oktobriananta | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Dinilai lebih baik dibanding aplikasi lama. | "ihh lebih oke dibanding yang lama," |
-| 5 | 22 Oktober 2026 | satria | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Desain aplikasi dinilai menarik. | "Aplikasi nya mempunyai desain yang sangat menarik 👍" |
-| 6 | 22 Oktober 2026 | Zunijar Zunijar | Google Play | 5 | Positif | N/A | Penilaian umum | Pujian satu kata. | "bagus" |
-| 7 | 21 Oktober 2026 | Prasenda Valentina Ramadhani | Google Play | 1 | Negatif | N/A | Pendaftaran, Migrasi | Pendaftaran QRIS lama dan pengajuan ulang saat migrasi. | "proses bikin QRIS nya lama banget.. awal ngajuin pake aplikasi yg lama, infonya udah mau discontinue dan suruh ngajuin lagi pake aplikasi wondr merchant. Pas udah ngajuin ada info 1HK, udah lbh 1HK gaada pergerakan. Gak gercep sama sekali 👎🏻" |
-| 8 | 21 Oktober 2026 | Yessi Ma | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Fitur | Belum ada masuk dengan sidik jari; pencatatan jumlah dinilai merepotkan. | "blum ada sidik jari tampilan jumlah setiap waktu TDK ada repotlah kalo masuk ngecek harus pake pasword ...maunya sidik jari cukup masih bagus bni marchant" |
-| 9 | 20 Oktober 2026 | Titin Rohayah | Google Play | 4 | Positif | N/A | Transaksi, Kemudahan dan tampilan | Transaksi dinilai cepat, akurat, dan mudah dipahami. | "layanan transaksi lebih cepat dan lebih akurat serta mudah dipahami oleh pengguna" |
-| 10 | 16 Oktober 2026 | Muhammad K. Alfikhri | Google Play | 1 | Negatif | N/A | Pembaruan laporan dan pencairan | Status pembaruan pencairan tidak tampil. | "Settlement tidak update" |
-| 11 | 11 Oktober 2026 | AHMAD WID SANJAYA | Google Play | 4 | Negatif | N/A | Notifikasi, Transaksi, Migrasi | Notifikasi dan mutasi transaksi tidak diterima. | "Notifikasi dan mutasi transaksi tidak ada. Beda dengan aplikasi BNI Merchant sebelumnya. Semoga segera diperbaiki. Terimakasih. Over all looks good" |
-| 12 | 10 Oktober 2026 | Bos AteQ | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Performa | Waktu muat lama dan proses masuk lebih sering gagal. | "Loading Lama.. Login lbh bnyk gagal daripada berhasilx" |
-| 13 | 8 Oktober 2026 | Boy Antoni | Google Play | 2 | Negatif | N/A | Performa | Gangguan penggunaan dan kecepatan menurun dibanding aplikasi lama. | "sering nggak bisa, msh kurang cepat, enaksn yg lama. ini sering ga ngguan , tlng diperbaiki sy pindah dari bank yg lain kebni karena lancar, ni mulai payah pula." |
-| 14 | 8 Oktober 2026 | Neila Maisha | Google Play | 1 | Negatif | N/A | Pendaftaran | Pendaftaran belum menunjukkan perkembangan. | "ga da perkembangannya, daftar lama" |
-| 15 | 4 Oktober 2026 | Tanamo | Google Play | 4 | Negatif | N/A | Notifikasi | Suara notifikasi tidak tersedia. | "suara notifnya ga ada, ga kayak aplikasi sebelumnya" |
-| 16 | 2 Oktober 2026 | William Harly | Google Play | 1 | Negatif | N/A | Migrasi, Transaksi, Masuk aplikasi, Layanan pelanggan | Data transaksi tidak masuk setelah migrasi; kode verifikasi dan layanan bermasalah. | "Sangat mengecewakan. Data transaksi BNI Merchant tiba-tiba tidak lagi masuk karena seluruhnya dimigrasikan ke Wondr Merchant tanpa pemberitahuan. OTP via SMS juga tidak berfungsi dan harus lewat WA. Merchant Care mengatakan login bisa memakai kredensial kasir dari web BNI Merchant, tetapi ternyata tidak bisa. Saat dikonfirmasi via telepon, call center malah terputus dan setelahnya tidak dapat dihubungi kembali." |
-| 17 | 1 Oktober 2026 | Ninis Sweet | Google Play | 1 | Negatif | N/A | Migrasi, Masuk aplikasi | Migrasi dan masuk aplikasi dinilai menyulitkan; komunikasi pemasaran dikritik. | "ribet beralih ke aplikasi ini tanpa info sama sekali mau masuk ribet skali. marketing tdk brtanggung jawab" |
-| 18 | 30 September 2026 | Riski Saputra | Google Play | 1 | Negatif | N/A | Transaksi, Pembaruan pencairan | QRIS dilaporkan sering bermasalah dan dana tidak langsung tampil. | "qris nya sering bermasalah dan uang masuk gak bisa realtime" |
-| 19 | 30 September 2026 | Siti asiah | Google Play | 5 | Positif | N/A | Performa | Penggunaan lancar. | "lancar banget" |
-| 20 | 25 September 2026 | Coky_04 HM | Google Play | 5 | Positif | N/A | Manfaat usaha | Membantu pelaku usaha. | "Mempermudah Para usahawan" |
+| 1 | 22 Oktober 2026 | Hevira Octia | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Tampilan dan kemudahan penggunaan dipuji. | "aplikasinya baguusss banget, mudah digunakan" | |
+| 2 | 22 Oktober 2026 | Mohamad Rifky Pramadanianto | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Tema baru dinilai tidak sekaku aplikasi lama. | "ini temanya baru ga begitu kaku kaya yang lama ya? pakai yang lama trus coba pindah ke sini feelsnya 11 12 kaya wondr. Tapi overall bagus cakep, bersih aja." | |
+| 3 | 22 Oktober 2026 | okerbk | App Store | 5 | Positif | N/A | Penilaian umum | Pujian umum terhadap aplikasi. | "Suka bgt sama appsnya" |
+| 4 | 22 Oktober 2026 | Ribka Mandagi | Google Play | 5 | Positif | N/A | Penilaian umum | Pujian singkat. | "mantap, keren appsnya" | |
+| 5 | 22 Oktober 2026 | Rido oktobriananta | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Dinilai lebih baik dibanding aplikasi lama. | "ihh lebih oke dibanding yang lama," | |
+| 6 | 22 Oktober 2026 | satria | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Desain aplikasi dinilai menarik. | "Aplikasi nya mempunyai desain yang sangat menarik 👍" | |
+| 7 | 22 Oktober 2026 | Zunijar Zunijar | Google Play | 5 | Positif | N/A | Penilaian umum | Pujian satu kata. | "bagus" | |
+| 8 | 21 Oktober 2026 | Prasenda Valentina Ramadhani | Google Play | 1 | Negatif | N/A | Pendaftaran, Migrasi | Pendaftaran QRIS lama dan pengajuan ulang saat migrasi. | "proses bikin QRIS nya lama banget.. awal ngajuin pake aplikasi yg lama, infonya udah mau discontinue dan suruh ngajuin lagi pake aplikasi wondr merchant. Pas udah ngajuin ada info 1HK, udah lbh 1HK gaada pergerakan. Gak gercep sama sekali 👎🏻" | |
+| 9 | 21 Oktober 2026 | Yessi Ma | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Fitur | Belum ada masuk dengan sidik jari; pencatatan jumlah dinilai merepotkan. | "blum ada sidik jari tampilan jumlah setiap waktu TDK ada repotlah kalo masuk ngecek harus pake pasword ...maunya sidik jari cukup masih bagus bni marchant" | |
+| 10 | 20 Oktober 2026 | Titin Rohayah | Google Play | 4 | Positif | N/A | Transaksi, Kemudahan dan tampilan | Transaksi dinilai cepat, akurat, dan mudah dipahami. | "layanan transaksi lebih cepat dan lebih akurat serta mudah dipahami oleh pengguna" | |
+| 11 | 16 Oktober 2026 | Muhammad K. Alfikhri | Google Play | 1 | Negatif | N/A | Pembaruan laporan dan pencairan | Status pembaruan pencairan tidak tampil. | "Settlement tidak update" | |
+| 12 | 11 Oktober 2026 | AHMAD WID SANJAYA | Google Play | 4 | Negatif | N/A | Notifikasi, Transaksi, Migrasi | Notifikasi dan mutasi transaksi tidak diterima. | "Notifikasi dan mutasi transaksi tidak ada. Beda dengan aplikasi BNI Merchant sebelumnya. Semoga segera diperbaiki. Terimakasih. Over all looks good" | |
+| 13 | 10 Oktober 2026 | Bos AteQ | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Performa | Waktu muat lama dan proses masuk lebih sering gagal. | "Loading Lama.. Login lbh bnyk gagal daripada berhasilx" | |
+| 14 | 8 Oktober 2026 | Boy Antoni | Google Play | 2 | Negatif | N/A | Performa | Gangguan penggunaan dan kecepatan menurun dibanding aplikasi lama. | "sering nggak bisa, msh kurang cepat, enaksn yg lama. ini sering ga ngguan , tlng diperbaiki sy pindah dari bank yg lain kebni karena lancar, ni mulai payah pula." | |
+| 15 | 8 Oktober 2026 | Neila Maisha | Google Play | 1 | Negatif | N/A | Pendaftaran | Pendaftaran belum menunjukkan perkembangan. | "ga da perkembangannya, daftar lama" | |
+| 16 | 4 Oktober 2026 | Tanamo | Google Play | 4 | Negatif | N/A | Notifikasi | Suara notifikasi tidak tersedia. | "suara notifnya ga ada, ga kayak aplikasi sebelumnya" | |
+| 17 | 2 Oktober 2026 | William Harly | Google Play | 1 | Negatif | N/A | Migrasi, Transaksi, Masuk aplikasi, Layanan pelanggan | Data transaksi tidak masuk setelah migrasi; kode verifikasi dan layanan bermasalah. | "Sangat mengecewakan. Data transaksi BNI Merchant tiba-tiba tidak lagi masuk karena seluruhnya dimigrasikan ke Wondr Merchant tanpa pemberitahuan. OTP via SMS juga tidak berfungsi dan harus lewat WA. Merchant Care mengatakan login bisa memakai kredensial kasir dari web BNI Merchant, tetapi ternyata tidak bisa. Saat dikonfirmasi via telepon, call center malah terputus dan setelahnya tidak dapat dihubungi kembali." | |
+| 18 | 1 Oktober 2026 | Ninis Sweet | Google Play | 1 | Negatif | N/A | Migrasi, Masuk aplikasi | Migrasi dan masuk aplikasi dinilai menyulitkan; komunikasi pemasaran dikritik. | "ribet beralih ke aplikasi ini tanpa info sama sekali mau masuk ribet skali. marketing tdk brtanggung jawab" | |
+| 19 | 30 September 2026 | Riski Saputra | Google Play | 1 | Negatif | N/A | Transaksi, Pembaruan pencairan | QRIS dilaporkan sering bermasalah dan dana tidak langsung tampil. | "qris nya sering bermasalah dan uang masuk gak bisa realtime" | |
+| 20 | 30 September 2026 | Siti asiah | Google Play | 5 | Positif | N/A | Performa | Penggunaan lancar. | "lancar banget" | |
 
 ---
 
@@ -503,7 +506,7 @@ Tabel berikut memuat 20 ulasan terbaru dari 63 ulasan, dengan urutan yang sama s
 
 ## 8. Keterbatasan dan Data Lanjutan yang Dibutuhkan
 
-- Ulasan publik tidak mewakili seluruh pengguna aplikasi. Dari 73 penilaian Google Play, 18 tidak menyertakan teks; dari 15 penilaian App Store, 7 tidak menyertakan teks. Penilaian tanpa teks tidak dapat dianalisis tanpa mengarang data.
+- Ulasan publik tidak mewakili seluruh pengguna aplikasi. Dari 74 penilaian Google Play, 19 tidak menyertakan teks; dari 17 penilaian App Store, 8 tidak menyertakan teks. Penilaian tanpa teks tidak dapat dianalisis tanpa mengarang data.
 - Google Play menampilkan daftar ulasan terpisah menurut bahasa antarmuka. Kedua kumpulan telah dibaca dan digabung. Jika Google mengubah pembagian kumpulan tersebut, metode pengambilan perlu diperiksa ulang.
 - Jumlah ulasan bertambah antar penarikan. Setiap penarikan memuat seluruh halaman yang tersedia, sehingga angka pada laporan mengikuti pemeriksaan terakhir dan bukan hasil pembatasan sampel.
 - Ulasan App Store berjumlah kecil dan seluruhnya positif; jumlah ini tidak cukup untuk membandingkan mutu platform.
@@ -516,7 +519,7 @@ Tabel berikut memuat 20 ulasan terbaru dari 63 ulasan, dengan urutan yang sama s
 
 ## 9. Kesimpulan
 
-Dari **63 ulasan tertulis publik** yang seluruhnya telah dianalisis, sentimen cenderung positif dengan **NSS +28,6 poin** (40 positif, 22 negatif, 1 netral) dan rata-rata **3,81 dari 5** bintang. Kekuatan aplikasi berada pada **kemudahan penggunaan dan manfaat usaha (16 ulasan)** serta **transaksi dan notifikasi yang membantu (8 ulasan)**.
+Dari **64 ulasan tertulis publik** yang seluruhnya telah dianalisis, sentimen cenderung positif dengan **NSS +29,7 poin** (41 positif, 22 negatif, 1 netral) dan rata-rata **3,83 dari 5** bintang. Kekuatan aplikasi berada pada **kemudahan penggunaan dan manfaat usaha (16 ulasan)** serta **transaksi dan notifikasi yang membantu (8 ulasan)**.
 
 Risiko reputasi terkonsentrasi pada **proses pendaftaran (8 ulasan)**, **notifikasi dan pembaruan laporan (6 ulasan)**, **akses dan performa aplikasi (5 ulasan)**, serta **migrasi dari aplikasi lama (5 ulasan)**. Tema **transaksi dan penerimaan pembayaran (3 ulasan)** perlu penanganan segera karena menyangkut fungsi inti, meskipun jumlahnya kecil. Porsi ulasan negatif meningkat pada September–Oktober, sehingga pemantauan lanjutan diperlukan.
 
@@ -527,9 +530,9 @@ Laporan ini tidak menyimpulkan adanya gangguan sistem. Kesimpulan tersebut memer
 ## Lampiran A — Metode
 
 1. **Sumber.** Halaman publik Google Play (`id.bni.wfb`) dan halaman ulasan publik App Store Indonesia (`6741567238`). Tidak ada upaya melewati proses masuk atau perlindungan akses.
-2. **Pengambilan.** Google Play dibaca pada dua kumpulan ulasan (bahasa antarmuka Indonesia dan Inggris) dengan urutan terbaru sampai halaman terakhir, kemudian digabung berdasarkan ID ulasan. App Store dibaca dari halaman ulasan publik dan ditandai bila masih ada halaman lanjutan.
+2. **Pengambilan.** Google Play dibaca pada dua kumpulan ulasan (bahasa antarmuka Indonesia dan Inggris) dengan urutan terbaru sampai halaman terakhir, kemudian digabung berdasarkan ID ulasan. App Store dibaca dari halaman ulasan publik dan ditandai bila masih ada halaman lanjutan. Rentang unduhan Google Play dibaca dari blok metrik halaman toko; Apple tidak mempublikasikan jumlah unduhan sehingga dicatat tidak tersedia, bukan nol.
 3. **Kelengkapan.** Seluruh ulasan tertulis yang tersedia pada kedua kanal dimuat; tidak ada pembatasan jumlah atau pengambilan sampel. Jumlah ulasan dilaporkan terpisah dari jumlah penilaian halaman toko.
-4. **Pelabelan sentimen.** Ditentukan dari teks, bukan dari penilaian bintang. Label pada seluruh data akhir ditentukan secara manual. Aturan kata kunci versi 1 dipakai untuk ulasan baru dan menandai teks yang belum pasti sebagai perlu tinjauan; empat ulasan yang tiba setelah penarikan awal ditandai demikian lalu diperiksa manual.
+4. **Pelabelan sentimen.** Ditentukan dari teks, bukan dari penilaian bintang. Label pada seluruh data akhir ditentukan secara manual. Aturan kata kunci versi 1 dipakai untuk ulasan baru dan menandai teks yang belum pasti sebagai perlu tinjauan; lima ulasan yang tiba setelah penarikan awal ditandai demikian lalu diperiksa manual.
 5. **Perhitungan.** `NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100`. Ulasan yang perlu tinjauan tidak dihitung sebagai netral dan tidak masuk penyebut. Persentase tema dihitung dari jumlah ulasan negatif atau positif pada filter terpilih.
 6. **Pencegahan duplikasi.** Berdasarkan platform dan ID ulasan, dengan pencocokan tambahan berdasarkan nama pengguna, tanggal, dan teks.
 7. **Riwayat.** Perubahan pada ulasan disimpan sebagai versi sebelumnya; versi lama tidak dihitung sebagai ulasan baru.

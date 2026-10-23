@@ -43,6 +43,11 @@ export function parseGoogleListing(html) {
   check(rating >= 1 && rating <= 5 && Number.isInteger(ratingCount) && ratingCount >= 0,'nilai rating Google Play tidak terbaca');
   return {rating,ratingCount};
 }
+// Google hanya menampilkan rentang unduhan, misalnya "10K+", bukan angka pasti.
+export function parsePlayInstalls(html) {
+  const match = html.match(/<div class="[^"]*">([^<]{1,24})<\/div><div class="[^"]*">\s*(Downloads|Unduhan)\s*<\/div>/i);
+  return match ? match[1].trim() : null;
+}
 export function parseGoogleReviews(text) {
   const frames = text.split(/\r?\n/).filter(line => line.trimStart().startsWith('[')).flatMap(line => JSON.parse(line));
   const frame = frames.find(f => f[0] === 'wrb.fr' && f[1] === 'oCPfdb');
@@ -84,6 +89,9 @@ export function parseApplePage(html) {
 }
 export async function collectGoogle(fetcher = fetch) {
   const metadata = parseGoogleListing(await fetchText(playUrl + '&gl=ID',{},fetcher));
+  let installs = null;
+  try { installs = parsePlayInstalls(await fetchText('https://play.google.com/store/apps/details?id=id.bni.wfb&hl=en&gl=US',{},fetcher)); }
+  catch { installs = null; }
   const reviews = new Map();
   const pools = [];
   let allPoolsComplete = true;
@@ -114,7 +122,7 @@ export async function collectGoogle(fetcher = fetch) {
   }
   const unreadable = metadata.ratingCount - reviews.size;
   const issues = pools.filter(p => p.error).map(p => `${p.label}: ${p.error}`);
-  return {id:'play',status:allPoolsComplete?'success':'partial',...metadata,reviews:[...reviews.values()],fetched:reviews.size,message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan tersebut ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya harus dibaca agar tidak ada ulasan terlewat. ${allPoolsComplete?'Seluruh halaman pada kedua kumpulan berhasil dibaca.':'Hasil belum lengkap; sebagian halaman gagal dibaca.'} Halaman toko menampilkan ${metadata.ratingCount} penilaian; ${unreadable > 0 ? `${unreadable} penilaian tidak menyertakan teks sehingga nama dan isinya tidak tersedia untuk dianalisis` : 'seluruh penilaian pada halaman toko menyertakan teks'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
+  return {id:'play',status:allPoolsComplete?'success':'partial',...metadata,installs,reviews:[...reviews.values()],fetched:reviews.size,message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan tersebut ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya harus dibaca agar tidak ada ulasan terlewat. ${allPoolsComplete?'Seluruh halaman pada kedua kumpulan berhasil dibaca.':'Hasil belum lengkap; sebagian halaman gagal dibaca.'} Halaman toko menampilkan ${metadata.ratingCount} penilaian; ${unreadable > 0 ? `${unreadable} penilaian tidak menyertakan teks sehingga nama dan isinya tidak tersedia untuk dianalisis` : 'seluruh penilaian pada halaman toko menyertakan teks'}. Unduhan: ${installs ? `${installs} (rentang yang dipublikasikan Google, bukan angka pasti)` : 'tidak terbaca pada pemeriksaan ini'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
 }
 export async function collectApple(fetcher = fetch) {
   const result = parseApplePage(await fetchText(appleUrl,{},fetcher));

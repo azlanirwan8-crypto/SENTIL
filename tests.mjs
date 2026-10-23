@@ -7,20 +7,20 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get } from 'node:http';
-import { parseGoogleListing, parseGoogleReviews, parseApplePage, collectGoogle } from './collectors.mjs';
+import { parseGoogleListing, parseGoogleReviews, parseApplePage, parsePlayInstalls, collectGoogle } from './collectors.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
 test('baseline totals include both stores and preserve neutral denominator', () => {
   const s=summary(seedReviews);
-  assert.equal(s.total,63);assert.equal(s.positive,40);assert.equal(s.negative,22);assert.equal(s.neutral,1);
-  assert.ok(Math.abs(s.nss-28.571428571428573)<0.000001);
+  assert.equal(s.total,64);assert.equal(s.positive,41);assert.equal(s.negative,22);assert.equal(s.neutral,1);
+  assert.ok(Math.abs(s.nss-29.6875)<0.000001);
 });
 test('Google Play baseline covers both published review pools',()=>{
   const s=summary(filterReviews(seedReviews,{platform:'play'}));
   assert.equal(s.total,55);assert.equal(s.positive,32);assert.equal(s.negative,22);assert.equal(s.neutral,1);
 });
-test('App Store written sample is eight, not fifteen ratings',()=>{
-  const s=summary(filterReviews(seedReviews,{platform:'appstore'}));assert.equal(s.total,8);assert.equal(s.positive,8);
+test('App Store written sample is nine, not fifteen ratings',()=>{
+  const s=summary(filterReviews(seedReviews,{platform:'appstore'}));assert.equal(s.total,9);assert.equal(s.positive,9);
 });
 test('missing platform is unavailable, not neutral or 0 percent',()=>{
   const s=summary(filterReviews(seedReviews,{platform:'tiktok'}));assert.equal(s.total,0);assert.equal(s.neutral,0);assert.equal(s.nss,null);assert.equal(s.positivePct,null);
@@ -39,7 +39,7 @@ test('driver counts deduplicate multiple tags within a group',()=>{
   assert.equal(groups['Transaksi dan penerimaan pembayaran'],3);assert.equal(groups['Akses & performa aplikasi'],5);
 });
 test('weekly and monthly chart bins preserve all review totals',()=>{
-  for(const mode of ['week','month']){const bins=timeline(seedReviews,mode);assert.equal(bins.reduce((s,b)=>s+b.positive+b.negative+b.neutral,0),63);}
+  for(const mode of ['week','month']){const bins=timeline(seedReviews,mode);assert.equal(bins.reduce((s,b)=>s+b.positive+b.negative+b.neutral,0),64);}
   assert.deepEqual(timeline([]),[]);
 });
 test('online text classification is explicit and never falls back to stars',()=>{
@@ -68,8 +68,8 @@ test('negative feature chart ranks complaints with exact evidence and keeps zero
   assert.equal(complaintStats([]).length,12);
 });
 test('sample star averages use only actual ratings',()=>{
-  const s=ratingSummary(seedReviews);assert.equal(s.total,63);assert.ok(Math.abs(s.average-240/63)<1e-9);
-  assert.deepEqual(s.distribution.map(d=>d.count),[14,4,2,3,40]);assert.equal(ratingSummary([{rating:null}]).average,null);
+  const s=ratingSummary(seedReviews);assert.equal(s.total,64);assert.ok(Math.abs(s.average-245/64)<1e-9);
+  assert.deepEqual(s.distribution.map(d=>d.count),[14,4,2,3,41]);assert.equal(ratingSummary([{rating:null}]).average,null);
 });
 test('sources use HTTPS and matching platform host',()=>{
   assert.equal(validSource('https://www.instagram.com/p/test/','instagram'),true);
@@ -78,13 +78,13 @@ test('sources use HTTPS and matching platform host',()=>{
 });
 test('incremental online refresh deduplicates IDs and retains manual labels',()=>{
   const r=seedReviews[0];const result=upsertReviews(seedReviews,[r,{...r,id:'other-id'}],'2026-10-23');
-  assert.equal(result.added,0);assert.equal(result.unchanged,2);assert.equal(result.reviews.length,63);
+  assert.equal(result.added,0);assert.equal(result.unchanged,2);assert.equal(result.reviews.length,64);
   assert.equal(result.reviews[0].sentiment,'negative');assert.equal(result.reviews[0].labeling,'manual');
   assert.equal(upsertReviews(seedReviews,[sample,sample],'2026-10-23').added,1);
 });
 test('edited reviews update metrics and keep prior versions and absent records',()=>{
   const r=seedReviews[0], result=upsertReviews(seedReviews,[{...r,text:'bagus dan lancar',rating:4}],'2026-10-24');
-  assert.equal(result.updated,1);assert.equal(result.reviews.length,63);
+  assert.equal(result.updated,1);assert.equal(result.reviews.length,64);
   const updated=result.reviews[0];assert.equal(updated.history.length,1);assert.equal(updated.history[0].text,r.text);
   assert.equal(updated.history[0].rating,5);assert.equal(updated.rating,4);assert.equal(updated.sentiment,'positive');assert.equal(updated.lastSeenAt,'2026-10-24');
   assert.equal(summary(result.reviews).negative,21);
@@ -98,7 +98,7 @@ test('CSV escapes quotes and neutralizes spreadsheet formulas',()=>{
   assert.ok(csv.startsWith('\uFEFF'));assert.ok(csv.includes('"\'=1+1"'));assert.ok(csv.includes('"hello, ""world""\nnext"'));
 });
 test('baseline review identifiers and sources are valid',()=>{
-  assert.equal(new Set(seedReviews.map(r=>r.platform+'|'+r.id)).size,63);
+  assert.equal(new Set(seedReviews.map(r=>r.platform+'|'+r.id)).size,64);
   for(const r of seedReviews){assert.ok(validSource(r.sourceUrl,r.platform));assert.ok(r.rationale);assert.ok(r.tags.length);}
 });
 test('online API preserves history across partial success, failure and restart',async()=>{
@@ -113,14 +113,14 @@ test('online API preserves history across partial success, failure and restart',
   const close=()=>new Promise(resolve=>server.close(resolve));
   try{
     let url=await listen();
-    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,63);
+    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,64);
     assert.equal((await fetch(url+'/api/analyze',{method:'POST',headers:{Origin:'https://invalid.example'}})).status,403);
     const first=await (await fetch(url+'/api/analyze',{method:'POST'})).json();
-    assert.equal(first.reviews.length,64);assert.equal(first.lastRun.added,1);assert.equal(first.lastRun.status,'partial');
+    assert.equal(first.reviews.length,65);assert.equal(first.lastRun.added,1);assert.equal(first.lastRun.status,'partial');
     assert.equal(first.sources.find(s=>s.id==='facebook').status,'unsupported');assert.equal(first.sources.find(s=>s.id==='appstore').status,'error');
-    const repeat=await (await fetch(url+'/api/analyze',{method:'POST'})).json();assert.equal(repeat.lastRun.added,0);assert.equal(repeat.reviews.length,64);
+    const repeat=await (await fetch(url+'/api/analyze',{method:'POST'})).json();assert.equal(repeat.lastRun.added,0);assert.equal(repeat.reviews.length,65);
     mode='error';const failed=await (await fetch(url+'/api/analyze',{method:'POST'})).json();
-    assert.equal(failed.lastRun.status,'error');assert.equal(failed.reviews.length,64);
+    assert.equal(failed.lastRun.status,'error');assert.equal(failed.reviews.length,65);
     mode='wait';const request=fetch(url+'/api/analyze',{method:'POST'});
     while(!release)await new Promise(resolve=>setImmediate(resolve));
     assert.equal((await fetch(url+'/api/analyze',{method:'POST'})).status,409);
@@ -128,7 +128,7 @@ test('online API preserves history across partial success, failure and restart',
     assert.equal((await fetch(url+'/online-data.json')).status,404);
     assert.equal(JSON.parse(await readFile(storagePath,'utf8')).runs.length,4);
     await close();server=await createDashboardServer({storagePath,collector});url=await listen();
-    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,64);
+    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,65);
     const blocked=await new Promise((resolve,reject)=>get(url+'/api/data',{headers:{Host:'attacker.invalid'}},res=>{res.resume();resolve(res.statusCode);}).on('error',reject));
     assert.equal(blocked,403);
   }finally{if(server.listening)await close();await rm(dir,{recursive:true,force:true});}
@@ -147,6 +147,11 @@ test('Google parser distinguishes readable empty query from null RPC and changed
   assert.throws(()=>parseGoogleReviews('not a response'),/parse_error/);
   assert.throws(()=>parseGoogleReviews(rpcFixture([[...googleRow.slice(0,2),9,...googleRow.slice(3)]])));
 });
+test('Play install range is read only from the published listing block',()=>{
+  assert.equal(parsePlayInstalls('<div class="wVqUob"><div class="ClM7O">10K+</div><div class="g1rdde">Downloads</div></div>'),'10K+');
+  assert.equal(parsePlayInstalls('<div class="ClM7O">500K+</div><div class="g1rdde">Unduhan</div>'),'500K+');
+  assert.equal(parsePlayInstalls(listingFixture),null);
+});
 test('Apple parser uses actual UTC records, not relative dates or duplicated nested shelves',()=>{
   const review={$kind:'Review',id:'fixture',reviewerName:'Fixture',contents:'Bagus',title:'Uji',date:'2026-09-22T08:30:52.000Z',dateText:'* null *',rating:5};
   const root={data:[{intent:{id:'6741567238',storefront:'id'},data:{shelfMapping:{allProductReviews:{items:[{review},{review}],url:null},productRatings:{items:[{productId:'6741567238',ratingAverage:4.7,totalNumberOfRatings:15}]}}}}]};
@@ -157,10 +162,10 @@ test('Apple parser uses actual UTC records, not relative dates or duplicated nes
 });
 test('pagination failure retains fetched records as explicitly partial',async()=>{
   let requests=0;
-  const result=await collectGoogle(async()=>{
+  const result=await collectGoogle(async url=>{
+    if(String(url).includes('/store/apps/details'))return new Response(listingFixture);
     requests++;
-    if(requests===1)return new Response(listingFixture);
-    if(requests===2)return new Response(rpcFixture([googleRow],'next'));
+    if(requests===1)return new Response(rpcFixture([googleRow],'next'));
     throw new Error('fixture disconnect');
   });
   assert.equal(result.status,'partial');assert.equal(result.fetched,1);assert.match(result.message,/network_error/);
