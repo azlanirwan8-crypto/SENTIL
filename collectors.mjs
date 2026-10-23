@@ -2,7 +2,12 @@ import { playUrl } from './data.js';
 import { validDate } from './model.js';
 
 const appleUrl = 'https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?see-all=reviews&platform=iphone';
-const rpcUrl = 'https://play.google.com/_/PlayStoreUi/data/batchexecute?rpcids=oCPfdb&hl=id&gl=ID';
+// Google memisahkan daftar ulasan menurut bahasa antarmuka. Setiap kumpulan harus dibaca lalu digabung.
+export const playPools = [
+  { hl: 'id', gl: 'ID', label: 'kumpulan bahasa Indonesia' },
+  { hl: 'en', gl: 'US', label: 'kumpulan bahasa Inggris' },
+];
+const rpcUrl = (hl, gl) => `https://play.google.com/_/PlayStoreUi/data/batchexecute?rpcids=oCPfdb&hl=${hl}&gl=${gl}`;
 const check = (condition, message) => { if (!condition) throw new Error(`parse_error: ${message}`); };
 const scripts = html => [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
 async function fetchText(url, options = {}, fetcher = fetch) {
@@ -29,7 +34,7 @@ function normalizeReview(raw, platform, sourceUrl) {
     check(typeof raw.date === 'string' && Number.isFinite(Date.parse(raw.date)) && validDate(raw.date.slice(0,10)),'tanggal ulasan tidak valid');
     publishedAt = raw.date;
   }
-  return { id:platform === 'appstore' ? `apple-${raw.id}` : raw.id, platform, author:raw.author?.trim() || 'N/A', text:raw.text, ...(raw.title != null ? {title:raw.title} : {}), rating:raw.rating ?? null, date:publishedAt?.slice(0,10) ?? null, publishedAt, sourceUrl, provenance:platform === 'play' ? 'Halaman publik Google Play; daftar ulasan terbaru, Indonesia (id.bni.wfb)' : 'Halaman ulasan publik App Store Indonesia; ID dan waktu asli (6741567238)' };
+  return { id:platform === 'appstore' ? `apple-${raw.id}` : raw.id, platform, author:raw.author?.trim() || 'N/A', text:raw.text, ...(raw.title != null ? {title:raw.title} : {}), rating:raw.rating ?? null, date:publishedAt?.slice(0,10) ?? null, publishedAt, sourceUrl, provenance:platform === 'play' ? 'Halaman publik Google Play; gabungan kumpulan ulasan bahasa Indonesia dan Inggris, urutan terbaru (id.bni.wfb)' : 'Halaman ulasan publik App Store Indonesia; ID dan waktu asli (6741567238)' };
 }
 export function parseGoogleListing(html) {
   const listing = scripts(html).filter(m => /type=["']application\/ld\+json["']/i.test(m[1])).map(m => JSON.parse(m[2])).find(x => x['@type'] === 'SoftwareApplication');
@@ -77,35 +82,39 @@ export function parseApplePage(html) {
   }
   return {reviews:[...unique.values()],rating,ratingCount,pagination: Boolean(shelf.url)};
 }
-export async function collectGoogle(fetcher = fetch, sorts = [2]) {
+export async function collectGoogle(fetcher = fetch) {
   const metadata = parseGoogleListing(await fetchText(playUrl + '&gl=ID',{},fetcher));
   const reviews = new Map();
-  const issues = [];
-  let exhaustedAll = true;
+  const pools = [];
+  let allPoolsComplete = true;
   const started = Date.now();
-  for (const sort of sorts) {
-    let cursor = null, exhausted = false;
+  for (const pool of playPools) {
+    const pageUrl = `https://play.google.com/store/apps/details?id=id.bni.wfb&hl=${pool.hl}&gl=${pool.gl}`;
+    let cursor = null, complete = false, added = 0, error = null;
     const cursors = new Set();
     for (let page = 0; page < 10; page++) {
       try {
         if (Date.now() - started > 110000) throw new Error('Batas waktu pengambilan tercapai; hasil yang sudah dibaca tetap disimpan.');
-        const args = [null,[sort,2,[100,null,cursor],null,[null,null,null,null,null,null,null,null,2]],['id.bni.wfb',7]];
-        const raw = await fetchText(rpcUrl,{method:'POST',body:new URLSearchParams({'f.req':JSON.stringify([[['oCPfdb',JSON.stringify(args),null,'generic']]])})},fetcher);
+        const args = [null,[2,2,[100,null,cursor],null,[null,null,null,null,null,null,null,null,2]],['id.bni.wfb',7]];
+        const raw = await fetchText(rpcUrl(pool.hl,pool.gl),{method:'POST',body:new URLSearchParams({'f.req':JSON.stringify([[['oCPfdb',JSON.stringify(args),null,'generic']]])})},fetcher);
         const result = parseGoogleReviews(raw);
-        for (const review of result.reviews) reviews.set(review.id,review);
+        for (const review of result.reviews) { const known = reviews.has(review.id); if (!known) { reviews.set(review.id,{...review,sourceUrl:pageUrl}); added++; } }
         cursor = result.cursor;
-        if (!cursor) { exhausted = true; break; }
+        if (!cursor) { complete = true; break; }
         if (cursors.has(cursor)) throw new Error('pagination_error: halaman berikutnya berulang; pengambilan dihentikan.');
         cursors.add(cursor);
-      } catch (error) {
-        if (!reviews.size) throw error;
-        issues.push(`urutan ${sort === 2 ? 'terbaru' : 'paling relevan'}: ${error.message}`);
+      } catch (cause) {
+        error = cause.message;
+        if (!reviews.size) throw cause;
         break;
       }
     }
-    if (!exhausted) exhaustedAll = false;
+    pools.push({ ...pool, added, complete, error });
+    if (!complete) allPoolsComplete = false;
   }
-  return {id:'play',status:exhaustedAll?'success':'partial',...metadata,reviews:[...reviews.values()],fetched:reviews.size,message:`${reviews.size} ulasan tertulis unik dibaca dari urutan terbaru untuk wilayah Indonesia. ${exhaustedAll?'Seluruh halaman berhasil dibaca.':'Hasil belum lengkap; sebagian halaman gagal dibaca.'} Jumlah ini adalah ulasan berteks yang dapat diakses publik, bukan ${metadata.ratingCount} penilaian di halaman toko. Sebagian penilaian tidak menyertakan teks sehingga nama dan isinya tidak tersedia untuk dianalisis.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
+  const unreadable = metadata.ratingCount - reviews.size;
+  const issues = pools.filter(p => p.error).map(p => `${p.label}: ${p.error}`);
+  return {id:'play',status:allPoolsComplete?'success':'partial',...metadata,reviews:[...reviews.values()],fetched:reviews.size,message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan tersebut ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya harus dibaca agar tidak ada ulasan terlewat. ${allPoolsComplete?'Seluruh halaman pada kedua kumpulan berhasil dibaca.':'Hasil belum lengkap; sebagian halaman gagal dibaca.'} Halaman toko menampilkan ${metadata.ratingCount} penilaian; ${unreadable > 0 ? `${unreadable} penilaian tidak menyertakan teks sehingga nama dan isinya tidak tersedia untuk dianalisis` : 'seluruh penilaian pada halaman toko menyertakan teks'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
 }
 export async function collectApple(fetcher = fetch) {
   const result = parseApplePage(await fetchText(appleUrl,{},fetcher));

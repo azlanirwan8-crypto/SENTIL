@@ -12,12 +12,12 @@ import { parseGoogleListing, parseGoogleReviews, parseApplePage, collectGoogle }
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
 test('baseline totals include both stores and preserve neutral denominator', () => {
   const s=summary(seedReviews);
-  assert.equal(s.total,43);assert.equal(s.positive,26);assert.equal(s.negative,16);assert.equal(s.neutral,1);
-  assert.ok(Math.abs(s.nss-23.25581395348837)<0.000001);
+  assert.equal(s.total,63);assert.equal(s.positive,40);assert.equal(s.negative,22);assert.equal(s.neutral,1);
+  assert.ok(Math.abs(s.nss-28.571428571428573)<0.000001);
 });
-test('Google Play reproduces original 35-review analysis',()=>{
+test('Google Play baseline covers both published review pools',()=>{
   const s=summary(filterReviews(seedReviews,{platform:'play'}));
-  assert.equal(s.total,35);assert.equal(s.positive,18);assert.equal(s.negative,16);assert.equal(s.neutral,1);
+  assert.equal(s.total,55);assert.equal(s.positive,32);assert.equal(s.negative,22);assert.equal(s.neutral,1);
 });
 test('App Store written sample is eight, not fifteen ratings',()=>{
   const s=summary(filterReviews(seedReviews,{platform:'appstore'}));assert.equal(s.total,8);assert.equal(s.positive,8);
@@ -34,11 +34,12 @@ test('high star ratings do not override text sentiment',()=>{
   assert.equal(seedReviews.find(r=>r.author==='Andry Teguh Aryanto').sentiment,'negative');
 });
 test('driver counts deduplicate multiple tags within a group',()=>{
-  const groups=groupStats(seedReviews,painGroups,'negative');
-  assert.equal(groups[0].total,6);assert.equal(groups[1].total,4);assert.equal(groups[2].total,4);
+  const groups=Object.fromEntries(groupStats(seedReviews,painGroups,'negative').map(g=>[g.name,g.total]));
+  assert.equal(groups['Pendaftaran belum tuntas'],8);assert.equal(groups['Notifikasi & pembaruan laporan'],6);
+  assert.equal(groups['Transaksi dan penerimaan pembayaran'],3);assert.equal(groups['Akses & performa aplikasi'],5);
 });
 test('weekly and monthly chart bins preserve all review totals',()=>{
-  for(const mode of ['week','month']){const bins=timeline(seedReviews,mode);assert.equal(bins.reduce((s,b)=>s+b.positive+b.negative+b.neutral,0),43);}
+  for(const mode of ['week','month']){const bins=timeline(seedReviews,mode);assert.equal(bins.reduce((s,b)=>s+b.positive+b.negative+b.neutral,0),63);}
   assert.deepEqual(timeline([]),[]);
 });
 test('online text classification is explicit and never falls back to stars',()=>{
@@ -57,17 +58,18 @@ test('unknown labels and missing dates are not converted to neutral or current d
   assert.deepEqual(timeline(result.reviews),[]);assert.equal(filterReviews(result.reviews,{from:'2026-10-01'}).length,0);
 });
 test('negative feature chart ranks complaints with exact evidence and keeps zero categories',()=>{
-  const groups=complaintStats(seedReviews);assert.equal(groups[0].id,'onboarding');assert.equal(groups[0].total,6);
-  assert.equal(groups.find(g=>g.id==='notifications').total,3);
-  assert.equal(groups.find(g=>g.id==='migration').total,3);
-  assert.equal(groups.find(g=>g.id==='login').total,3);
+  const groups=complaintStats(seedReviews);assert.equal(groups[0].id,'onboarding');assert.equal(groups[0].total,8);
+  assert.equal(groups.find(g=>g.id==='notifications').total,4);
+  assert.equal(groups.find(g=>g.id==='migration').total,5);
+  assert.equal(groups.find(g=>g.id==='login').total,4);
+  assert.equal(groups.find(g=>g.id==='transactions').total,3);
   for(const g of groups)assert.equal(g.total,g.reviews.length);
   assert.equal(complaintStats(filterReviews(seedReviews,{platform:'appstore'})).every(g=>g.total===0),true);
   assert.equal(complaintStats([]).length,12);
 });
 test('sample star averages use only actual ratings',()=>{
-  const s=ratingSummary(seedReviews);assert.equal(s.total,43);assert.ok(Math.abs(s.average-160/43)<1e-9);
-  assert.deepEqual(s.distribution.map(d=>d.count),[10,3,2,2,26]);assert.equal(ratingSummary([{rating:null}]).average,null);
+  const s=ratingSummary(seedReviews);assert.equal(s.total,63);assert.ok(Math.abs(s.average-240/63)<1e-9);
+  assert.deepEqual(s.distribution.map(d=>d.count),[14,4,2,3,40]);assert.equal(ratingSummary([{rating:null}]).average,null);
 });
 test('sources use HTTPS and matching platform host',()=>{
   assert.equal(validSource('https://www.instagram.com/p/test/','instagram'),true);
@@ -76,16 +78,16 @@ test('sources use HTTPS and matching platform host',()=>{
 });
 test('incremental online refresh deduplicates IDs and retains manual labels',()=>{
   const r=seedReviews[0];const result=upsertReviews(seedReviews,[r,{...r,id:'other-id'}],'2026-10-23');
-  assert.equal(result.added,0);assert.equal(result.unchanged,2);assert.equal(result.reviews.length,43);
+  assert.equal(result.added,0);assert.equal(result.unchanged,2);assert.equal(result.reviews.length,63);
   assert.equal(result.reviews[0].sentiment,'negative');assert.equal(result.reviews[0].labeling,'manual');
   assert.equal(upsertReviews(seedReviews,[sample,sample],'2026-10-23').added,1);
 });
 test('edited reviews update metrics and keep prior versions and absent records',()=>{
   const r=seedReviews[0], result=upsertReviews(seedReviews,[{...r,text:'bagus dan lancar',rating:4}],'2026-10-24');
-  assert.equal(result.updated,1);assert.equal(result.reviews.length,43);
+  assert.equal(result.updated,1);assert.equal(result.reviews.length,63);
   const updated=result.reviews[0];assert.equal(updated.history.length,1);assert.equal(updated.history[0].text,r.text);
   assert.equal(updated.history[0].rating,5);assert.equal(updated.rating,4);assert.equal(updated.sentiment,'positive');assert.equal(updated.lastSeenAt,'2026-10-24');
-  assert.equal(summary(result.reviews).negative,15);
+  assert.equal(summary(result.reviews).negative,21);
   assert.equal(upsertReviews(result.reviews,[{...r,text:'bagus dan lancar',rating:4}],'2026-10-25').reviews[0].history.length,1);
 });
 test('different unknown authors are not merged on a missing metadata fingerprint',()=>{
@@ -96,7 +98,7 @@ test('CSV escapes quotes and neutralizes spreadsheet formulas',()=>{
   assert.ok(csv.startsWith('\uFEFF'));assert.ok(csv.includes('"\'=1+1"'));assert.ok(csv.includes('"hello, ""world""\nnext"'));
 });
 test('baseline review identifiers and sources are valid',()=>{
-  assert.equal(new Set(seedReviews.map(r=>r.platform+'|'+r.id)).size,43);
+  assert.equal(new Set(seedReviews.map(r=>r.platform+'|'+r.id)).size,63);
   for(const r of seedReviews){assert.ok(validSource(r.sourceUrl,r.platform));assert.ok(r.rationale);assert.ok(r.tags.length);}
 });
 test('online API preserves history across partial success, failure and restart',async()=>{
@@ -111,14 +113,14 @@ test('online API preserves history across partial success, failure and restart',
   const close=()=>new Promise(resolve=>server.close(resolve));
   try{
     let url=await listen();
-    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,43);
+    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,63);
     assert.equal((await fetch(url+'/api/analyze',{method:'POST',headers:{Origin:'https://invalid.example'}})).status,403);
     const first=await (await fetch(url+'/api/analyze',{method:'POST'})).json();
-    assert.equal(first.reviews.length,44);assert.equal(first.lastRun.added,1);assert.equal(first.lastRun.status,'partial');
+    assert.equal(first.reviews.length,64);assert.equal(first.lastRun.added,1);assert.equal(first.lastRun.status,'partial');
     assert.equal(first.sources.find(s=>s.id==='facebook').status,'unsupported');assert.equal(first.sources.find(s=>s.id==='appstore').status,'error');
-    const repeat=await (await fetch(url+'/api/analyze',{method:'POST'})).json();assert.equal(repeat.lastRun.added,0);assert.equal(repeat.reviews.length,44);
+    const repeat=await (await fetch(url+'/api/analyze',{method:'POST'})).json();assert.equal(repeat.lastRun.added,0);assert.equal(repeat.reviews.length,64);
     mode='error';const failed=await (await fetch(url+'/api/analyze',{method:'POST'})).json();
-    assert.equal(failed.lastRun.status,'error');assert.equal(failed.reviews.length,44);
+    assert.equal(failed.lastRun.status,'error');assert.equal(failed.reviews.length,64);
     mode='wait';const request=fetch(url+'/api/analyze',{method:'POST'});
     while(!release)await new Promise(resolve=>setImmediate(resolve));
     assert.equal((await fetch(url+'/api/analyze',{method:'POST'})).status,409);
@@ -126,16 +128,18 @@ test('online API preserves history across partial success, failure and restart',
     assert.equal((await fetch(url+'/online-data.json')).status,404);
     assert.equal(JSON.parse(await readFile(storagePath,'utf8')).runs.length,4);
     await close();server=await createDashboardServer({storagePath,collector});url=await listen();
-    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,44);
+    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,64);
     const blocked=await new Promise((resolve,reject)=>get(url+'/api/data',{headers:{Host:'attacker.invalid'}},res=>{res.resume();resolve(res.statusCode);}).on('error',reject));
     assert.equal(blocked,403);
   }finally{if(server.listening)await close();await rm(dir,{recursive:true,force:true});}
 });
 const rpcFixture = (reviews,cursor=null) => `)]}'\n\n${JSON.stringify([['wrb.fr','oCPfdb',JSON.stringify([reviews,cursor?[null,cursor]:null])]])}\n`;
 const googleRow=['unit-test-only',['Fixture'],2,null,'Login gagal',[1792713600,0]];
-const listingFixture=`<script type="application/ld+json">${JSON.stringify({'@type':'SoftwareApplication',url:sample.sourceUrl,aggregateRating:{ratingValue:3.9,ratingCount:68}})}</script>`;
+const googleRowB=['pool-shared',['Fixture'],5,null,'Aplikasi bagus',[1792713600,0]];
+const googleRowC=['pool-en-only',['Fixture'],5,null,'Fitur lengkap',[1792713600,0]];
+const listingFixture=`<script type="application/ld+json">${JSON.stringify({'@type':'SoftwareApplication',url:sample.sourceUrl,aggregateRating:{ratingValue:3.9,ratingCount:73}})}</script>`;
 test('Google parser distinguishes readable empty query from null RPC and changed structures',()=>{
-  assert.equal(parseGoogleListing(listingFixture).ratingCount,68);
+  assert.equal(parseGoogleListing(listingFixture).ratingCount,73);
   assert.throws(()=>parseGoogleListing(listingFixture.replace('id.bni.wfb','id.bni.wondr')));
   const parsed=parseGoogleReviews(rpcFixture([googleRow],'next'));assert.equal(parsed.cursor,'next');assert.equal(parsed.reviews[0].rating,2);
   assert.deepEqual(parseGoogleReviews(rpcFixture([])).reviews,[]);
@@ -160,4 +164,20 @@ test('pagination failure retains fetched records as explicitly partial',async()=
     throw new Error('fixture disconnect');
   });
   assert.equal(result.status,'partial');assert.equal(result.fetched,1);assert.match(result.message,/network_error/);
+  assert.match(result.message,/kumpulan bahasa Inggris/);
+});
+test('Google collector reads both review pools and merges them without double counting',async()=>{
+  const requested=[];
+  const result=await collectGoogle(async url=>{
+    if(url.startsWith('https://play.google.com/store/apps/details'))return new Response(listingFixture);
+    requested.push(new URL(url).searchParams.get('hl'));
+    const hl=new URL(url).searchParams.get('hl');
+    return new Response(rpcFixture(hl==='id'?[googleRow,googleRowB]:[googleRowB,googleRowC]));
+  });
+  assert.deepEqual(requested,['id','en']);
+  assert.equal(result.status,'success');
+  assert.equal(result.fetched,3);
+  assert.deepEqual(result.reviews.map(r=>r.id).sort(),['pool-en-only','pool-shared','unit-test-only']);
+  assert.match(result.message,/2 ulasan kumpulan bahasa Indonesia dan 1 ulasan kumpulan bahasa Inggris/);
+  assert.match(result.message,/70 penilaian tidak menyertakan teks/);
 });

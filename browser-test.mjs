@@ -13,7 +13,14 @@ const server=await createDashboardServer({storagePath:join(profile,'test-data.js
   pulls++;
   if(collectorMode==='wait')await new Promise(resolve=>{releasePull=resolve;});
   if(collectorMode==='error')return ['play','appstore'].map(id=>({id,status:'error',fetched:0,message:'Koneksi uji gagal; histori dipertahankan.'}));
-  return ['play','appstore'].map(id=>({id,status:'success',message:'Data uji lokal untuk pengujian antarmuka.',fetched:seedReviews.filter(r=>r.platform===id).length,reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]}));
+  return ['play','appstore'].map(id=>{
+    const count=seedReviews.filter(r=>r.platform===id).length;
+    return {id,status:'success',fetched:count,rating:id==='play'?3.9:4.7,ratingCount:id==='play'?73:15,
+      message:id==='play'
+        ? `${count} ulasan tertulis unik dibaca dari Google Play sebagai gabungan 38 ulasan kumpulan bahasa Indonesia dan 17 ulasan kumpulan bahasa Inggris. Seluruh halaman pada kedua kumpulan berhasil dibaca. Halaman toko menampilkan 73 penilaian; 18 penilaian tidak menyertakan teks sehingga nama dan isinya tidak tersedia untuk dianalisis.`
+        : `${count} ulasan tertulis dibaca dari halaman publik App Store Indonesia. Tidak ada halaman lanjutan pada tampilan publik. Jumlah ini bukan jumlah seluruh penilaian.`,
+      reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]};
+  });
 }});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const baseUrl=`http://127.0.0.1:${server.address().port}`;
@@ -62,43 +69,43 @@ try {
   };
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await send('Page.navigate',{url:baseUrl});await ready();
-  assert.deepEqual(await metricValues(),['43','60,5%','37,2%','+23,3']);
+  assert.deepEqual(await metricValues(),['63','63,5%','34,9%','+28,6']);
   assert.equal(await evaluate(`Boolean(document.querySelector('.brand,.workspace-chip'))`),false);
   assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
   assert.doesNotMatch(await evaluate(`document.querySelector('.page-footer').textContent`),/wondr pulse/i);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).width`),'230px');
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth`),true);
   await screenshot('dashboard-desktop.png');completed.push('Desktop layout and baseline metrics');
-  await click('[data-platform="play"]');assert.deepEqual(await metricValues(),['35','51,4%','45,7%','+5,7']);
+  await click('[data-platform="play"]');assert.deepEqual(await metricValues(),['55','58,2%','40,0%','+18,2']);
   await click('[data-platform="appstore"]');assert.deepEqual(await metricValues(),['8','100,0%','0,0%','+100,0']);
   await click('[data-platform="tiktok"]');assert.deepEqual(await metricValues(),['0','—','—','—']);
   completed.push('Store filters and unavailable social empty states');
   await click('[data-platform="all"]');
   await evaluate(`document.querySelector('#period').value='2026-10';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));`);
-  assert.equal((await metricValues())[0],'8');
+  assert.equal((await metricValues())[0],'17');
   await evaluate(`document.querySelector('#period').value='custom';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#date-from').value='2026-10-23';document.querySelector('#date-to').value='2026-08-01';`);
   await click('[data-action="apply-dates"]');assert.match(await evaluate(`document.querySelector('#date-error').textContent`),/tanggal awal/);
   await evaluate(`document.querySelector('#period').value='all';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));`);
   completed.push('Monthly filter and invalid custom date range');
-  await click('[data-view="sentiment"]');assert.equal(await evaluate(`document.querySelectorAll('.recommendation').length`),5);
+  await click('[data-view="sentiment"]');assert.equal(await evaluate(`document.querySelectorAll('.recommendation').length`),6);
   await screenshot('sentiment-analysis.png');
-  await click('[data-driver="Pendaftaran belum tuntas"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),6);
+  await click('[data-driver="Pendaftaran belum tuntas"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
   await click('[data-review]');assert.equal(await evaluate(`document.querySelector('#detail-dialog').open`),true);
   assert.match(await evaluate(`document.querySelector('.detail-section p').textContent`),/pendaftaran|pengajuan/i);
   await click('[data-close="detail-dialog"]');await click('[data-action="clear-group"]');await click('[data-sentiment="all"]');
-  assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/43 ulasan/);
+  assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/63 ulasan/);
   await click('[data-page="next"]');assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/11–20/);
   await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`new Promise(resolve=>{const check=()=>document.querySelectorAll('tbody tr').length===1?resolve(true):requestAnimationFrame(check);check();})`);
   assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
-  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/43 ulasan tertulis unik/);
-  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/35 ulasan tertulis dari 68 penilaian/);
+  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/63 ulasan tertulis unik/);
+  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/Play Store: 55 ulasan tertulis dari 73 penilaian/);
   for (const author of seedReviews.map(r=>r.author)) {
     await evaluate(`document.querySelector('#review-search').value=${JSON.stringify(author)};document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
     const found=await evaluate(`new Promise(resolve=>{const end=Date.now()+2500;function check(){const body=document.querySelector('tbody');if(body&&body.textContent.includes(${JSON.stringify(author)}))resolve(true);else if(Date.now()>end)resolve(false);else requestAnimationFrame(check);}check();})`);
     assert.equal(found,true,`Author not searchable: ${author}`);
   }
-  completed.push('Analysis drivers, review detail, pagination, data-scope note and all 43 author searches');
+  completed.push('Analysis drivers, review detail, pagination, data-scope note and all 63 author searches');
   await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`new Promise(resolve=>{const check=()=>document.querySelectorAll('tbody tr').length===1?resolve(true):requestAnimationFrame(check);check();})`);
   await evaluate(`window.__downloadText=null;window.__createObjectURL=URL.createObjectURL;URL.createObjectURL=blob=>{blob.text().then(t=>window.__downloadText=t);return window.__createObjectURL(blob)};window.__anchorClick=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(!this.download)window.__anchorClick.call(this)};`);
@@ -114,14 +121,16 @@ try {
   assert.equal(pulls,1);releasePull();
   const pullReady=()=>evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(!document.querySelector('[data-action="analyze"]').disabled)resolve(true);else if(Date.now()>end)reject(Error('Pull did not finish'));else requestAnimationFrame(check);}check();})`);
   await pullReady();assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
+  assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis berhasil · 0 ulasan baru · 0 diperbarui · 63 tidak berubah/);
+  assert.equal(await evaluate(`document.querySelectorAll('.data-note,.local-card,.snapshot-indicator').length`),0);
   completed.push('Single online pull action, loading lock and preserved filters');
   await click('[data-view="overview"]');
   const complaintRows=await evaluate(`[...document.querySelectorAll('[data-complaint]')].map(b=>({id:b.dataset.complaint,text:b.textContent}))`);
-  assert.equal(complaintRows[0].id,'onboarding');assert.match(complaintRows[0].text,/6/);
+  assert.equal(complaintRows[0].id,'onboarding');assert.match(complaintRows[0].text,/8 ulasan/);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
   assert.equal(await evaluate(`document.querySelector('.complaint-bar').getBoundingClientRect().width>0`),true);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sample-rating')).display`),'grid');
-  await click('[data-complaint="onboarding"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),6);
+  await click('[data-complaint="onboarding"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
   await click('[data-view="overview"]');await click('[data-platform="appstore"]');
   assert.equal(await evaluate(`document.querySelectorAll('[data-complaint]').length`),0);
   await click('[data-platform="all"]');completed.push('Ranked complaint chart, exact drilldown and no-complaint filter');
@@ -139,10 +148,10 @@ try {
   assert.equal(await evaluate(`document.querySelector('.complaint-bar').getBoundingClientRect().width>0`),true);
   await screenshot('dashboard-mobile.png');completed.push('Platform coverage and mobile layout without page overflow');
   collectorMode='new';await click('[data-action="analyze"]');await pullReady();
-  assert.equal((await metricValues())[0],'44');
-  await click('[data-action="analyze"]');await pullReady();assert.equal((await metricValues())[0],'44');
+  assert.equal((await metricValues())[0],'64');
+  await click('[data-action="analyze"]');await pullReady();assert.equal((await metricValues())[0],'64');
   await send('Page.reload');await ready();
-  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.metric-value').textContent==='44')resolve(true);else if(Date.now()>end)reject(Error('Stored data not loaded'));else requestAnimationFrame(check);}check();})`);
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.metric-value').textContent==='64')resolve(true);else if(Date.now()>end)reject(Error('Stored data not loaded'));else requestAnimationFrame(check);}check();})`);
   await click('[data-view="reviews"]');
   await evaluate(`document.querySelector('#review-search').value='QA <img';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`new Promise(resolve=>{const check=()=>document.querySelectorAll('tbody tr').length===1?resolve(true):requestAnimationFrame(check);check();})`);
@@ -151,7 +160,7 @@ try {
   assert.match(await evaluate(`document.querySelector('.detail-author').textContent`),/N\/A/);
   await click('[data-close="detail-dialog"]');await click('[data-view="overview"]');
   collectorMode='error';await click('[data-action="analyze"]');await pullReady();
-  assert.equal((await metricValues())[0],'44');assert.match(await evaluate(`document.querySelector('#main').textContent`),/gagal/i);
+  assert.equal((await metricValues())[0],'64');assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis gagal/);
   await click('[data-view="platforms"]');assert.match(await evaluate(`document.querySelector('.coverage-grid').textContent`),/Koneksi uji gagal/);
   completed.push('Online batch deduplication, server persistence, missing metadata, XSS escaping and failed refresh history');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');

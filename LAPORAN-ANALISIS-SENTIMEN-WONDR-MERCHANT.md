@@ -1,21 +1,23 @@
 # Laporan Analisis Sentimen wondr merchant by BNI
 
-**Periode ulasan:** 20 Agustus – 21 Oktober 2026  
-**Tanggal laporan:** 23 Oktober 2026  
-**Cakupan:** 43 ulasan tertulis dari Google Play dan Apple App Store  
+**Periode ulasan:** 20 Agustus – 22 Oktober 2026  
+**Tanggal laporan:** 24 Oktober 2026  
+**Cakupan:** 63 ulasan tertulis dari Google Play dan Apple App Store  
 **Disusun untuk:** Manajemen produk dan operasional
 
 ---
 
 ## Ringkasan Eksekutif
 
-Laporan ini merangkum analisis sentimen atas **43 ulasan tertulis publik** untuk aplikasi **wondr merchant by BNI** (paket Google Play: `id.bni.wfb`; ID App Store: `6741567238`). Sebanyak 35 ulasan berasal dari Google Play dan 8 ulasan dari Apple App Store. Seluruh teks ulasan yang dapat diakses publik pada tanggal laporan dimuat dan dianalisis tanpa pembatasan jumlah ulasan.
+Laporan ini merangkum analisis sentimen atas **63 ulasan tertulis publik** untuk aplikasi **wondr merchant by BNI** (paket Google Play: `id.bni.wfb`; ID App Store: `6741567238`). Sebanyak 55 ulasan berasal dari Google Play dan 8 ulasan dari Apple App Store. Seluruh teks ulasan yang dapat diakses publik pada tanggal laporan dimuat dan dianalisis tanpa pembatasan jumlah ulasan.
 
-Pada data ini, **26 ulasan positif (60,5%)**, **16 ulasan negatif (37,2%)**, dan **1 ulasan netral (2,3%)**. Net Sentiment Score (NSS) berada pada **+23,3 poin**, yang menunjukkan kecenderungan positif. Namun, 37,2% ulasan negatif tetap perlu ditangani, terutama karena keluhan terkonsentrasi pada proses pendaftaran.
+Cakupan Google Play diperoleh dengan membaca **kedua kumpulan ulasan yang ditampilkan Google berdasarkan bahasa antarmuka**, yaitu 38 ulasan pada kumpulan bahasa Indonesia dan 17 ulasan pada kumpulan bahasa Inggris. Kedua kumpulan dibaca sampai halaman terakhir lalu digabung berdasarkan ID ulasan. Pada pemeriksaan awal hanya kumpulan bahasa Indonesia yang terbaca, sehingga 16 ulasan tidak masuk analisis. Perbedaan ini ditemukan dan diperbaiki, bukan dibulatkan atau diabaikan.
 
-Rata-rata penilaian bintang dari 43 ulasan tertulis yang menyertakan bintang adalah **3,72 dari 5**. Angka ini berbeda dari nilai halaman toko, yaitu 3,9/5 dari 68 penilaian di Google Play dan 4,7/5 dari 15 penilaian di App Store. Perbedaan tersebut terjadi karena penilaian tanpa teks tidak menyediakan nama atau isi yang dapat dianalisis.
+Pada data ini, **40 ulasan positif (63,5%)**, **22 ulasan negatif (34,9%)**, dan **1 ulasan netral (1,6%)**. Net Sentiment Score (NSS) berada pada **+28,6 poin**, yang menunjukkan kecenderungan positif. Namun, 34,9% ulasan negatif tetap perlu ditangani, terutama karena keluhan terkonsentrasi pada proses pendaftaran.
 
-Tema keluhan yang paling sering muncul adalah **pendaftaran belum tuntas (6 ulasan)**, diikuti **notifikasi dan pembaruan laporan (4 ulasan)** serta **akses dan performa aplikasi (4 ulasan)**. Tema pujian yang paling sering muncul adalah **kemudahan penggunaan dan manfaat usaha (10 ulasan)**, diikuti **transaksi dan notifikasi yang membantu (7 ulasan)**.
+Rata-rata penilaian bintang dari 63 ulasan tertulis yang menyertakan bintang adalah **3,81 dari 5**. Angka ini berbeda dari nilai halaman toko, yaitu 3,9/5 dari 73 penilaian di Google Play dan 4,7/5 dari 15 penilaian di App Store. Perbedaan tersebut terjadi karena penilaian tanpa teks tidak menyediakan nama atau isi yang dapat dianalisis.
+
+Tema keluhan yang paling sering muncul adalah **pendaftaran belum tuntas (8 ulasan)**, diikuti **notifikasi dan pembaruan laporan (6 ulasan)**, **akses dan performa aplikasi (5 ulasan)**, serta **migrasi kurang jelas (5 ulasan)**. Tema pujian yang paling sering muncul adalah **kemudahan penggunaan dan manfaat usaha (16 ulasan)**, diikuti **transaksi dan notifikasi yang membantu (8 ulasan)**.
 
 Sembilan kanal lain, yaitu X/Twitter, Instagram, TikTok, YouTube, Facebook, forum publik, blog dan ulasan web, portal berita, serta Google Reviews, **belum terhubung**. Kanal tersebut berstatus tidak diambil, bukan nol keluhan. Perbandingan lintas kanal yang dapat dipertanggungjawabkan saat ini hanya antara Google Play dan App Store.
 
@@ -29,7 +31,7 @@ Sembilan kanal lain, yaitu X/Twitter, Instagram, TikTok, YouTube, Facebook, foru
 
 | Kanal | Status pengambilan | Ulasan tertulis dianalisis | Penilaian halaman toko | Nilai halaman toko |
 |---|---|---:|---:|---:|
-| Google Play | Tersedia | 35 | 68 | 3,9/5 |
+| Google Play | Tersedia | 55 | 73 | 3,9/5 |
 | Apple App Store | Tersedia | 8 | 15 | 4,7/5 |
 | X/Twitter | Belum terhubung | — | — | — |
 | Instagram | Belum terhubung | — | — | — |
@@ -40,33 +42,35 @@ Sembilan kanal lain, yaitu X/Twitter, Instagram, TikTok, YouTube, Facebook, foru
 | Blog dan ulasan web | Belum terhubung | — | — | — |
 | Portal berita | Belum terhubung | — | — | — |
 | Google Reviews | Belum terhubung | — | — | — |
-| **Total** | **2 kanal terhubung** | **43** | **83** | **—** |
+| **Total** | **2 kanal terhubung** | **63** | **88** | **—** |
 
 Keterangan:
 
 - Tanda **—** berarti data tidak diambil, bukan bernilai nol.
-- Angka **83 penilaian halaman toko** merupakan gabungan 68 penilaian Google Play dan 15 penilaian App Store. Angka ini bukan jumlah ulasan yang dianalisis.
-- Hanya ulasan yang memiliki teks yang dapat dianalisis. Penilaian tanpa teks tidak menyediakan nama atau isi publik, sehingga tidak dimasukkan tanpa mengarang data.
+- Google Play memisahkan daftar ulasannya menurut bahasa antarmuka. Pengambilan membaca kumpulan bahasa Indonesia (38 ulasan) dan kumpulan bahasa Inggris (17 ulasan) sampai halaman terakhir, kemudian menggabungkan 55 ulasan unik berdasarkan ID ulasan. Tidak ada tumpang tindih ID di antara kedua kumpulan.
+- Angka **88 penilaian halaman toko** merupakan gabungan 73 penilaian Google Play dan 15 penilaian App Store. Angka ini bukan jumlah ulasan yang dianalisis.
+- Selisih 73 − 55 = **18 penilaian Google Play** dan 15 − 8 = **7 penilaian App Store** tidak menyertakan teks, sehingga nama dan isinya tidak tersedia untuk dianalisis.
 - Data ditarik melalui tombol **Tarik Analisis** dan disimpan di komputer tempat dasbor dijalankan. Pembaruan tidak berlangsung terus-menerus.
+- Jumlah ulasan dan penilaian halaman toko bertambah selama periode pemeriksaan karena ulasan baru terus masuk. Angka pada laporan mengikuti pemeriksaan terakhir dan seluruhnya dihitung, bukan sebagian.
 
 ### 1.2 Rata-rata Penilaian Bintang
 
-Rata-rata keseluruhan dihitung dari 43 ulasan tertulis yang menyertakan bintang:
+Rata-rata keseluruhan dihitung dari 63 ulasan tertulis yang menyertakan bintang:
 
-- Google Play: 35 ulasan × rata-rata 3,43 = 120 poin
+- Google Play: 55 ulasan × rata-rata 3,64 = 200 poin
 - Apple App Store: 8 ulasan × rata-rata 5,00 = 40 poin
-- Total: 160 poin ÷ 43 ulasan = **3,72 dari 5**
+- Total: 240 poin ÷ 63 ulasan = **3,81 dari 5**
 
 **Sebaran bintang keseluruhan:**
 
 | Bintang | Jumlah ulasan | Persentase |
 |---|---:|---:|
-| 5 bintang | 26 | 60,5% |
-| 4 bintang | 2 | 4,7% |
-| 3 bintang | 2 | 4,7% |
-| 2 bintang | 3 | 7,0% |
-| 1 bintang | 10 | 23,3% |
-| **Total** | **43** | **100%** |
+| 5 bintang | 40 | 63,5% |
+| 4 bintang | 3 | 4,8% |
+| 3 bintang | 2 | 3,2% |
+| 2 bintang | 4 | 6,3% |
+| 1 bintang | 14 | 22,2% |
+| **Total** | **63** | **100%** |
 
 Jumlah persentase dapat tidak tepat 100% karena pembulatan.
 
@@ -74,52 +78,62 @@ Jumlah persentase dapat tidak tepat 100% karena pembulatan.
 
 | Kanal | Ulasan | Rata-rata | 5 bintang | 4 bintang | 3 bintang | 2 bintang | 1 bintang |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Google Play | 35 | 3,43 | 18 | 2 | 2 | 3 | 10 |
+| Google Play | 55 | 3,64 | 32 | 3 | 2 | 4 | 14 |
 | Apple App Store | 8 | 5,00 | 8 | 0 | 0 | 0 | 0 |
 
-Dua ulasan berbintang tinggi tetap berisi keluhan, yaitu **Andry Teguh Aryanto (5 bintang)** dan **Tanamo (4 bintang)**. Karena itu, penilaian bintang tidak digunakan sebagai satu-satunya dasar penentuan sentimen.
+Tiga ulasan berbintang tinggi tetap berisi keluhan, yaitu **Andry Teguh Aryanto (5 bintang)**, **Tanamo (4 bintang)**, dan **AHMAD WID SANJAYA (4 bintang)**. Karena itu, penilaian bintang tidak digunakan sebagai satu-satunya dasar penentuan sentimen.
 
 Apple App Store hanya menyediakan 8 ulasan tertulis dan seluruhnya bernilai 5 bintang. Jumlah ini terlalu kecil untuk menyimpulkan bahwa pengalaman pengguna iOS lebih baik daripada Android.
+
+**Sebaran menurut bulan publikasi:**
+
+| Bulan | Ulasan | Positif | Negatif | Netral |
+|---|---:|---:|---:|---:|
+| Agustus 2026 | 28 | 24 | 4 | 0 |
+| September 2026 | 18 | 9 | 8 | 1 |
+| Oktober 2026 | 17 | 7 | 10 | 0 |
+
+Porsi ulasan negatif meningkat pada September–Oktober. Pola ini mengikuti jumlah ulasan yang tersedia pada setiap bulan dan bukan merupakan hasil pengukuran terhadap seluruh pengguna.
 
 ### 1.3 Sentimen dan Net Sentiment Score
 
 | Metrik | Nilai |
 |---|---:|
-| Total ulasan | 43 |
-| Positif | 26 (60,5%) |
-| Negatif | 16 (37,2%) |
-| Netral | 1 (2,3%) |
+| Total ulasan | 63 |
+| Positif | 40 (63,5%) |
+| Negatif | 22 (34,9%) |
+| Netral | 1 (1,6%) |
 | Perlu tinjauan | 0 |
-| Net Sentiment Score (NSS) | **+23,3 poin** |
+| Net Sentiment Score (NSS) | **+28,6 poin** |
 
 **Rumus NSS:**
 
 `NSS = (jumlah ulasan positif − jumlah ulasan negatif) ÷ jumlah ulasan berlabel × 100`
 
-Perhitungan: `(26 − 16) ÷ 43 × 100 = 23,2558` → **+23,3 poin**.
+Perhitungan: `(40 − 22) ÷ 63 × 100 = 28,5714` → **+28,6 poin**.
 
-Ulasan berlabel mencakup ulasan positif, negatif, dan netral. Ulasan yang perlu tinjauan tidak dihitung sebagai netral dan tidak masuk ke perhitungan. Pada data ini tidak ada ulasan yang perlu tinjauan.
+Ulasan berlabel mencakup ulasan positif, negatif, dan netral. Ulasan yang perlu tinjauan tidak dihitung sebagai netral dan tidak masuk ke perhitungan. Pada data akhir ini tidak ada ulasan yang berstatus perlu tinjauan; empat ulasan yang tiba setelah penarikan awal sempat ditandai demikian oleh aturan kata kunci dan kemudian diperiksa manual.
 
 Ulasan netral berasal dari **Su herman** dengan teks "3 bintang dulu". Ulasan tersebut tidak menunjukkan pujian atau keluhan yang jelas.
 
-NSS Google Play adalah **+5,7 poin**, sedangkan NSS App Store adalah **+100,0 poin**. Perbedaan ini dipengaruhi komposisi dan jumlah ulasan di masing-masing kanal. Angka tersebut tidak dapat dijadikan bukti bahwa salah satu platform memiliki mutu yang lebih baik.
+NSS Google Play adalah **+18,2 poin**, sedangkan NSS App Store adalah **+100,0 poin**. Perbedaan ini dipengaruhi komposisi dan jumlah ulasan di masing-masing kanal. Angka tersebut tidak dapat dijadikan bukti bahwa salah satu platform memiliki mutu yang lebih baik.
 
 ### 1.4 Sepuluh Ulasan Terbaru
 
-Seluruh 43 nama pengguna pada data ini masing-masing memiliki satu ulasan. Tabel berikut memuat 10 ulasan terbaru berdasarkan tanggal publikasi. Tabel ini **bukan** peringkat pengaruh, popularitas, atau aktivitas pengguna.
+Seluruh 63 nama pengguna pada data ini masing-masing memiliki satu ulasan. Tabel berikut memuat 10 ulasan terbaru berdasarkan tanggal publikasi, dengan urutan yang sama seperti dasbor. Tabel ini **bukan** peringkat pengaruh, popularitas, atau aktivitas pengguna.
 
 | Tanggal | Nama pengguna | Platform | Bintang | Sentimen |
 |---|---|---|---:|---|
+| 22 Oktober 2026 | Hevira Octia | Google Play | 5 | Positif |
+| 22 Oktober 2026 | Mohamad Rifky Pramadanianto | Google Play | 5 | Positif |
+| 22 Oktober 2026 | Ribka Mandagi | Google Play | 5 | Positif |
+| 22 Oktober 2026 | Rido oktobriananta | Google Play | 5 | Positif |
+| 22 Oktober 2026 | satria | Google Play | 5 | Positif |
+| 22 Oktober 2026 | Zunijar Zunijar | Google Play | 5 | Positif |
 | 21 Oktober 2026 | Prasenda Valentina Ramadhani | Google Play | 1 | Negatif |
 | 21 Oktober 2026 | Yessi Ma | Google Play | 2 | Negatif |
 | 20 Oktober 2026 | Titin Rohayah | Google Play | 4 | Positif |
 | 16 Oktober 2026 | Muhammad K. Alfikhri | Google Play | 1 | Negatif |
-| 10 Oktober 2026 | Bos AteQ | Google Play | 2 | Negatif |
-| 8 Oktober 2026 | Boy Antoni | Google Play | 2 | Negatif |
-| 4 Oktober 2026 | Tanamo | Google Play | 4 | Negatif |
-| 1 Oktober 2026 | Ninis Sweet | Google Play | 1 | Negatif |
-| 30 September 2026 | Siti asiah | Google Play | 5 | Positif |
-| 25 September 2026 | Coky_04 HM | Google Play | 5 | Positif |
 
 ---
 
@@ -127,25 +141,28 @@ Seluruh 43 nama pengguna pada data ini masing-masing memiliki satu ulasan. Tabel
 
 ### 2.1 Sebaran Tema Keluhan
 
-| Tema | Ulasan | Persentase dari 16 ulasan negatif | Tingkat perhatian |
+| Tema | Ulasan | Persentase dari 22 ulasan negatif | Tingkat perhatian |
 |---|---:|---:|---|
-| Pendaftaran belum tuntas | 6 | 37,5% | Tinggi |
-| Notifikasi dan pembaruan laporan | 4 | 25,0% | Menengah |
-| Akses dan performa aplikasi | 4 | 25,0% | Tinggi |
-| Migrasi kurang jelas | 3 | 18,8% | Menengah |
-| Penanganan layanan | 1 | 6,3% | Menengah |
-| Penilaian umum tanpa rincian | 2 | 12,5% | Pemantauan |
+| Pendaftaran belum tuntas | 8 | 36,4% | Tinggi |
+| Notifikasi dan pembaruan laporan | 6 | 27,3% | Menengah–tinggi |
+| Akses dan performa aplikasi | 5 | 22,7% | Tinggi |
+| Migrasi kurang jelas | 5 | 22,7% | Menengah |
+| Transaksi dan penerimaan pembayaran | 3 | 13,6% | Tinggi |
+| Penanganan layanan | 2 | 9,1% | Menengah |
+| Penilaian umum tanpa rincian | 3 | 13,6% | Pemantauan |
 
 Keterangan:
 
-- Total pada tabel (20) lebih besar dari 16 ulasan negatif karena empat ulasan membahas lebih dari satu tema. Karena itu, persentase tidak berjumlah 100%.
-- Dua ulasan negatif berupa penilaian umum tanpa rincian. Keduanya dihitung dalam total 16 ulasan negatif dan NSS, tetapi tidak dipaksakan ke dalam tema fitur.
+- Total pada tabel (29) lebih besar dari 22 ulasan negatif karena tujuh ulasan membahas lebih dari satu tema. Satu ulasan, yaitu William Harly, membahas empat tema. Karena itu, persentase tidak berjumlah 100%.
+- Tiga ulasan negatif berupa penilaian umum tanpa rincian. Ketiganya dihitung dalam total 22 ulasan negatif dan NSS, tetapi tidak dipaksakan ke dalam tema fitur.
 - Tingkat perhatian ditetapkan berdasarkan jumlah ulasan per tema dan potensi dampak, bukan berdasarkan insiden yang telah terverifikasi.
 - Kutipan asli dipertahankan termasuk ejaan, tanda baca, dan emoji. Bahasa dalam kutipan merupakan pernyataan pengguna, bukan bahasa laporan.
 
-### 2.2 Pendaftaran Belum Tuntas (6 Ulasan, 37,5%)
+**Sebaran menurut kategori topik (satu ulasan dapat masuk beberapa kategori):** Pendaftaran 8 · Migrasi aplikasi 5 · Masuk aplikasi 4 · Notifikasi 4 · Transaksi QRIS 3 · Laporan & pencairan dana 3 · Penilaian umum 3 · Performa 2 · Fitur 2 · Layanan pelanggan 2.
 
-**Dugaan akar masalah:** proses verifikasi melewati estimasi satu hari kerja yang disebut pengguna, tanpa status yang jelas. Satu pengguna juga melaporkan harus mengajukan ulang saat migrasi aplikasi.
+### 2.2 Pendaftaran Belum Tuntas (8 Ulasan, 36,4%)
+
+**Dugaan akar masalah:** proses verifikasi melewati estimasi satu hari kerja yang disebut pengguna, tanpa status yang jelas. Satu pengguna melaporkan harus mengajukan ulang saat migrasi aplikasi.
 
 **Dampak yang mungkin terjadi:** penundaan penggunaan QRIS, ketidakpastian status bagi merchant, dan risiko berkurangnya kepercayaan terhadap janji layanan. Dampak ini belum diverifikasi melalui data operasional.
 
@@ -157,6 +174,8 @@ Keterangan:
 | Heri Setiawan | 1 | 17 September 2026 | "udah dftr 2 hari g jadi gagal atau berhasil aplikasi g jelas" |
 | Iksan Ramadhan | 1 | 28 Agustus 2026 | "sudah 2 hari daftar masih diproses terus" |
 | Prasenda Valentina Ramadhani | 1 | 21 Oktober 2026 | "proses bikin QRIS nya lama banget.. awal ngajuin pake aplikasi yg lama, infonya udah mau discontinue dan suruh ngajuin lagi pake aplikasi wondr merchant. Pas udah ngajuin ada info 1HK, udah lbh 1HK gaada pergerakan. Gak gercep sama sekali 👎🏻" |
+| Neila Maisha | 1 | 8 Oktober 2026 | "ga da perkembangannya, daftar lama" |
+| Rizal Taufiq Rahman | 2 | 31 Agustus 2026 | "saya daftar tanggal 20 Agustus, dijanjiin hanya 1 hari kerja sekarang udah tanggal 31 Agustus belum selesai juga pendaftarannya." |
 
 Dua ulasan dalam tema ini juga masuk tema lain: Roziqin Ziqin menyebut layanan pelanggan, sedangkan Prasenda Valentina Ramadhani menyebut migrasi.
 
@@ -167,7 +186,7 @@ Dua ulasan dalam tema ini juga masuk tema lain: Roziqin Ziqin menyebut layanan p
 - Sediakan jalur eskalasi dan pemilik tiket yang jelas untuk pengajuan yang tertunda.
 - Catat alasan keterlambatan agar pola masalah dapat dievaluasi.
 
-### 2.3 Notifikasi dan Pembaruan Laporan (4 Ulasan, 25,0%)
+### 2.3 Notifikasi dan Pembaruan Laporan (6 Ulasan, 27,3%)
 
 **Dugaan akar masalah:** notifikasi belum berpindah atau tersinkronisasi ke aplikasi baru, suara notifikasi belum tersedia, dan pembaruan status pencairan dana tidak tampil. Ulasan ini **tidak membuktikan** adanya keterlambatan dana.
 
@@ -179,8 +198,10 @@ Dua ulasan dalam tema ini juga masuk tema lain: Roziqin Ziqin menyebut layanan p
 | Hamid Aly ubaid | 3 | 24 September 2026 | "masih perlu banyak pengembangan, 1. notif suara nominal 2. pilihan pencairan realtime 3. menu menghapus toko yang sudah tidak di gunakan 4. laporan delay aplikasi biru sebelah sudah bisa semua" |
 | Tanamo | 4 | 4 Oktober 2026 | "suara notifnya ga ada, ga kayak aplikasi sebelumnya" |
 | Muhammad K. Alfikhri | 1 | 16 Oktober 2026 | "Settlement tidak update" |
+| AHMAD WID SANJAYA | 4 | 11 Oktober 2026 | "Notifikasi dan mutasi transaksi tidak ada. Beda dengan aplikasi BNI Merchant sebelumnya. Semoga segera diperbaiki. Terimakasih. Over all looks good" |
+| Riski Saputra | 1 | 30 September 2026 | "qris nya sering bermasalah dan uang masuk gak bisa realtime" |
 
-Tiga ulasan membahas notifikasi, sedangkan dua ulasan membahas pembaruan laporan atau pencairan dana. Hamid Aly ubaid membahas keduanya.
+Empat ulasan membahas notifikasi, sedangkan tiga ulasan membahas pembaruan laporan atau pencairan dana. Hamid Aly ubaid dan Riski Saputra membahas keduanya.
 
 **Rekomendasi:**
 
@@ -189,69 +210,96 @@ Tiga ulasan membahas notifikasi, sedangkan dua ulasan membahas pembaruan laporan
 - Pastikan status pencairan dana diperbarui dan cantumkan waktu pembaruan terakhir.
 - Pisahkan masalah tampilan status dari dugaan keterlambatan dana agar penanganannya tepat.
 
-### 2.4 Akses dan Performa Aplikasi (4 Ulasan, 25,0%)
+### 2.4 Akses dan Performa Aplikasi (5 Ulasan, 22,7%)
 
-**Dugaan akar masalah:** waktu muat yang lama, proses masuk yang lebih sering gagal, dan belum tersedianya masuk dengan sidik jari. Penyebab teknisnya belum dapat ditentukan dari teks publik.
+**Dugaan akar masalah:** waktu muat yang lama, proses masuk yang lebih sering gagal, kode verifikasi lewat SMS yang tidak berfungsi, dan belum tersedianya masuk dengan sidik jari. Penyebab teknisnya belum dapat ditentukan dari teks publik.
 
 **Dampak yang mungkin terjadi:** merchant terhambat saat mengakses aplikasi, terutama pada jam sibuk; pengalaman penggunaan menurun; dan sebagian pengguna mempertimbangkan kembali penggunaan aplikasi.
 
 | Nama pengguna | Bintang | Tanggal | Kutipan asli |
 |---|---:|---|---|
 | Boy Antoni | 2 | 8 Oktober 2026 | "sering nggak bisa, msh kurang cepat, enaksn yg lama. ini sering ga ngguan , tlng diperbaiki sy pindah dari bank yg lain kebni karena lancar, ni mulai payah pula." |
-| Bos AteQ | 2 | 10 Oktober 2026 | "Loading Lama.. Login lbh bnyk gagal daripada berhasilx" |
 | Ninis Sweet | 1 | 1 Oktober 2026 | "ribet beralih ke aplikasi ini tanpa info sama sekali mau masuk ribet skali. marketing tdk brtanggung jawab" |
+| Bos AteQ | 2 | 10 Oktober 2026 | "Loading Lama.. Login lbh bnyk gagal daripada berhasilx" |
 | Yessi Ma | 2 | 21 Oktober 2026 | "blum ada sidik jari tampilan jumlah setiap waktu TDK ada repotlah kalo masuk ngecek harus pake pasword ...maunya sidik jari cukup masih bagus bni marchant" |
+| William Harly | 1 | 2 Oktober 2026 | "Sangat mengecewakan. Data transaksi BNI Merchant tiba-tiba tidak lagi masuk karena seluruhnya dimigrasikan ke Wondr Merchant tanpa pemberitahuan. OTP via SMS juga tidak berfungsi dan harus lewat WA. Merchant Care mengatakan login bisa memakai kredensial kasir dari web BNI Merchant, tetapi ternyata tidak bisa. Saat dikonfirmasi via telepon, call center malah terputus dan setelahnya tidak dapat dihubungi kembali." |
 
-Tiga ulasan membahas masuk aplikasi, dua ulasan membahas performa, dan satu ulasan membahas fitur sidik jari. Bos AteQ membahas masuk aplikasi dan performa. Ulasan Yessi Ma menyatakan fitur sidik jari belum tersedia; ulasan tersebut **tidak membuktikan** adanya kegagalan masuk aplikasi.
+Empat ulasan membahas masuk aplikasi, dua ulasan membahas performa, dan satu ulasan membahas fitur sidik jari. Bos AteQ membahas masuk aplikasi dan performa. Ulasan Yessi Ma menyatakan fitur sidik jari belum tersedia; ulasan tersebut **tidak membuktikan** adanya kegagalan masuk aplikasi.
 
 **Rekomendasi:**
 
 - Telusuri penyebab kegagalan masuk aplikasi dan waktu muat yang lama melalui pengukuran teknis.
+- Uji pengiriman kode verifikasi lewat SMS pada beberapa operator.
 - Uji aplikasi pada perangkat dengan spesifikasi berbeda.
 - Evaluasi masuk dengan sidik jari atau biometrik sebagai pilihan kenyamanan, bukan pengganti keamanan.
 - Tetapkan ukuran keberhasilan sebelum melakukan perubahan.
 
-### 2.5 Migrasi Kurang Jelas (3 Ulasan, 18,8%)
+### 2.5 Migrasi Kurang Jelas (5 Ulasan, 22,7%)
 
-**Dugaan akar masalah:** informasi perpindahan dari aplikasi lama ke aplikasi baru dinilai kurang jelas. Satu pengguna melaporkan diminta mengajukan ulang, sedangkan pengguna lain menanyakan apakah notifikasi sudah berpindah.
+**Dugaan akar masalah:** informasi perpindahan dari aplikasi lama ke aplikasi baru dinilai kurang jelas. Dua pengguna melaporkan diminta mengajukan ulang atau kehilangan data transaksi, sedangkan pengguna lain menanyakan apakah notifikasi sudah berpindah.
 
-**Dampak yang mungkin terjadi:** kebingungan mengenai status akun lama, pengajuan ulang yang tidak perlu, dan kritik terhadap komunikasi pemasaran.
+**Dampak yang mungkin terjadi:** kebingungan mengenai status akun lama, pengajuan ulang yang tidak perlu, data transaksi yang tidak muncul di aplikasi baru, dan kritik terhadap komunikasi pemasaran.
 
 | Nama pengguna | Bintang | Tanggal | Kutipan asli |
 |---|---:|---|---|
 | Andry Teguh Aryanto | 5 | 29 Agustus 2026 | "admin ini untuk transaksi2 masuk lewat wondr merchant sudah bisa blm ya.. apa masih di aplikasi lama.. soalnya beberp hari krmn sampai skrg notifnya masih aplikasi lama. yg baru blm update otomatis" |
 | Ninis Sweet | 1 | 1 Oktober 2026 | "ribet beralih ke aplikasi ini tanpa info sama sekali mau masuk ribet skali. marketing tdk brtanggung jawab" |
 | Prasenda Valentina Ramadhani | 1 | 21 Oktober 2026 | "proses bikin QRIS nya lama banget.. awal ngajuin pake aplikasi yg lama, infonya udah mau discontinue dan suruh ngajuin lagi pake aplikasi wondr merchant. Pas udah ngajuin ada info 1HK, udah lbh 1HK gaada pergerakan. Gak gercep sama sekali 👎🏻" |
+| AHMAD WID SANJAYA | 4 | 11 Oktober 2026 | "Notifikasi dan mutasi transaksi tidak ada. Beda dengan aplikasi BNI Merchant sebelumnya. Semoga segera diperbaiki. Terimakasih. Over all looks good" |
+| William Harly | 1 | 2 Oktober 2026 | "Sangat mengecewakan. Data transaksi BNI Merchant tiba-tiba tidak lagi masuk karena seluruhnya dimigrasikan ke Wondr Merchant tanpa pemberitahuan. OTP via SMS juga tidak berfungsi dan harus lewat WA. Merchant Care mengatakan login bisa memakai kredensial kasir dari web BNI Merchant, tetapi ternyata tidak bisa. Saat dikonfirmasi via telepon, call center malah terputus dan setelahnya tidak dapat dihubungi kembali." |
 
 **Rekomendasi:**
 
 - Sediakan panduan migrasi langkah demi langkah.
-- Jelaskan status akun lama dan akun baru secara terpisah.
+- Jelaskan status akun lama dan akun baru secara terpisah, termasuk riwayat transaksi yang dipindahkan.
 - Samakan informasi dari tim pemasaran, layanan pelanggan, dan produk.
 - Hindari permintaan pengajuan ulang apabila data lama masih dapat digunakan.
 
-### 2.6 Penanganan Layanan (1 Ulasan, 6,3%)
+### 2.6 Transaksi dan Penerimaan Pembayaran (3 Ulasan, 13,6%)
 
-**Dugaan akar masalah:** satu pengguna menilai layanan pelanggan belum menyelesaikan masalah pendaftaran. Jumlah ini terlalu kecil untuk menilai keseluruhan mutu layanan.
+**Dugaan akar masalah:** transaksi QRIS dilaporkan gagal atau bermasalah, mutasi transaksi tidak muncul, dan data transaksi lama tidak masuk ke aplikasi baru setelah migrasi. Jumlahnya kecil, tetapi menyangkut fungsi inti aplikasi.
+
+**Dampak yang mungkin terjadi:** pembayaran tidak dapat diterima atau tidak dapat diverifikasi oleh merchant, sehingga berpotensi menghentikan kegiatan usaha pada saat transaksi berlangsung.
+
+| Nama pengguna | Bintang | Tanggal | Kutipan asli |
+|---|---:|---|---|
+| AHMAD WID SANJAYA | 4 | 11 Oktober 2026 | "Notifikasi dan mutasi transaksi tidak ada. Beda dengan aplikasi BNI Merchant sebelumnya. Semoga segera diperbaiki. Terimakasih. Over all looks good" |
+| William Harly | 1 | 2 Oktober 2026 | "Sangat mengecewakan. Data transaksi BNI Merchant tiba-tiba tidak lagi masuk karena seluruhnya dimigrasikan ke Wondr Merchant tanpa pemberitahuan. OTP via SMS juga tidak berfungsi dan harus lewat WA. Merchant Care mengatakan login bisa memakai kredensial kasir dari web BNI Merchant, tetapi ternyata tidak bisa. Saat dikonfirmasi via telepon, call center malah terputus dan setelahnya tidak dapat dihubungi kembali." |
+| Riski Saputra | 1 | 30 September 2026 | "qris nya sering bermasalah dan uang masuk gak bisa realtime" |
+
+Pernyataan ini merupakan laporan pengguna. Verifikasi diperlukan untuk memastikan apakah masalahnya berada pada penerimaan transaksi, pencatatan mutasi, atau tampilan laporan.
+
+**Rekomendasi:**
+
+- Cocokkan keluhan dengan catatan transaksi dan tiket operasional pada periode yang sama.
+- Tampilkan status transaksi terakhir dan waktu pembaruan data pada aplikasi.
+- Siapkan prosedur pemeriksaan cepat untuk merchant yang melaporkan transaksi tidak tercatat.
+
+### 2.7 Penanganan Layanan (2 Ulasan, 9,1%)
+
+**Dugaan akar masalah:** dua pengguna menilai layanan pelanggan belum menyelesaikan masalah yang dilaporkan, yaitu pendaftaran yang tertunda dan informasi kredensial yang tidak sesuai. Jumlah ini terlalu kecil untuk menilai keseluruhan mutu layanan.
 
 | Nama pengguna | Bintang | Tanggal | Kutipan asli |
 |---|---:|---|---|
 | Roziqin Ziqin | 1 | 28 Agustus 2026 | "pendaftaran lama ga acc, tanya csnya tidak menyelesaikan masalah" |
+| William Harly | 1 | 2 Oktober 2026 | "Sangat mengecewakan. Data transaksi BNI Merchant tiba-tiba tidak lagi masuk karena seluruhnya dimigrasikan ke Wondr Merchant tanpa pemberitahuan. OTP via SMS juga tidak berfungsi dan harus lewat WA. Merchant Care mengatakan login bisa memakai kredensial kasir dari web BNI Merchant, tetapi ternyata tidak bisa. Saat dikonfirmasi via telepon, call center malah terputus dan setelahnya tidak dapat dihubungi kembali." |
 
 **Rekomendasi:**
 
 - Berikan pemilik tiket dan estimasi penyelesaian yang jelas.
 - Sediakan jalur eskalasi untuk kasus yang belum selesai.
+- Samakan informasi kredensial dan prosedur yang disampaikan layanan pelanggan.
 - Catat penyebab tiket berulang agar perbaikan tidak hanya bersifat sementara.
 
-### 2.7 Penilaian Umum Tanpa Rincian (2 Ulasan, 12,5%)
+### 2.8 Penilaian Umum Tanpa Rincian (3 Ulasan, 13,6%)
 
-Dua ulasan negatif tidak menyebut objek masalah yang dapat diidentifikasi. Keduanya tetap dihitung dalam 16 ulasan negatif dan NSS, tetapi tidak dimasukkan ke tema fitur.
+Tiga ulasan negatif tidak menyebut objek masalah yang dapat diidentifikasi. Ketiganya tetap dihitung dalam 22 ulasan negatif dan NSS, tetapi tidak dimasukkan ke tema fitur.
 
 | Nama pengguna | Bintang | Tanggal | Catatan |
 |---|---:|---|---|
 | Fugo Frinks | 1 | 6 September 2026 | Ulasan berisi keluhan umum dan bahasa kuat, tetapi tidak menyebut objek masalah. Teks lengkap tersedia di dasbor. Kutipan tidak dicetak ulang di laporan ini karena memuat bahasa kasar. |
 | Tri Handoyo | 1 | 20 September 2026 | "bankke" — tidak cukup untuk mengidentifikasi masalah tertentu. |
+| Fahrizal Walikrama | 1 | 24 September 2026 | "tidak ada perkembangan hasil.. sudah lebih dari 7 hari" — proses yang dimaksud tidak disebutkan, sehingga tidak dikelompokkan ke tema pendaftaran. |
 
 ---
 
@@ -259,26 +307,26 @@ Dua ulasan negatif tidak menyebut objek masalah yang dapat diidentifikasi. Kedua
 
 ### 3.1 Sebaran Tema Pujian
 
-| Tema | Ulasan | Persentase dari 26 ulasan positif |
+| Tema | Ulasan | Persentase dari 40 ulasan positif |
 |---|---:|---:|
-| Kemudahan penggunaan dan manfaat usaha | 10 | 38,5% |
-| Transaksi dan notifikasi yang membantu | 7 | 26,9% |
-| Kelengkapan fitur | 3 | 11,5% |
-| Penggunaan terasa lancar | 2 | 7,7% |
-| Pelayanan memuaskan | 1 | 3,8% |
+| Kemudahan penggunaan dan manfaat usaha | 16 | 40,0% |
+| Transaksi dan notifikasi yang membantu | 8 | 20,0% |
+| Kelengkapan fitur | 3 | 7,5% |
+| Penggunaan terasa lancar | 2 | 5,0% |
+| Pelayanan memuaskan | 1 | 2,5% |
 
 Keterangan:
 
-- Total pada tabel (23) lebih besar dari 17 ulasan positif karena beberapa ulasan membahas lebih dari satu tema.
-- Sembilan ulasan positif lainnya berupa pujian umum tanpa tema spesifik. Karena itu, persentase tema tidak berjumlah 100%.
+- Total pada tabel (30) lebih besar dari 24 ulasan positif bertema karena enam ulasan membahas lebih dari satu tema.
+- Enam belas ulasan positif lainnya berupa pujian umum tanpa tema spesifik. Karena itu, persentase tema tidak berjumlah 100%.
 - Kutipan pada subbagian berikut merupakan contoh perwakilan; seluruh teks tersedia di dasbor.
-- Pujian umum tetap dihitung dalam 26 ulasan positif dan NSS, tetapi tidak dipaksakan ke dalam tema fitur.
+- Pujian umum tetap dihitung dalam 40 ulasan positif dan NSS, tetapi tidak dipaksakan ke dalam tema fitur.
 
-### 3.2 Kemudahan Penggunaan dan Manfaat Usaha (10 Ulasan)
+### 3.2 Kemudahan Penggunaan dan Manfaat Usaha (16 Ulasan)
 
-**Ulasan yang termasuk:** Intan Ramdani; Rizky Perdana; Coky_04 HM; Rani Nurjamilah; Siti nurjanah; Titin Rohayah; Mz_dj Mz_dj; Avengers1403; Motoshop Biel; reny rosita.
+**Ulasan yang termasuk:** Intan Ramdani; Rizky Perdana; Coky_04 HM; Rani Nurjamilah; Siti nurjanah; Titin Rohayah; Mz_dj Mz_dj; Mohamad Rifky Pramadanianto; Hera Vanny Aprianti; Andena Utama; Avengers1403; Motoshop Biel; reny rosita; Hevira Octia; Rido oktobriananta; satria.
 
-**Temuan:** pengguna menilai tampilan lebih sederhana, aplikasi mudah dipahami, dan manfaatnya terasa bagi kegiatan usaha.
+**Temuan:** pengguna menilai tampilan lebih sederhana, tidak sekaku aplikasi lama, dan manfaatnya terasa bagi kegiatan usaha.
 
 | Nama pengguna | Bintang | Tanggal | Kutipan asli |
 |---|---:|---|---|
@@ -286,14 +334,17 @@ Keterangan:
 | Siti nurjanah | 5 | 23 Agustus 2026 | "sangat mudah digunakan" |
 | Rizky Perdana | 5 | 17 September 2026 | "keren sangat membantu" |
 | Coky_04 HM | 5 | 25 September 2026 | "Mempermudah Para usahawan" |
+| Hevira Octia | 5 | 22 Oktober 2026 | "aplikasinya baguusss banget, mudah digunakan" |
+| satria | 5 | 22 Oktober 2026 | "Aplikasi nya mempunyai desain yang sangat menarik 👍" |
+| Mohamad Rifky Pramadanianto | 5 | 22 Oktober 2026 | "ini temanya baru ga begitu kaku kaya yang lama ya? pakai yang lama trus coba pindah ke sini feelsnya 11 12 kaya wondr. Tapi overall bagus cakep, bersih aja." |
 | Motoshop Biel | 5 | 23 Agustus 2026 | "sangat membantu usaha saya naik kelas" |
 | reny rosita | 5 | 20 Agustus 2026 | "Aplikasinya keren banget, tampilannya fresh. Membantu banget bagi pengusaha" |
 
-### 3.3 Transaksi dan Notifikasi yang Membantu (7 Ulasan)
+### 3.3 Transaksi dan Notifikasi yang Membantu (8 Ulasan)
 
-**Ulasan yang termasuk:** boyo 76; Rizki Ramadhan; Rani Nurjamilah; Titin Rohayah; Avengers1403; Stellaelisam; Acequatra.
+**Ulasan yang termasuk:** boyo 76; Rizki Ramadhan; Rani Nurjamilah; Titin Rohayah; Muhamad Chairul Risky Pratama; Avengers1403; Stellaelisam; Acequatra.
 
-**Temuan:** pengguna menyebut notifikasi akurat, transaksi mudah, dan pencairan dana menurut pengalaman mereka. Klaim mengenai frekuensi pencairan dan QRIS tanpa biaya merupakan pernyataan pengguna, bukan verifikasi kebijakan BNI.
+**Temuan:** pengguna menyebut notifikasi akurat, transaksi mudah, dan status pencairan dana yang dapat diperiksa sendiri. Klaim mengenai frekuensi pencairan dan QRIS tanpa biaya merupakan pernyataan pengguna, bukan verifikasi kebijakan BNI.
 
 | Nama pengguna | Bintang | Tanggal | Kutipan asli |
 |---|---:|---|---|
@@ -302,6 +353,7 @@ Keterangan:
 | Stellaelisam | 5 | 22 Agustus 2026 | "Oke banget mantap real time 5x settelment" |
 | Acequatra | 5 | 22 Agustus 2026 | "Menarik, ada program qris 0% dan qris dinamis juga" |
 | Avengers1403 | 5 | 22 September 2026 | "Tampilan menarik, modern, pencairan dana lebih cepat" |
+| Muhamad Chairul Risky Pratama | 5 | 23 Agustus 2026 | "yeay akhir nya release juga, enak bisa cek udh settle apa belum" |
 
 ### 3.4 Kelengkapan Fitur (3 Ulasan)
 
@@ -332,9 +384,9 @@ Keterangan:
 |---|---:|---|---|
 | Titi Duriati | 5 | 22 Agustus 2026 | "pelayanan memuaskan" |
 
-### 3.7 Pujian Umum Tanpa Tema Spesifik (9 Ulasan)
+### 3.7 Pujian Umum Tanpa Tema Spesifik (16 Ulasan)
 
-Sembilan ulasan positif berikut tidak menyebut fitur atau manfaat tertentu, sehingga tidak dimasukkan ke tema di atas: **ABD RASYID AZ Aci; Arys 12 Nan mo rua; Watini Purnomo; Kantiasih Wulandari; Iqbal Rasis; Natalia Natalia; geeslys; klfh88888; IMAAASSSSSAA.**
+Enam belas ulasan positif berikut tidak menyebut fitur atau manfaat tertentu, sehingga tidak dimasukkan ke tema di atas: **Iqbal Rasis; Watini Purnomo; Arys 12 Nan mo rua; ABD RASYID AZ Aci; Kantiasih Wulandari; Natalia Natalia; Novia Valentina; Reni Wulandari; Mansion Parfume; Ryan Rahmadiansyah; Eko Hadi; Ribka Mandagi; Zunijar Zunijar; geeslys; klfh88888; IMAAASSSSSAA.**
 
 Pujian umum tetap menunjukkan penerimaan, tetapi tidak cukup untuk menjelaskan aspek layanan yang perlu dipertahankan.
 
@@ -342,7 +394,7 @@ Pujian umum tetap menunjukkan penerimaan, tetapi tidak cukup untuk menjelaskan a
 
 ## 4. Penyebutan Lokasi dan Cabang
 
-Tidak ditemukan penyebutan nama kota, daerah, atau cabang BNI yang eksplisit dalam 43 ulasan. Data publik yang diambil juga tidak menyediakan informasi lokasi penulis yang dapat diverifikasi. Karena itu, kolom lokasi pada tabel ulasan diisi **N/A**.
+Tidak ditemukan penyebutan nama kota, daerah, atau cabang BNI yang eksplisit dalam 63 ulasan. Data publik yang diambil juga tidak menyediakan informasi lokasi penulis yang dapat diverifikasi. Karena itu, kolom lokasi pada tabel ulasan diisi **N/A**.
 
 Ketidakhadiran penyebutan lokasi bukan bukti bahwa tidak ada masalah atau keluhan di suatu daerah. Analisis wilayah memerlukan data tambahan, seperti data internal yang berizin atau survei langsung.
 
@@ -354,19 +406,19 @@ Ketidakhadiran penyebutan lokasi bukan bukti bahwa tidak ada masalah atau keluha
 
 | Aspek | Google Play | Apple App Store |
 |---|---|---|
-| Ulasan tertulis dianalisis | 35 | 8 |
-| Positif | 18 (51,4%) | 8 (100,0%) |
-| Negatif | 16 (45,7%) | 0 |
-| Netral | 1 (2,9%) | 0 |
-| NSS | +5,7 | +100,0 |
-| Rata-rata bintang ulasan | 3,43 | 5,00 |
-| Penilaian halaman toko | 68 (3,9/5) | 15 (4,7/5) |
+| Ulasan tertulis dianalisis | 55 | 8 |
+| Positif | 32 (58,2%) | 8 (100,0%) |
+| Negatif | 22 (40,0%) | 0 |
+| Netral | 1 (1,8%) | 0 |
+| NSS | +18,2 | +100,0 |
+| Rata-rata bintang ulasan | 3,64 | 5,00 |
+| Penilaian halaman toko | 73 (3,9/5) | 15 (4,7/5) |
 
 **Analisis:**
 
-- Google Play menunjukkan variasi sentimen yang lebih tinggi, dengan 16 ulasan negatif dan 10 ulasan berbintang satu.
+- Google Play menunjukkan variasi sentimen yang lebih tinggi, dengan 22 ulasan negatif dan 14 ulasan berbintang satu.
 - Apple App Store hanya memiliki 8 ulasan tertulis dan seluruhnya positif. Jumlah ini tidak cukup untuk menyimpulkan bahwa pengguna iOS lebih puas atau aplikasi lebih stabil di iOS.
-- Tidak ada pola gangguan khusus sistem operasi yang dapat disimpulkan dari 43 ulasan ini.
+- Tidak ada pola gangguan khusus sistem operasi yang dapat disimpulkan dari 63 ulasan ini.
 - Perbedaan NSS antara kedua kanal dipengaruhi oleh jumlah dan komposisi ulasan, bukan hanya oleh mutu aplikasi.
 
 ### 5.2 Media Sosial, Forum, dan Web
@@ -386,129 +438,109 @@ Dengan cakupan saat ini, perbandingan yang dapat dipertanggungjawabkan hanya ant
 
 ## 6. Dua Puluh Ulasan Terbaru
 
-Tabel berikut memuat 20 ulasan terbaru dari 43 ulasan. Tabel ini bukan sampel acak dan bukan peringkat pengaruh. Seluruh 43 ulasan tersedia dan dapat dicari di dasbor.
+Tabel berikut memuat 20 ulasan terbaru dari 63 ulasan, dengan urutan yang sama seperti dasbor. Tabel ini bukan sampel acak dan bukan peringkat pengaruh. Seluruh 63 ulasan tersedia dan dapat dicari di dasbor.
 
 | No | Tanggal | Nama pengguna | Platform | Bintang | Sentimen | Lokasi | Topik | Ringkasan | Kutipan asli |
 |---:|---|---|---|---:|---|---|---|---|---|
-| 1 | 21 Oktober 2026 | Prasenda Valentina Ramadhani | Google Play | 1 | Negatif | N/A | Pendaftaran, Migrasi | Pendaftaran QRIS lama dan pengajuan ulang saat migrasi. | "proses bikin QRIS nya lama banget.. awal ngajuin pake aplikasi yg lama, infonya udah mau discontinue dan suruh ngajuin lagi pake aplikasi wondr merchant. Pas udah ngajuin ada info 1HK, udah lbh 1HK gaada pergerakan. Gak gercep sama sekali 👎🏻" |
-| 2 | 21 Oktober 2026 | Yessi Ma | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Fitur | Belum ada masuk dengan sidik jari; pencatatan jumlah dinilai merepotkan. | "blum ada sidik jari tampilan jumlah setiap waktu TDK ada repotlah kalo masuk ngecek harus pake pasword ...maunya sidik jari cukup masih bagus bni marchant" |
-| 3 | 20 Oktober 2026 | Titin Rohayah | Google Play | 4 | Positif | N/A | Transaksi, Kemudahan dan tampilan | Transaksi dinilai cepat, akurat, dan mudah dipahami. | "layanan transaksi lebih cepat dan lebih akurat serta mudah dipahami oleh pengguna" |
-| 4 | 16 Oktober 2026 | Muhammad K. Alfikhri | Google Play | 1 | Negatif | N/A | Pembaruan laporan dan pencairan | Status pembaruan pencairan tidak tampil. | "Settlement tidak update" |
-| 5 | 10 Oktober 2026 | Bos AteQ | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Performa | Waktu muat lama dan proses masuk lebih sering gagal. | "Loading Lama.. Login lbh bnyk gagal daripada berhasilx" |
-| 6 | 8 Oktober 2026 | Boy Antoni | Google Play | 2 | Negatif | N/A | Performa | Gangguan penggunaan dan kecepatan menurun dibanding aplikasi lama. | "sering nggak bisa, msh kurang cepat, enaksn yg lama. ini sering ga ngguan , tlng diperbaiki sy pindah dari bank yg lain kebni karena lancar, ni mulai payah pula." |
-| 7 | 4 Oktober 2026 | Tanamo | Google Play | 4 | Negatif | N/A | Notifikasi | Suara notifikasi tidak tersedia. | "suara notifnya ga ada, ga kayak aplikasi sebelumnya" |
-| 8 | 1 Oktober 2026 | Ninis Sweet | Google Play | 1 | Negatif | N/A | Migrasi, Masuk aplikasi | Migrasi dan masuk aplikasi dinilai menyulitkan; komunikasi pemasaran dikritik. | "ribet beralih ke aplikasi ini tanpa info sama sekali mau masuk ribet skali. marketing tdk brtanggung jawab" |
-| 9 | 30 September 2026 | Siti asiah | Google Play | 5 | Positif | N/A | Performa | Penggunaan lancar. | "lancar banget" |
-| 10 | 25 September 2026 | Coky_04 HM | Google Play | 5 | Positif | N/A | Manfaat usaha | Membantu pelaku usaha. | "Mempermudah Para usahawan" |
-| 11 | 24 September 2026 | Hamid Aly ubaid | Google Play | 3 | Negatif | N/A | Notifikasi, Pembaruan laporan, Fitur | Meminta notifikasi suara, pilihan pencairan, hapus toko, dan perbaikan laporan. | "masih perlu banyak pengembangan, 1. notif suara nominal 2. pilihan pencairan realtime 3. menu menghapus toko yang sudah tidak di gunakan 4. laporan delay aplikasi biru sebelah sudah bisa semua" |
-| 12 | 23 September 2026 | ABD RASYID AZ Aci | Google Play | 5 | Positif | N/A | Penilaian umum | Pujian singkat. | "ok" |
-| 13 | 22 September 2026 | Avengers1403 | App Store | 5 | Positif | N/A | Kemudahan dan tampilan, Pembaruan pencairan | Tampilan modern dan pencairan dana lebih cepat menurut pengguna. | "Tampilan menarik, modern, pencairan dana lebih cepat" |
-| 14 | 20 September 2026 | Intan Ramdani | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan, Fitur | Tampilan sederhana dan fitur lebih lengkap. | "tampilan lebih simpel dan fiturnya lebih lengkap dr Apk Merchant sebelumnya. Semoga makin sukses BNI." |
-| 15 | 20 September 2026 | Tri Handoyo | Google Play | 1 | Negatif | N/A | Penilaian umum | Ketidakpuasan tanpa rincian. | "bankke" |
-| 16 | 17 September 2026 | Heri Setiawan | Google Play | 1 | Negatif | N/A | Pendaftaran | Status pendaftaran belum jelas setelah dua hari. | "udah dftr 2 hari g jadi gagal atau berhasil aplikasi g jelas" |
-| 17 | 17 September 2026 | Rizky Perdana | Google Play | 5 | Positif | N/A | Manfaat usaha | Aplikasi dinilai membantu. | "keren sangat membantu" |
-| 18 | 17 September 2026 | Su herman | Google Play | 3 | Netral | N/A | Penilaian umum | Penilaian ditunda. | "3 bintang dulu" |
-| 19 | 8 September 2026 | Barokah Channel | Google Play | 1 | Negatif | N/A | Pendaftaran | Pendaftaran melewati estimasi satu hari kerja tanpa keterangan. | "pemrosesan pendaftaran kata nya nunggu 1 hari kerja , tapi saat ini belum ada keterangan dan lama bgt gak seperti bank lain" |
-| 20 | 8 September 2026 | boyo 76 | Google Play | 5 | Positif | N/A | Notifikasi, Performa, Pembaruan pencairan | Notifikasi akurat, penggunaan lancar, dan laporan transaksi membantu. | "aplikasi fresh, akurat notifikasinya, lancar jaya, sangat rekomendasi untuk laporan transaksi" |
+| 1 | 22 Oktober 2026 | Hevira Octia | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Tampilan dan kemudahan penggunaan dipuji. | "aplikasinya baguusss banget, mudah digunakan" |
+| 2 | 22 Oktober 2026 | Mohamad Rifky Pramadanianto | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Tema baru dinilai tidak sekaku aplikasi lama. | "ini temanya baru ga begitu kaku kaya yang lama ya? pakai yang lama trus coba pindah ke sini feelsnya 11 12 kaya wondr. Tapi overall bagus cakep, bersih aja." |
+| 3 | 22 Oktober 2026 | Ribka Mandagi | Google Play | 5 | Positif | N/A | Penilaian umum | Pujian singkat. | "mantap, keren appsnya" |
+| 4 | 22 Oktober 2026 | Rido oktobriananta | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Dinilai lebih baik dibanding aplikasi lama. | "ihh lebih oke dibanding yang lama," |
+| 5 | 22 Oktober 2026 | satria | Google Play | 5 | Positif | N/A | Kemudahan dan tampilan | Desain aplikasi dinilai menarik. | "Aplikasi nya mempunyai desain yang sangat menarik 👍" |
+| 6 | 22 Oktober 2026 | Zunijar Zunijar | Google Play | 5 | Positif | N/A | Penilaian umum | Pujian satu kata. | "bagus" |
+| 7 | 21 Oktober 2026 | Prasenda Valentina Ramadhani | Google Play | 1 | Negatif | N/A | Pendaftaran, Migrasi | Pendaftaran QRIS lama dan pengajuan ulang saat migrasi. | "proses bikin QRIS nya lama banget.. awal ngajuin pake aplikasi yg lama, infonya udah mau discontinue dan suruh ngajuin lagi pake aplikasi wondr merchant. Pas udah ngajuin ada info 1HK, udah lbh 1HK gaada pergerakan. Gak gercep sama sekali 👎🏻" |
+| 8 | 21 Oktober 2026 | Yessi Ma | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Fitur | Belum ada masuk dengan sidik jari; pencatatan jumlah dinilai merepotkan. | "blum ada sidik jari tampilan jumlah setiap waktu TDK ada repotlah kalo masuk ngecek harus pake pasword ...maunya sidik jari cukup masih bagus bni marchant" |
+| 9 | 20 Oktober 2026 | Titin Rohayah | Google Play | 4 | Positif | N/A | Transaksi, Kemudahan dan tampilan | Transaksi dinilai cepat, akurat, dan mudah dipahami. | "layanan transaksi lebih cepat dan lebih akurat serta mudah dipahami oleh pengguna" |
+| 10 | 16 Oktober 2026 | Muhammad K. Alfikhri | Google Play | 1 | Negatif | N/A | Pembaruan laporan dan pencairan | Status pembaruan pencairan tidak tampil. | "Settlement tidak update" |
+| 11 | 11 Oktober 2026 | AHMAD WID SANJAYA | Google Play | 4 | Negatif | N/A | Notifikasi, Transaksi, Migrasi | Notifikasi dan mutasi transaksi tidak diterima. | "Notifikasi dan mutasi transaksi tidak ada. Beda dengan aplikasi BNI Merchant sebelumnya. Semoga segera diperbaiki. Terimakasih. Over all looks good" |
+| 12 | 10 Oktober 2026 | Bos AteQ | Google Play | 2 | Negatif | N/A | Masuk aplikasi, Performa | Waktu muat lama dan proses masuk lebih sering gagal. | "Loading Lama.. Login lbh bnyk gagal daripada berhasilx" |
+| 13 | 8 Oktober 2026 | Boy Antoni | Google Play | 2 | Negatif | N/A | Performa | Gangguan penggunaan dan kecepatan menurun dibanding aplikasi lama. | "sering nggak bisa, msh kurang cepat, enaksn yg lama. ini sering ga ngguan , tlng diperbaiki sy pindah dari bank yg lain kebni karena lancar, ni mulai payah pula." |
+| 14 | 8 Oktober 2026 | Neila Maisha | Google Play | 1 | Negatif | N/A | Pendaftaran | Pendaftaran belum menunjukkan perkembangan. | "ga da perkembangannya, daftar lama" |
+| 15 | 4 Oktober 2026 | Tanamo | Google Play | 4 | Negatif | N/A | Notifikasi | Suara notifikasi tidak tersedia. | "suara notifnya ga ada, ga kayak aplikasi sebelumnya" |
+| 16 | 2 Oktober 2026 | William Harly | Google Play | 1 | Negatif | N/A | Migrasi, Transaksi, Masuk aplikasi, Layanan pelanggan | Data transaksi tidak masuk setelah migrasi; kode verifikasi dan layanan bermasalah. | "Sangat mengecewakan. Data transaksi BNI Merchant tiba-tiba tidak lagi masuk karena seluruhnya dimigrasikan ke Wondr Merchant tanpa pemberitahuan. OTP via SMS juga tidak berfungsi dan harus lewat WA. Merchant Care mengatakan login bisa memakai kredensial kasir dari web BNI Merchant, tetapi ternyata tidak bisa. Saat dikonfirmasi via telepon, call center malah terputus dan setelahnya tidak dapat dihubungi kembali." |
+| 17 | 1 Oktober 2026 | Ninis Sweet | Google Play | 1 | Negatif | N/A | Migrasi, Masuk aplikasi | Migrasi dan masuk aplikasi dinilai menyulitkan; komunikasi pemasaran dikritik. | "ribet beralih ke aplikasi ini tanpa info sama sekali mau masuk ribet skali. marketing tdk brtanggung jawab" |
+| 18 | 30 September 2026 | Riski Saputra | Google Play | 1 | Negatif | N/A | Transaksi, Pembaruan pencairan | QRIS dilaporkan sering bermasalah dan dana tidak langsung tampil. | "qris nya sering bermasalah dan uang masuk gak bisa realtime" |
+| 19 | 30 September 2026 | Siti asiah | Google Play | 5 | Positif | N/A | Performa | Penggunaan lancar. | "lancar banget" |
+| 20 | 25 September 2026 | Coky_04 HM | Google Play | 5 | Positif | N/A | Manfaat usaha | Membantu pelaku usaha. | "Mempermudah Para usahawan" |
 
 ---
 
 ## 7. Rencana Tindak Lanjut
 
-Tabel berikut menggabungkan temuan dengan tindakan yang disarankan. **Ukuran keberhasilan merupakan usulan, bukan hasil yang telah tercapai.** Data publik tidak menyediakan nilai dasar internal, sehingga target perlu disesuaikan dengan data operasional BNI.
+### Prioritas tinggi
 
-| Prioritas | Masalah | Dampak yang mungkin | Tindakan | Penanggung jawab | Ukuran keberhasilan (usulan) |
-|---|---|---|---|---|---|
-| Tinggi | Pendaftaran belum tuntas | 6 ulasan; berpotensi menunda penggunaan QRIS | Tampilkan status per tahap, kirim pemberitahuan saat estimasi terlewati, dan sediakan eskalasi | Operasional merchant | 95% pengajuan selesai dalam 1 hari kerja |
-| Tinggi | Masuk dan performa aplikasi | 4 ulasan; mengganggu akses dan kecepatan penggunaan | Telusuri penyebab kegagalan masuk aplikasi dan waktu muat; ukur sebelum dan sesudah perbaikan | Rekayasa dan penjaminan mutu | 99% proses masuk berhasil; 95% penggunaan dimuat di bawah 3 detik |
-| Menengah | Notifikasi dan pembaruan laporan | 4 ulasan; menimbulkan ketidakpastian status transaksi dan dana | Periksa sinkronisasi notifikasi, tambahkan suara notifikasi dengan nominal, dan tampilkan waktu pembaruan status | Rekayasa dan pembayaran | Notifikasi terkirim di bawah 5 detik; status pembaruan sesuai jadwal |
-| Menengah | Migrasi kurang jelas | 3 ulasan; kebingungan dan pengajuan ulang | Sediakan panduan bertahap, status akun lama dan baru, serta komunikasi yang seragam | Produk dan operasional | Berkurangnya pengajuan ulang dan keluhan migrasi |
-| Peningkatan | Belum ada masuk dengan sidik jari | 1 ulasan; pengguna merasa harus mengetik kata sandi | Tambahkan biometrik sebagai pilihan kenyamanan | Rekayasa aplikasi | Tingkat penggunaan fitur di atas 50% |
-| Peningkatan | Belum ada notifikasi suara nominal | 2 ulasan; pengguna harus membuka aplikasi untuk melihat nominal | Tambahkan notifikasi suara dengan nominal transaksi | Rekayasa aplikasi | Kepuasan pengguna di atas 4,0/5 |
-| Peningkatan | Menu hapus toko belum tersedia | 1 ulasan; toko yang tidak digunakan tetap tampil | Tambahkan menu hapus atau nonaktifkan toko | Rekayasa aplikasi | Fitur digunakan dan tidak menimbulkan keluhan baru |
-| Peningkatan | Panduan migrasi belum memadai | 3 ulasan; kebingungan saat berpindah aplikasi | Sediakan panduan dan video singkat | Produk dan operasional | Berkurangnya keluhan terkait migrasi |
+1. **Status pendaftaran dan estimasi waktu** — 8 ulasan.
+   Tampilkan progres verifikasi per tahap, kirim pemberitahuan saat estimasi terlewati, dan sediakan jalur eskalasi. Ukuran keberhasilan: waktu persetujuan pada 95% pengajuan dan jumlah pengajuan yang melewati batas waktu.
 
-Catatan:
+2. **Ketersediaan transaksi QRIS dan pencatatan mutasi** — 3 ulasan.
+   Cocokkan keluhan dengan catatan transaksi dan tiket operasional, lalu perbaiki tampilan status transaksi terakhir. Ukuran keberhasilan: tingkat keberhasilan transaksi QRIS dan kelengkapan pencatatan mutasi.
 
-- Urutan prioritas mempertimbangkan jumlah keluhan dan potensi dampak, bukan insiden yang telah terverifikasi.
-- Seluruh 16 ulasan negatif telah diperhitungkan: 6 pendaftaran, 4 notifikasi dan pembaruan laporan, 4 akses dan performa, 3 migrasi, 1 penanganan layanan, dan 2 penilaian umum. Beberapa ulasan masuk lebih dari satu tema.
-- Target angka pada tabel adalah rekomendasi. Data internal diperlukan sebelum target tersebut dijadikan komitmen.
+3. **Akses aplikasi: waktu muat, proses masuk, dan kode verifikasi** — 5 ulasan.
+   Lakukan pengukuran teknis pada beberapa perangkat dan operator. Ukuran keberhasilan: tingkat keberhasilan masuk dan waktu muat pada 95% penggunaan.
+
+### Prioritas menengah
+
+4. **Sinkronisasi notifikasi dan pembaruan laporan** — 6 ulasan.
+   Pisahkan masalah tampilan status dari dugaan keterlambatan dana. Tambahkan notifikasi suara dengan nominal transaksi sebagai pilihan.
+
+5. **Komunikasi migrasi** — 5 ulasan.
+   Terbitkan panduan migrasi, jelaskan status akun lama dan baru, serta pastikan riwayat transaksi tersedia di aplikasi baru.
+
+6. **Penanganan layanan** — 2 ulasan.
+   Tetapkan pemilik tiket, estimasi penyelesaian, dan keseragaman informasi kredensial antar saluran layanan.
+
+### Peningkatan berkelanjutan
+
+7. **Pertahankan kekuatan yang diakui pengguna** — 16 ulasan menyebut kemudahan dan manfaat; 8 ulasan menyebut transaksi dan notifikasi yang membantu.
+   Perubahan antarmuka diuji terhadap alur yang sudah dipuji agar tidak menurunkan kemudahan penggunaan.
+
+8. **Perluasan cakupan data.**
+   Tambahkan saluran pengambilan data yang sah untuk kanal sosial, forum, dan ulasan web sebelum membuat pernyataan lintas kanal. Seluruh penambahan dihitung penuh, bukan sebagian.
+
+**Prasyarat sebelum menetapkan target:** data internal BNI diperlukan untuk memverifikasi waktu persetujuan pendaftaran, status pencairan dana, tingkat keberhasilan transaksi, dan jumlah tiket layanan. Tanpa data tersebut, laporan ini hanya mengukur pernyataan pengguna di ruang publik.
 
 ---
 
-## 8. Keterbatasan dan Rekomendasi Pengumpulan Data
+## 8. Keterbatasan dan Data Lanjutan yang Dibutuhkan
 
-### 8.1 Keterbatasan Analisis Ini
-
-1. **Cakupan terbatas pada dua kanal.** Analisis mencakup 43 ulasan tertulis dari Google Play dan App Store. Seluruh teks publik yang dapat diakses telah dimuat, tetapi jumlah ini tidak mewakili seluruh pengguna aplikasi.
-2. **Penilaian tanpa teks tidak dapat dianalisis.** Google Play menampilkan 68 penilaian, tetapi hanya 35 yang memiliki teks. App Store menampilkan 15 penilaian, tetapi hanya 8 yang memiliki teks. Penilaian tanpa teks tidak menyediakan nama atau isi publik.
-3. **Kanal lain belum terhubung.** Media sosial, forum, blog, portal berita, dan Google Reviews belum diambil. Statusnya tidak diambil, bukan nol keluhan.
-4. **Tidak ada informasi lokasi.** Lokasi penulis tidak tersedia dalam data publik yang diambil, sehingga analisis wilayah tidak dapat dilakukan.
-5. **Pelabelan belum sepenuhnya diperiksa manusia.** Data awal dilabeli manual. Ulasan baru menggunakan aturan kata kunci sederhana versi 1, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru. Pada data ini tidak ada ulasan yang ditandai perlu tinjauan.
-6. **Data publik dapat berubah.** Ulasan dapat ditambahkan, diubah, atau dihapus setelah tanggal laporan. Laporan ini menggambarkan kondisi data per 23 Oktober 2026.
-7. **Keluhan adalah pernyataan pengguna.** Teks ulasan belum tentu merupakan insiden yang terverifikasi. Laporan ini tidak menyimpulkan penyebab teknis atau kerugian finansial tanpa data pendukung.
-8. **Apple App Store sangat kecil cakupannya.** Delapan ulasan tertulis seluruhnya positif. Jumlah ini tidak cukup untuk membandingkan mutu platform.
-9. **Kutipan mempertahankan bentuk asli.** Ejaan, tanda baca, dan emoji pada kutipan tidak diubah. Satu ulasan yang memuat bahasa kasar tidak dicetak ulang di laporan ini; teks lengkapnya tetap tersedia di dasbor.
-10. **Tidak ada data internal.** Laporan ini tidak memuat data tiket layanan pelanggan, pusat panggilan, transaksi, atau survei internal BNI.
-
-### 8.2 Rekomendasi Pengumpulan Data Lanjutan
-
-1. **Data internal yang berizin:** gunakan data tiket layanan pelanggan, pusat panggilan, dan catatan operasional untuk memverifikasi keluhan pendaftaran, masuk aplikasi, notifikasi, dan pencairan dana.
-2. **Survei terstruktur:** lakukan survei kepada merchant aktif dengan pertanyaan yang konsisten agar kepuasan dan prioritas dapat diukur dari waktu ke waktu.
-3. **Diskusi kelompok terarah:** libatkan merchant dari berbagai skala usaha, seperti usaha mikro, ritel, dan makanan dan minuman.
-4. **Pemantauan media sosial:** gunakan akses yang sah dan periode pengamatan yang setara untuk kanal sosial, forum, dan web.
-5. **Perbandingan pesaing:** bandingkan pengalaman pengguna dengan aplikasi merchant bank lain pada periode dan cakupan yang sebanding.
-6. **Pemantauan berkala:** tetapkan nilai dasar dan interval pengukuran agar perubahan sentimen dapat dinilai secara wajar.
+- Ulasan publik tidak mewakili seluruh pengguna aplikasi. Dari 73 penilaian Google Play, 18 tidak menyertakan teks; dari 15 penilaian App Store, 7 tidak menyertakan teks. Penilaian tanpa teks tidak dapat dianalisis tanpa mengarang data.
+- Google Play menampilkan daftar ulasan terpisah menurut bahasa antarmuka. Kedua kumpulan telah dibaca dan digabung. Jika Google mengubah pembagian kumpulan tersebut, metode pengambilan perlu diperiksa ulang.
+- Jumlah ulasan bertambah antar penarikan. Setiap penarikan memuat seluruh halaman yang tersedia, sehingga angka pada laporan mengikuti pemeriksaan terakhir dan bukan hasil pembatasan sampel.
+- Ulasan App Store berjumlah kecil dan seluruhnya positif; jumlah ini tidak cukup untuk membandingkan mutu platform.
+- Data publik tidak menyediakan informasi lokasi yang dapat diverifikasi.
+- Pelabelan otomatis dapat keliru pada negasi, sarkasme, atau ulasan dengan beberapa aspek. Pada data akhir ini seluruh ulasan telah diberi label manual; belum ada pemeriksaan oleh penilai kedua.
+- Keluhan dalam ulasan merupakan pernyataan pengguna, bukan insiden yang telah terverifikasi.
+- Data internal yang diperlukan untuk menindaklanjuti: waktu persetujuan pendaftaran per pengajuan, catatan pengiriman notifikasi, status dan waktu pembaruan pencairan dana, tingkat keberhasilan transaksi QRIS, jumlah dan kategori tiket layanan, serta catatan perpindahan akun dari aplikasi lama.
 
 ---
 
 ## 9. Kesimpulan
 
-Aplikasi **wondr merchant by BNI** menunjukkan sentimen yang **cenderung positif** pada data publik yang dianalisis, dengan NSS **+23,3 poin** dari 43 ulasan tertulis. Namun, **37,2% ulasan negatif** menunjukkan bahwa pengalaman sebagian merchant masih perlu diperbaiki.
+Dari **63 ulasan tertulis publik** yang seluruhnya telah dianalisis, sentimen cenderung positif dengan **NSS +28,6 poin** (40 positif, 22 negatif, 1 netral) dan rata-rata **3,81 dari 5** bintang. Kekuatan aplikasi berada pada **kemudahan penggunaan dan manfaat usaha (16 ulasan)** serta **transaksi dan notifikasi yang membantu (8 ulasan)**.
 
-**Temuan utama:**
+Risiko reputasi terkonsentrasi pada **proses pendaftaran (8 ulasan)**, **notifikasi dan pembaruan laporan (6 ulasan)**, **akses dan performa aplikasi (5 ulasan)**, serta **migrasi dari aplikasi lama (5 ulasan)**. Tema **transaksi dan penerimaan pembayaran (3 ulasan)** perlu penanganan segera karena menyangkut fungsi inti, meskipun jumlahnya kecil. Porsi ulasan negatif meningkat pada September–Oktober, sehingga pemantauan lanjutan diperlukan.
 
-- Keluhan paling sering muncul pada **pendaftaran yang melewati estimasi tanpa status jelas**.
-- Keluhan lain terkonsentrasi pada **notifikasi dan pembaruan laporan**, **akses dan performa aplikasi**, serta **informasi migrasi**.
-- Faktor positif utama adalah **kemudahan penggunaan**, **manfaat bagi usaha**, dan **transaksi yang dinilai membantu**.
-- Google Play memiliki variasi sentimen yang lebih tinggi, sedangkan App Store hanya memiliki 8 ulasan tertulis yang seluruhnya positif. Perbandingan mutu platform belum dapat disimpulkan.
-- Kanal media sosial, forum, dan web belum terhubung. Ketiadaan data di kanal tersebut bukan berarti tidak ada keluhan.
-
-**Rekomendasi prioritas:**
-
-1. Perjelas status dan jalur eskalasi pendaftaran.
-2. Ukur dan perbaiki penyebab kegagalan masuk aplikasi serta waktu muat.
-3. Periksa sinkronisasi notifikasi dan tampilan pembaruan status pencairan.
-4. Sediakan panduan migrasi yang konsisten.
-5. Pertimbangkan fitur sidik jari, notifikasi suara nominal, dan menu hapus toko sebagai peningkatan berikutnya.
+Laporan ini tidak menyimpulkan adanya gangguan sistem. Kesimpulan tersebut memerlukan data operasional internal. Cakupan saat ini terbatas pada dua toko aplikasi; sembilan kanal lain belum terhubung dan tidak dihitung sebagai nol keluhan.
 
 ---
 
-## Lampiran
+## Lampiran A — Metode
 
-### A. Metodologi
+1. **Sumber.** Halaman publik Google Play (`id.bni.wfb`) dan halaman ulasan publik App Store Indonesia (`6741567238`). Tidak ada upaya melewati proses masuk atau perlindungan akses.
+2. **Pengambilan.** Google Play dibaca pada dua kumpulan ulasan (bahasa antarmuka Indonesia dan Inggris) dengan urutan terbaru sampai halaman terakhir, kemudian digabung berdasarkan ID ulasan. App Store dibaca dari halaman ulasan publik dan ditandai bila masih ada halaman lanjutan.
+3. **Kelengkapan.** Seluruh ulasan tertulis yang tersedia pada kedua kanal dimuat; tidak ada pembatasan jumlah atau pengambilan sampel. Jumlah ulasan dilaporkan terpisah dari jumlah penilaian halaman toko.
+4. **Pelabelan sentimen.** Ditentukan dari teks, bukan dari penilaian bintang. Label pada seluruh data akhir ditentukan secara manual. Aturan kata kunci versi 1 dipakai untuk ulasan baru dan menandai teks yang belum pasti sebagai perlu tinjauan; empat ulasan yang tiba setelah penarikan awal ditandai demikian lalu diperiksa manual.
+5. **Perhitungan.** `NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100`. Ulasan yang perlu tinjauan tidak dihitung sebagai netral dan tidak masuk penyebut. Persentase tema dihitung dari jumlah ulasan negatif atau positif pada filter terpilih.
+6. **Pencegahan duplikasi.** Berdasarkan platform dan ID ulasan, dengan pencocokan tambahan berdasarkan nama pengguna, tanggal, dan teks.
+7. **Riwayat.** Perubahan pada ulasan disimpan sebagai versi sebelumnya; versi lama tidak dihitung sebagai ulasan baru.
+8. **Kategori.** Dua belas kategori topik; satu ulasan dapat masuk lebih dari satu kategori.
 
-- **Sumber:** halaman publik Google Play dan Apple App Store. Tidak ada upaya melewati proses masuk atau perlindungan akses.
-- **Pengambilan Google Play:** daftar ulasan publik dengan urutan terbaru untuk wilayah Indonesia. Seluruh halaman yang dapat diakses dibaca; tidak ada pembatasan jumlah ulasan.
-- **Pengambilan App Store:** halaman ulasan publik App Store Indonesia.
-- **Penyaringan:** hanya ulasan berteks yang dianalisis. Penilaian tanpa teks tidak dapat menyertakan nama atau isi publik.
-- **Penyimpanan:** hasil disimpan di komputer tempat dasbor dijalankan. Ulasan baru ditambahkan, sedangkan perubahan teks, bintang, atau tanggal disimpan sebagai versi sebelumnya.
-- **Pencegahan duplikasi:** berdasarkan platform dan ID ulasan, dengan pencocokan tambahan berdasarkan nama pengguna, tanggal, dan teks.
-- **Pelabelan sentimen:** data awal dilabeli manual; ulasan baru menggunakan aturan kata kunci versi 1. Penilaian bintang tidak menentukan sentimen secara otomatis.
-- **Kategori:** 12 kategori topik; satu ulasan dapat masuk lebih dari satu kategori.
-- **NSS:** `(positif − negatif) ÷ jumlah ulasan berlabel × 100`. Ulasan yang perlu tinjauan tidak dihitung sebagai netral.
+## Lampiran B — Sumber Data
 
-### B. Sumber Data
+- Google Play: <https://play.google.com/store/apps/details?id=id.bni.wfb&hl=id>
+- Apple App Store: <https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?l=id>
+- Dasbor: `npm start` lalu buka `http://127.0.0.1:4173/`
 
-- Google Play: https://play.google.com/store/apps/details?id=id.bni.wfb&hl=id
-- Apple App Store: https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?l=id
+## Lampiran C — Pernyataan Independensi
 
-### C. Dasbor Lokal
-
-Dasbor interaktif tersedia di `http://127.0.0.1:4173/` setelah menjalankan `npm start`. Dasbor memuat seluruh ulasan yang tersimpan, dapat mencari berdasarkan nama atau teks, menampilkan riwayat perubahan, dan menyediakan ekspor CSV sesuai filter.
-
----
-
-**Laporan ini disusun berdasarkan data publik yang tersedia per 23 Oktober 2026. Seluruh angka, nama pengguna, tanggal, dan kutipan berasal dari data yang tersimpan tanpa fabrikasi. Kutipan merupakan pernyataan pengguna dan tidak selalu mencerminkan pandangan penyusun laporan.**
-
-**Pernyataan independensi:** dasbor dan laporan ini merupakan produk independen, bukan produk resmi BNI, dan tidak mewakili pandangan atau kebijakan PT Bank Negara Indonesia (Persero) Tbk.
+Dasbor dan laporan ini merupakan produk independen, bukan produk resmi BNI, dan tidak mewakili pandangan atau kebijakan PT Bank Negara Indonesia (Persero) Tbk.

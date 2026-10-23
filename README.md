@@ -5,7 +5,8 @@ Dasbor lokal untuk menganalisis sentimen ulasan publik **wondr merchant by BNI**
 ## Fitur
 
 - **Tarik Analisis** mengambil ulasan dari halaman publik kedua toko aplikasi melalui aplikasi lokal.
-- Seluruh ulasan tertulis yang dapat diakses dimuat, dapat dicari berdasarkan nama atau teks, dan dapat diunduh sebagai CSV.
+- Seluruh ulasan tertulis yang dapat diakses dimuat sampai halaman terakhir, dapat dicari berdasarkan nama atau teks, dan dapat diunduh sebagai CSV.
+- Google Play memisahkan daftar ulasannya menurut bahasa antarmuka. Kedua kumpulan (bahasa Indonesia dan bahasa Inggris) dibaca keduanya lalu digabung berdasarkan ID ulasan agar tidak ada ulasan terlewat.
 - Ringkasan sentimen, Net Sentiment Score (NSS), sebaran bintang, peringkat tema keluhan, faktor pendorong positif, dan cakupan sumber.
 - Detail ulasan menampilkan teks asli, alasan pelabelan, sumber, waktu pengambilan, serta riwayat perubahan.
 - Status setiap sumber dilaporkan secara terpisah. Sumber yang belum terhubung tidak dihitung sebagai nol keluhan.
@@ -36,13 +37,14 @@ Suite pengujian mencakup perhitungan sentimen, filter, klasifikasi, pembacaan su
 - Google Play: <https://play.google.com/store/apps/details?id=id.bni.wfb&hl=id>
 - Apple App Store: <https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?l=id>
 
-Data awal per 23 Oktober 2026 memuat 35 ulasan tertulis Google Play dari 68 penilaian halaman toko, serta 8 ulasan tertulis App Store dari 15 penilaian halaman toko. Penilaian tanpa teks tidak menyediakan nama atau isi publik sehingga tidak dapat dianalisis.
+Data awal per 23 Oktober 2026 memuat 55 ulasan tertulis Google Play — gabungan 38 ulasan pada kumpulan bahasa Indonesia dan 17 ulasan pada kumpulan bahasa Inggris — dari 73 penilaian halaman toko (18 penilaian tanpa teks), serta 8 ulasan tertulis App Store dari 15 penilaian halaman toko (7 penilaian tanpa teks). Penilaian tanpa teks tidak menyediakan nama atau isi publik sehingga tidak dapat dianalisis. Jumlah ulasan dan penilaian bertambah sewaktu karena ulasan baru terus masuk; setiap penarikan memuat seluruh halaman yang tersedia.
 
 Kanal media sosial, forum, blog, portal berita, dan Google Reviews belum terhubung. Statusnya **tidak diambil**, bukan nol keluhan.
 
 ## Metode
 
 - Analisis menggunakan seluruh teks ulasan yang dapat diakses publik, tanpa pembatasan jumlah ulasan.
+- Pengambilan Google Play membaca setiap kumpulan ulasan yang ditampilkan menurut bahasa antarmuka sampai halaman terakhir, lalu menggabungkan hasilnya berdasarkan ID ulasan.
 - Sentimen ditentukan dari teks, bukan dari jumlah bintang. Data awal dilabeli manual; ulasan baru menggunakan aturan kata kunci versi 1.
 - NSS dihitung sebagai `(positif − negatif) ÷ jumlah ulasan berlabel × 100`. Ulasan yang perlu tinjauan tidak dihitung sebagai netral.
 - Duplikasi dicegah berdasarkan platform dan ID ulasan, dengan pencocokan tambahan berdasarkan nama pengguna, tanggal, dan teks.
@@ -52,6 +54,7 @@ Kanal media sosial, forum, blog, portal berita, dan Google Reviews belum terhubu
 ## Keterbatasan
 
 - Ulasan publik tidak mewakili seluruh pengguna aplikasi.
+- Pembagian kumpulan ulasan oleh Google Play dapat berubah; jika berubah, metode pengambilan perlu diperiksa ulang agar cakupan tetap lengkap.
 - Ulasan App Store berjumlah kecil dan seluruhnya positif; jumlah ini tidak cukup untuk membandingkan mutu platform.
 - Data publik tidak menyediakan informasi lokasi yang dapat diverifikasi.
 - Pelabelan otomatis dapat keliru pada negasi, sarkasme, atau ulasan dengan beberapa aspek.

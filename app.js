@@ -26,7 +26,6 @@ const color = value => /^#[\da-f]{3,8}$/i.test(value || '') ? value : '#7c8799';
 const colors = { positive:'#269e86', negative:'#e37c75', neutral:'#aeb9cc', unclassified:'#a58ac4' };
 const sentimentKeys = Object.keys(colors);
 const sourceStatusNames = { success:'Berhasil', partial:'Berhasil sebagian', error:'Gagal', unsupported:'Belum terhubung', snapshot:'Data tersimpan · belum diperbarui' };
-const runStatusNames = { success:'Berhasil', partial:'Berhasil sebagian', error:'Gagal', running:'Sedang berjalan' };
 const activeSourceIds = new Set(['play','appstore']);
 function safeHttps(value) {
   try {
@@ -80,7 +79,7 @@ const paths = {
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.message}</svg>`; }
 let reviews = [...seedReviews];
 const state = { view:'overview', platform:'all', period:'all', from:'', to:'', trend:'week', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', page:1 };
-const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, error:'', attempt:null };
+const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null };
 const views = { overview:'Ringkasan', sentiment:'Analisis sentimen', reviews:'Ulasan & percakapan', platforms:'Cakupan platform', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
 const isBusy = () => sync.loading || sync.busy || sync.running;
@@ -120,14 +119,15 @@ function sourceFor(p) {
   };
 }
 const numericCount = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+const storeRatingCount = id => { const p = platformById(id); return numericCount(sourceFor(p).ratingCount ?? p?.ratingCount) ?? 0; };
 const fetchedCount = source => numericCount(source?.fetched);
 function wasFetched(source) {
   return source && !['unsupported','snapshot'].includes(source.status) && (source.fetched === true || fetchedCount(source) > 0 || (['success','partial'].includes(source.status) && source.fetched !== false));
 }
 function nav() {
   $('#sidebar').innerHTML = `<nav><div class="nav-label">Ruang kerja</div>${Object.entries(views).map(([id,label],i) => `${i === 4 ? '<div class="sidebar-separator"></div><div class="nav-label">Data & transparansi</div>' : ''}<button class="nav-item ${state.view===id?'active':''}" data-view="${id}" aria-label="${esc(label)}" ${state.view===id?'aria-current="page"':''} title="${esc(label)}">${icon(['grid','pulse','message','layers','book'][i])}<span>${esc(label)}</span>${id==='reviews'?`<span class="nav-count">${reviews.length}</span>`:''}</button>`).join('')}</nav>
-    <div class="sidebar-bottom"><div class="local-card"><div class="local-card-title">Data tersimpan</div><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban.<br>Pembaruan hanya terjadi saat Tarik Analisis dijalankan, bukan terus-menerus.</p></div><div class="profile"><div class="profile-avatar">DA</div><div><strong>Analis Data</strong><small>Ruang kerja lokal</small></div></div></div>`;
-  $('#topbar').innerHTML = `<div class="breadcrumb">${icon('home')}<span>Ruang kerja</span><span>/</span><strong>${esc(views[state.view])}</strong></div><div class="topbar-right"><div class="snapshot-indicator"><span class="dot"></span><span>${sync.loaded?'Data tersimpan':'Data awal'} · bukan pantauan langsung</span></div><span class="topbar-separator"></span><span class="topbar-brand">WONDR MERCHANT</span><span class="avatar-light">DA</span></div>`;
+    <div class="sidebar-bottom"><div class="profile"><div class="profile-avatar">DA</div><div><strong>Analis Data</strong><small>Ruang kerja lokal</small></div></div></div>`;
+  $('#topbar').innerHTML = `<div class="breadcrumb">${icon('home')}<span>Ruang kerja</span><span>/</span><strong>${esc(views[state.view])}</strong></div><div class="topbar-right"><span class="topbar-brand">WONDR MERCHANT</span><span class="avatar-light">DA</span></div>`;
 }
 function heading() {
   const subtitles = {
@@ -140,18 +140,6 @@ function heading() {
   const title = state.view === 'overview' ? 'Pemantauan sentimen' : views[state.view];
   return `<section class="page-heading"><div><div class="eyebrow">Analisis pengalaman pelanggan</div><h1>${esc(title)}</h1><p>${esc(subtitles[state.view])}</p></div><div class="heading-actions"><button class="btn btn-primary" data-action="analyze" ${isBusy()?'disabled aria-busy="true"':''}>${isBusy()?'<span class="spinner" aria-hidden="true"></span>':icon('pulse')}${isBusy()?'Mengambil dan menganalisis…':'Tarik Analisis'}</button></div></section>`;
 }
-function dataNote() {
-  const attempt = sync.attempt || sync.lastRun;
-  const resultSources = Array.isArray(sync.lastRun?.sources) ? sync.lastRun.sources : [];
-  const fetched = resultSources.filter(wasFetched);
-  const unsupported = platforms.filter(p => sourceFor(p).status === 'unsupported');
-  const sourceNames = sources => sources.map(s => platformById(s.id)?.short || s.id).join(', ');
-  const versions = reviews.reduce((sum,r) => sum + reviewHistory(r).length,0);
-  const status = isBusy() ? 'running' : attempt?.status;
-  const errorState = Boolean(sync.error) || status === 'error';
-  const attemptText = attempt ? `${runStatusNames[status] || status || 'Status tidak tersedia'} · mulai ${timeLabel(attempt.startedAt)}${attempt.finishedAt?` · selesai ${timeLabel(attempt.finishedAt)}`:''}` : isBusy() ? 'Memuat status dan data tersimpan…' : 'Belum ada pembaruan data yang terkonfirmasi.';
-  return `<section class="data-note sync-note ${errorState?'sync-error':status==='partial'?'sync-partial':''}" aria-label="Status data" role="status" aria-live="polite"><div class="sync-note-body"><strong>Pembaruan tidak otomatis, bukan pantauan langsung.</strong><p>Pengambilan terakhir: ${esc(attemptText)}</p>${isBusy()?'<p>Proses sedang berjalan; ulasan yang sudah tersedia tetap ditampilkan. Seluruh sumber aktif sedang diambil tanpa mengubah filter Anda.</p>':''}${sync.error?`<p class="sync-error-message"><strong>Kesalahan sistem:</strong> ${esc(sync.error)} Data yang sedang ditampilkan tetap dipertahankan. Silakan coba lagi melalui Tarik Analisis.</p>`:''}<p>Sumber yang berhasil diambil pada proses terakhir: ${fetched.length?`${fetched.length} (${esc(sourceNames(fetched))})`:'belum ada'}. Sumber yang belum terhubung: ${unsupported.length} dari ${platforms.length} (${esc(unsupported.map(p=>p.short).join(', ')) || 'tidak ada'}).</p>${sync.lastRun?`<p>Hasil pembaruan tersimpan: ${integer(numericCount(sync.lastRun.added) ?? 0)} baru · ${integer(numericCount(sync.lastRun.updated) ?? 0)} diperbarui · ${integer(numericCount(sync.lastRun.unchanged) ?? 0)} tidak berubah. Status: ${esc(runStatusNames[sync.lastRun.status] || sync.lastRun.status)}.</p>`:''}<p><strong>${integer(reviews.length)} ulasan unik tersimpan</strong> · ${versions?`${integer(versions)} versi sebelumnya tersedia pada detail ulasan.`:'belum ada versi sebelumnya pada detail ulasan.'} ${sync.loaded?'Menampilkan data yang tersimpan di komputer ini.':`Menampilkan data awal per ${esc(dateLabel(observationDate,{year:'numeric'}))}; bukan hasil pengambilan data daring.`}</p>${sync.error&&sync.loaded?'<p>Status sumber di bawah mengacu pada pemeriksaan terakhir, bukan keberhasilan proses yang gagal.</p>':''}</div><button class="btn-text" data-view="platforms">Status sumber ${icon('arrow')}</button></section>`;
-}
 function filters() {
   const months = [...new Set(reviews.filter(r => validDay(r.date)).map(r => r.date.slice(0,7)))].sort();
   if (/^\d{4}-\d{2}$/.test(state.period) && !months.includes(state.period)) months.push(state.period);
@@ -161,7 +149,7 @@ function filters() {
 function metricCards(data) {
   const s = summary(data), sources = new Set(data.map(r=>r.platform)).size;
   const metrics = [
-    {label:'Total ulasan',value:integer(s.total),unit:'',icon:'message',cls:'',sub:`<strong>${sources} platform</strong> dengan ulasan`,width:0},
+    {label:'Total ulasan',value:integer(s.total),unit:'',icon:'message',cls:'',sub:sources?`<strong>${integer(sources)} kanal</strong> memiliki ulasan`:'<strong>Belum ada ulasan</strong> pada filter ini',width:0},
     {label:'Sentimen positif',value:s.classified?number(s.positivePct):'—',unit:s.classified?'%':'',icon:'smile',cls:'positive',sub:`<strong>${s.positive} ulasan</strong> dari ${s.classified} ulasan berlabel`,width:s.positivePct||0},
     {label:'Sentimen negatif',value:s.classified?number(s.negativePct):'—',unit:s.classified?'%':'',icon:'frown',cls:'negative',sub:`<strong>${s.negative} ulasan</strong> dari ${s.classified} ulasan berlabel`,width:s.negativePct||0},
     {label:'Skor sentimen neto (NSS)',value:s.classified?`${s.nss>0?'+':''}${number(s.nss)}`:'—',unit:'',icon:'pulse',cls:'nss',sub:s.classified?`<strong>${s.nss>10?'Cenderung positif':s.nss>0?'Positif tipis':s.nss<0?'Cenderung negatif':'Berimbang'}</strong> · poin`:'Belum ada ulasan berlabel',width:s.classified?Math.abs(s.nss):0},
@@ -260,16 +248,16 @@ function coverage() {
 function methodology() {
   const base=summary(seedReviews);
   return `<div class="method-grid">
-    <article class="card method-card"><h2>Sumber dan cakupan</h2><p>Data awal diambil pada ${esc(dateLabel(observationDate,{year:'numeric'}))}: <strong>${seedReviews.filter(r=>r.platform==='play').length} ulasan tertulis Google Play</strong> dan <strong>${seedReviews.filter(r=>r.platform==='appstore').length} ulasan tertulis App Store</strong>. Aplikasi yang dianalisis adalah wondr merchant by BNI (Play: <strong>id.bni.wfb</strong>; App Store: <strong>id6741567238</strong>). Aplikasi wondr untuk konsumen dan BNI Merchant lama tidak termasuk dalam analisis ini.</p><p>Tombol Tarik Analisis mengambil data dari kedua toko aplikasi yang terhubung dan memuat seluruh halaman ulasan tertulis yang tersedia, dengan urutan terbaru untuk Google Play. Jumlah ini berbeda dari 68 penilaian Play Store dan 15 penilaian App Store karena penilaian tanpa teks tidak menyertakan nama atau isi yang dapat dianalisis. Filter hanya membatasi tampilan, bukan proses pengambilan data. Platform lain belum terhubung dan dilaporkan sebagai belum diambil, bukan nol keluhan.</p><div class="method-callout">Konten promosi resmi, pemberitaan, ulasan duplikat, dan komentar tentang produk lain tidak diperlakukan sebagai pengalaman merchant.</div></article>
+    <article class="card method-card"><h2>Sumber dan cakupan</h2><p>Data awal diambil pada ${esc(dateLabel(observationDate,{year:'numeric'}))}: <strong>${seedReviews.filter(r=>r.platform==='play').length} ulasan tertulis Google Play</strong> dan <strong>${seedReviews.filter(r=>r.platform==='appstore').length} ulasan tertulis App Store</strong>. Aplikasi yang dianalisis adalah wondr merchant by BNI (Play: <strong>id.bni.wfb</strong>; App Store: <strong>id6741567238</strong>). Aplikasi wondr untuk konsumen dan BNI Merchant lama tidak termasuk dalam analisis ini.</p><p>Tombol Tarik Analisis mengambil data dari kedua toko aplikasi yang terhubung dan memuat seluruh halaman pada setiap kumpulan ulasan yang tersedia, dengan urutan terbaru. Google Play memisahkan daftar ulasannya menurut bahasa antarmuka, sehingga kumpulan bahasa Indonesia dan kumpulan bahasa Inggris dibaca keduanya lalu digabung berdasarkan ID ulasan. Jumlah ulasan tertulis berbeda dari ${integer(storeRatingCount('play'))} penilaian Play Store dan ${integer(storeRatingCount('appstore'))} penilaian App Store karena penilaian tanpa teks tidak menyertakan nama atau isi yang dapat dianalisis. Filter hanya membatasi tampilan, bukan proses pengambilan data. Platform lain belum terhubung dan dilaporkan sebagai belum diambil, bukan nol keluhan.</p><div class="method-callout">Konten promosi resmi, pemberitaan, ulasan duplikat, dan komentar tentang produk lain tidak diperlakukan sebagai pengalaman merchant.</div></article>
     <article class="card method-card"><h2>Cara membaca sentimen</h2><ul><li><strong>Positif:</strong> pujian, kepuasan, atau manfaat yang dinyatakan pengguna.</li><li><strong>Negatif:</strong> keluhan, masalah penggunaan, dan kekurangan yang mengganggu.</li><li><strong>Netral:</strong> informasi atau pertanyaan tanpa penilaian yang jelas; bukan label pengganti untuk teks yang tidak dipahami.</li><li><strong>Perlu tinjauan:</strong> teks belum cukup jelas untuk dinilai; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</li></ul><div class="formula">NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100</div><p>Ulasan berlabel sentimen mencakup ulasan positif, negatif, dan netral. Data awal: (${base.positive} − ${base.negative}) ÷ ${base.classified} × 100 = <strong>${base.nss>0?'+':''}${number(base.nss)} poin</strong>.</p></article>
-    <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label pada data awal ditentukan dari pembacaan teks; teks yang tidak berubah mempertahankan labelnya. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (versi 1):</strong> menggunakan aturan kata kunci sederhana, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru; teks yang tidak dikenali ditandai perlu ditinjau.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play diambil dengan urutan terbaru; seluruh 35 teks yang tersedia telah dimuat. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh 68 penilai maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
+    <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label pada data awal ditentukan dari pembacaan teks; teks yang tidak berubah mempertahankan labelnya. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (versi 1):</strong> menggunakan aturan kata kunci sederhana, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru; teks yang tidak dikenali ditandai perlu ditinjau.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh ${integer(storeRatingCount('play'))} penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
     <article class="card method-card"><h2>Penyimpanan dan jejak perubahan</h2><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban. Dasbor memuat data tersimpan saat dibuka; pembaruan tidak berlangsung terus-menerus. Status sumber dan waktu pemeriksaan mengikuti data tersimpan. Gangguan pengambilan tidak menghapus data yang sudah tersedia.</p><p>Ulasan baru ditambahkan, sedangkan perubahan teks, penilaian bintang, atau tanggal disimpan sebagai versi sebelumnya. Detail ulasan menampilkan waktu pengambilan, waktu pertama dan terakhir tercatat, serta riwayat perubahan. Versi lama tidak dihitung sebagai ulasan baru dalam grafik.</p><p>Jika data tersimpan tidak dapat dimuat saat awal, data awal tetap ditampilkan disertai pesan kesalahan yang jelas. Penilaian halaman toko hanya ditampilkan dari data daring yang berhasil diambil dan dipisahkan dari penilaian pada ulasan. Sumber publik tidak memverifikasi identitas penulis maupun kebenaran isi keluhan.</p></article>
   </div><article class="card method-card category-card"><h2>Kategori yang didukung</h2>${Object.values(tags).map(label=>`<span class="tag">${esc(label)}</span>`).join('')}<p>Seluruh kategori tetap terdaftar di bagian ini, termasuk yang belum memiliki ulasan. Jumlah ulasan per kategori mengikuti filter platform dan tanggal. Berkas CSV pada halaman ulasan mengikuti filter yang aktif.</p></article>`;
 }
 function render() {
   nav();
   const data=analyticalReviews();
-  $('#main').innerHTML=heading()+dataNote()+(state.view!=='methodology'?filters():'')+(state.view==='overview'?overview(data):state.view==='sentiment'?analysis(data):state.view==='reviews'?reviewTable(data,true):state.view==='platforms'?coverage():methodology());
+  $('#main').innerHTML=heading()+(state.view!=='methodology'?filters():'')+(state.view==='overview'?overview(data):state.view==='sentiment'?analysis(data):state.view==='reviews'?reviewTable(data,true):state.view==='platforms'?coverage():methodology());
 }
 function clearComplaint() {
   if (state.complaint) { state.complaint=''; state.sentiment='all'; }
@@ -310,7 +298,7 @@ async function requestData(url, method='GET') {
 }
 function applyPayload(payload) {
   reviews=payload.reviews;
-  sync.sources=payload.sources; sync.lastRun=payload.lastRun; sync.runs=payload.runs; sync.running=payload.running; sync.loaded=true; sync.error='';
+  sync.sources=payload.sources; sync.lastRun=payload.lastRun; sync.runs=payload.runs; sync.running=payload.running; sync.loaded=true;
   if (!payload.running) sync.attempt=null;
 }
 function scheduleRefresh() {
@@ -322,7 +310,7 @@ async function loadData() {
   sync.requesting=true;
   try { applyPayload(await requestData('/api/data')); }
   catch (error) {
-    sync.error=`${sync.loaded?'Status data tidak dapat diperbarui.':'Data tersimpan gagal dimuat; data awal digunakan.'} ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'}`;
+    notify(`${sync.loaded?'Status data tidak dapat diperbarui.':'Data tersimpan gagal dimuat; data awal digunakan.'} ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'}`);
     sync.running=false;
     if (sync.attempt?.status==='running') sync.attempt={...sync.attempt,status:'error',finishedAt:new Date().toISOString()};
   } finally {
@@ -335,11 +323,16 @@ async function analyze() {
   sync.busy=true; sync.requesting=true;
   sync.attempt={startedAt:new Date().toISOString(),finishedAt:null,status:'running'};
   render();
-  try { applyPayload(await requestData('/api/analyze','POST')); }
-  catch (error) {
+  try {
+    applyPayload(await requestData('/api/analyze','POST'));
+    const run = sync.lastRun;
+    if (!run) notify('Pengambilan selesai. Periksa status sumber pada bagian Cakupan platform.');
+    else if (run.status === 'error') notify('Tarik Analisis gagal. Ulasan yang tersimpan tetap ditampilkan; periksa status sumber.');
+    else notify(`Tarik Analisis ${run.status==='partial'?'selesai sebagian':'berhasil'} · ${integer(numericCount(run.added) ?? 0)} ulasan baru · ${integer(numericCount(run.updated) ?? 0)} diperbarui · ${integer(numericCount(run.unchanged) ?? 0)} tidak berubah.`);
+  } catch (error) {
     sync.running=false;
     sync.attempt={...sync.attempt,status:'error',finishedAt:new Date().toISOString()};
-    sync.error=`Pengambilan gagal. ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'}`;
+    notify(`Pengambilan gagal. ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'} Ulasan yang sudah tersimpan tetap ditampilkan.`);
   } finally {
     sync.busy=false; sync.requesting=false; render(); scheduleRefresh();
   }

@@ -60,7 +60,8 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
           return { ...previous, ...source, checkedAt: finishedAt, ...(success ? { lastSuccessAt: finishedAt } : {}), ...(Number.isFinite(source.rating) ? { ratingObservedAt: finishedAt } : {}) };
         });
         const successes = results.filter(r => r.status === 'success' || r.status === 'partial').length;
-        const status = !successes ? 'error' : successes === platforms.length && results.every(r => r.status === 'success') ? 'success' : 'partial';
+        const complete = results.length > 0 && results.every(r => r.status === 'success');
+        const status = !successes ? 'error' : complete ? 'success' : 'partial';
         const run = { startedAt, finishedAt, status, added: merged.added, updated: merged.updated, unchanged: merged.unchanged, sources: sources.map(s => ({ ...s })) };
         const next = { reviews: merged.reviews, sources, lastRun: run, runs: [...data.runs,run] };
         await persist(next);
