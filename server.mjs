@@ -13,14 +13,15 @@ const files = new Map([
   ['/data.js', ['data.js', 'text/javascript; charset=utf-8']],
   ['/model.js', ['model.js', 'text/javascript; charset=utf-8']],
 ]);
+const connectedSources = new Set(['play','appstore']);
 export async function createDashboardServer({ storagePath = new URL('./online-data.json', import.meta.url), collector = collectOnline } = {}) {
   let data = {
     reviews: seedReviews, runs: [], lastRun: null,
-    sources: platforms.map(p => ({ id: p.id, status: p.type === 'App store' ? 'snapshot' : 'unsupported', fetched: 0, message: p.type === 'App store' ? 'Snapshot awal; belum ditarik online pada workspace ini.' : `Konektor belum tersedia; tidak dicoba. ${p.note}`, ...(p.rating ? { rating: p.rating, ratingCount: p.ratingCount, ratingObservedAt: observationDate } : {}) })),
+    sources: platforms.map(p => ({ id: p.id, status: connectedSources.has(p.id) ? 'snapshot' : 'unsupported', fetched: 0, message: connectedSources.has(p.id) ? 'Data awal dari halaman publik; belum diperbarui pada sesi ini.' : `Belum terhubung; tidak ada pengambilan data. ${p.note}`, ...(p.rating ? { rating: p.rating, ratingCount: p.ratingCount, ratingObservedAt: observationDate } : {}) })),
   };
   try {
     const saved = JSON.parse(await readFile(storagePath,'utf8'));
-    if (!Array.isArray(saved.reviews) || !Array.isArray(saved.sources) || !Array.isArray(saved.runs)) throw new Error('Format histori online tidak valid. File tidak diubah.');
+    if (!Array.isArray(saved.reviews) || !Array.isArray(saved.sources) || !Array.isArray(saved.runs)) throw new Error('Format data tersimpan tidak valid. Berkas tidak diubah.');
     data = saved;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   let running = false;
@@ -42,7 +43,7 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
     const path = new URL(req.url, `http://${req.headers.host}`).pathname;
     if (path === '/api/analyze' && req.method === 'POST') {
       if ((req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) || req.headers['sec-fetch-site'] === 'cross-site') { json(403,{error:'Permintaan lintas situs ditolak.'}); return; }
-      if (running) { json(409,{error:'Penarikan sedang berjalan. Tunggu sampai selesai.'}); return; }
+      if (running) { json(409,{error:'Pengambilan data sedang berjalan. Tunggu hingga selesai.'}); return; }
       running = true;
       const startedAt = new Date().toISOString();
       try {
@@ -53,7 +54,7 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
         const sources = platforms.map(p => {
           const result = results.find(r => r.id === p.id);
           const previous = data.sources.find(s => s.id === p.id) || { id: p.id };
-          if (!result) return { ...previous, status: 'unsupported', fetched: 0, message: `Konektor belum tersedia; tidak dicoba. ${p.note}` };
+          if (!result) return { ...previous, status: 'unsupported', fetched: 0, message: `Belum terhubung; tidak ada pengambilan data. ${p.note}` };
           const { reviews, ...source } = result;
           const success = source.status === 'success' || source.status === 'partial';
           return { ...previous, ...source, checkedAt: finishedAt, ...(success ? { lastSuccessAt: finishedAt } : {}), ...(Number.isFinite(source.rating) ? { ratingObservedAt: finishedAt } : {}) };
@@ -68,8 +69,8 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
         json(200,snapshot());
       } catch (error) {
         running = false;
-        console.error('Online analysis failed:',error.message);
-        json(500,{error:'Penarikan atau penyimpanan gagal. Histori sebelumnya tetap tersimpan; coba lagi.'});
+        console.error('Pengambilan data gagal:',error.message);
+        json(500,{error:'Pengambilan atau penyimpanan data gagal. Data sebelumnya tetap tersimpan; silakan coba lagi.'});
       }
       return;
     }
@@ -82,12 +83,12 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
       const body = await readFile(new URL(target[0], import.meta.url));
       res.setHeader('Content-Type', target[1]);
       res.end(req.method === 'HEAD' ? '' : body);
-    } catch { json(500,{error:'Unable to load application'}); }
+    } catch { json(500,{error:'Aplikasi tidak dapat dimuat.'}); }
   });
   return server;
 }
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const port = Number(process.env.PORT || 4173);
   const server = await createDashboardServer();
-  server.listen(port,'127.0.0.1',() => console.log(`Wondr sentiment dashboard: http://127.0.0.1:${port}`));
+  server.listen(port,'127.0.0.1',() => console.log(`Dasbor sentimen wondr merchant: http://127.0.0.1:${port}`));
 }

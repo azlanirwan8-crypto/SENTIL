@@ -13,7 +13,7 @@ const server=await createDashboardServer({storagePath:join(profile,'test-data.js
   pulls++;
   if(collectorMode==='wait')await new Promise(resolve=>{releasePull=resolve;});
   if(collectorMode==='error')return ['play','appstore'].map(id=>({id,status:'error',fetched:0,message:'Koneksi uji gagal; histori dipertahankan.'}));
-  return ['play','appstore'].map(id=>({id,status:'success',message:'Isolated test fixture',fetched:seedReviews.filter(r=>r.platform===id).length,reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]}));
+  return ['play','appstore'].map(id=>({id,status:'success',message:'Data uji lokal untuk pengujian antarmuka.',fetched:seedReviews.filter(r=>r.platform===id).length,reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]}));
 }});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const baseUrl=`http://127.0.0.1:${server.address().port}`;

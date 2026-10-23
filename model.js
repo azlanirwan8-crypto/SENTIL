@@ -14,16 +14,16 @@ export function ratingSummary(reviews) {
 }
 export const featureGroups = [
   { name: 'Transaksi & QRIS', tags: ['transactions', 'notifications', 'settlement'] },
-  { name: 'Onboarding & login', tags: ['onboarding', 'login'] },
-  { name: 'Performa & UI/UX', tags: ['ux', 'performance', 'features'] },
+  { name: 'Pendaftaran & masuk aplikasi', tags: ['onboarding', 'login'] },
+  { name: 'Performa & tampilan', tags: ['ux', 'performance', 'features'] },
   { name: 'Layanan pelanggan', tags: ['support'] },
 ];
 export const painGroups = [
-  { name: 'Pendaftaran belum tuntas', tags: ['onboarding'], action: 'Tampilkan progres verifikasi dan eskalasi saat estimasi terlewati.', owner: 'Operasional merchant', metric: 'Waktu persetujuan P95 dan persentase melewati SLA' },
-  { name: 'Notifikasi & pembaruan laporan', tags: ['notifications', 'settlement'], action: 'Audit latensi notifikasi, sinkronisasi laporan, dan status settlement secara terpisah.', owner: 'Engineering · Pembayaran', metric: 'Latensi notifikasi dan ketepatan pembaruan settlement' },
-  { name: 'Akses & performa aplikasi', tags: ['login', 'performance'], action: 'Investigasi login gagal dan loading lambat; evaluasi biometrik sebagai fitur kenyamanan.', owner: 'Engineering · QA', metric: 'Keberhasilan login dan waktu loading P95' },
-  { name: 'Migrasi kurang jelas', tags: ['migration'], action: 'Sediakan panduan migrasi, status akun, dan informasi penggunaan aplikasi lama.', owner: 'Produk · Operasional', metric: 'Keberhasilan migrasi dan tiket terkait perpindahan' },
-  { name: 'Penanganan layanan', tags: ['support'], action: 'Berikan pemilik tiket, estimasi penyelesaian, dan jalur eskalasi yang jelas.', owner: 'Customer support', metric: 'Waktu penyelesaian dan tingkat kontak ulang' },
+  { name: 'Pendaftaran belum tuntas', tags: ['onboarding'], action: 'Tampilkan progres verifikasi dan sediakan jalur eskalasi saat estimasi terlewati.', owner: 'Operasional merchant', metric: 'Waktu persetujuan pada 95% pengajuan dan jumlah pengajuan yang melewati batas waktu' },
+  { name: 'Notifikasi & pembaruan laporan', tags: ['notifications', 'settlement'], action: 'Periksa waktu pengiriman notifikasi, sinkronisasi laporan, dan status pencairan dana secara terpisah.', owner: 'Rekayasa · Pembayaran', metric: 'Waktu pengiriman notifikasi dan ketepatan pembaruan pencairan dana' },
+  { name: 'Akses & performa aplikasi', tags: ['login', 'performance'], action: 'Telusuri penyebab kegagalan masuk aplikasi dan waktu muat yang lama; evaluasi sidik jari atau biometrik sebagai fitur kenyamanan.', owner: 'Rekayasa · Penjaminan mutu', metric: 'Tingkat keberhasilan masuk dan waktu muat pada 95% penggunaan' },
+  { name: 'Migrasi kurang jelas', tags: ['migration'], action: 'Sediakan panduan migrasi, status akun, dan informasi penggunaan aplikasi lama.', owner: 'Produk · Operasional', metric: 'Keberhasilan migrasi dan jumlah tiket terkait perpindahan' },
+  { name: 'Penanganan layanan', tags: ['support'], action: 'Berikan pemilik tiket, estimasi penyelesaian, dan jalur eskalasi yang jelas.', owner: 'Layanan pelanggan', metric: 'Waktu penyelesaian dan jumlah kontak ulang' },
 ];
 export const positiveGroups = [
   { name: 'Mudah digunakan & bermanfaat', tags: ['ux', 'benefit'], action: 'Pertahankan alur sederhana yang membantu kegiatan usaha.' },
@@ -101,7 +101,7 @@ export function classifyText(text) {
   const positive = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|^ok(?:e)?[.! ]*$/.test(value);
   const neutral = /^(?:[1-5] bintang dulu|terima kasih atas informasinya)[.! ]*$/.test(value);
   const sentiment = negative ? 'negative' : positive ? 'positive' : neutral ? 'neutral' : 'unclassified';
-  return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu tinjauan manual.' : `Klasifikasi otomatis berbasis aturan kata pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan rating bintang. Belum diaudit manusia; negasi, sarkasme, dan aspek campuran dapat keliru.` };
+  return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
 }
 const fingerprint = r => r.author && r.author !== 'N/A' && r.date ? `${r.platform}|${r.author.trim().toLowerCase()}|${r.date}|${r.text.trim().toLowerCase()}` : null;
 export function upsertReviews(existing, incoming, observedAt) {
