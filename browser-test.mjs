@@ -63,6 +63,9 @@ try {
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await send('Page.navigate',{url:baseUrl});await ready();
   assert.deepEqual(await metricValues(),['43','60,5%','37,2%','+23,3']);
+  assert.equal(await evaluate(`Boolean(document.querySelector('.brand,.workspace-chip'))`),false);
+  assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
+  assert.doesNotMatch(await evaluate(`document.querySelector('.page-footer').textContent`),/wondr pulse/i);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).width`),'230px');
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth`),true);
   await screenshot('dashboard-desktop.png');completed.push('Desktop layout and baseline metrics');
@@ -115,6 +118,9 @@ try {
   await click('[data-view="overview"]');
   const complaintRows=await evaluate(`[...document.querySelectorAll('[data-complaint]')].map(b=>({id:b.dataset.complaint,text:b.textContent}))`);
   assert.equal(complaintRows[0].id,'onboarding');assert.match(complaintRows[0].text,/6/);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
+  assert.equal(await evaluate(`document.querySelector('.complaint-bar').getBoundingClientRect().width>0`),true);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sample-rating')).display`),'grid');
   await click('[data-complaint="onboarding"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),6);
   await click('[data-view="overview"]');await click('[data-platform="appstore"]');
   assert.equal(await evaluate(`document.querySelectorAll('[data-complaint]').length`),0);
@@ -129,6 +135,8 @@ try {
   await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
   assert.equal(await evaluate(`document.documentElement.scrollWidth`),390);
   assert.equal(await evaluate(`window.innerWidth`),390);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
+  assert.equal(await evaluate(`document.querySelector('.complaint-bar').getBoundingClientRect().width>0`),true);
   await screenshot('dashboard-mobile.png');completed.push('Platform coverage and mobile layout without page overflow');
   collectorMode='new';await click('[data-action="analyze"]');await pullReady();
   assert.equal((await metricValues())[0],'44');
