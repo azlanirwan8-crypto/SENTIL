@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
 import { createDashboardServer, deploymentConfig } from './server.mjs';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -93,6 +93,76 @@ test('negative feature chart ranks complaints with exact evidence and keeps zero
   for(const g of groups)assert.equal(g.total,g.reviews.length);
   assert.equal(complaintStats(filterReviews(seedReviews,{platform:'appstore'})).every(g=>g.total===0),true);
   assert.equal(complaintStats([]).length,12);
+});
+test('complaint breakdown bars reuse the same negative counts',()=>{
+  const ranked=complaintStats(seedReviews), breakdown=complaintBreakdown(seedReviews);
+  assert.equal(breakdown.length,12);
+  for(const group of ranked){
+    const row=breakdown.find(g=>g.id===group.id);
+    assert.equal(row.negative,group.total,`jumlah negatif ${group.id} sama dengan daftar peringkat`);
+    assert.equal(row.total,row.positive+row.negative+row.neutral+row.unclassified);
+    assert.equal(row.reviews.length,row.total);
+  }
+  assert.equal(breakdown[0].id,'onboarding');
+  assert.equal(breakdown[0].negative,8);
+  assert.equal(breakdown.filter(g=>g.negative>0).length,ranked.filter(g=>g.total>0).length);
+  assert.equal(complaintBreakdown(filterReviews(seedReviews,{platform:'appstore'})).every(g=>g.negative===0),true);
+});
+const weekMonday = (start, index) => { const d=new Date(`${start}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+index*7); return d; };
+function projectedFixture({ negative=[], positive=[], start='2026-08-03', tags=['login','performance'] }={}) {
+  const rows=[];
+  const push=(counts,sentiment,tagList)=>counts.forEach((count,week)=>{ for(let k=0;k<count;k++){ const date=new Date(weekMonday(start,week)); date.setUTCDate(date.getUTCDate()+k); rows.push({ id:`fx-${sentiment}-${week}-${k}`, platform:'play', author:`Uji ${k}`, date:date.toISOString().slice(0,10), text:'teks ujian', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb', sentiment, tags:tagList, labeling:'manual' }); } });
+  push(negative,'negative',tags); push(positive,'positive',['ux']);
+  return rows;
+}
+test('projection refuses to extrapolate before the data can support a trend',()=>{
+  assert.equal(projection([]).ok,false);
+  assert.match(projection([]).reason,/belum ada ulasan bertanggal/);
+  const twoWeeks=projectedFixture({ negative:[1,1], positive:[1,1] });
+  assert.equal(projection(twoWeeks).ok,false);
+  assert.match(projection(twoWeeks).reason,/minimal 4 pekan/);
+  const thin=projectedFixture({ negative:[1,0,0,0], positive:[1,1,1,1] });
+  assert.equal(projection(thin).ok,false);
+  assert.match(projection(thin).reason,/masih sedikit/);
+  const undated=projectedFixture({ negative:[2,2,2,2], positive:[2,2,2,2] });
+  undated.forEach(r=>{ r.date=null; });
+  assert.equal(projection(undated).ok,false);
+});
+test('projection fits weekly counts by least squares and reports a Poisson range',()=>{
+  const result=projection(projectedFixture({ negative:[0,1,1,2,2,3,3,4], positive:[2,2,2,2,2,2,2,2] }));
+  assert.equal(result.ok,true);
+  assert.equal(result.weeks,8);
+  assert.deepEqual(result.weekLabels,['2026-08-03','2026-08-10','2026-08-17','2026-08-24','2026-08-31','2026-09-07','2026-09-14','2026-09-21']);
+  assert.deepEqual(result.negative.series,[0,1,1,2,2,3,3,4]);
+  assert.equal(result.negative.observed,16);
+  assert.ok(Math.abs(result.negative.slope-22/42)<1e-9);
+  assert.equal(result.negative.direction,'rising');
+  assert.equal(result.negative.convincing,true);
+  assert.ok(Math.abs(result.negative.weeklyRate-23/6)<1e-9);
+  assert.ok(Math.abs(result.negative.projected-46/3)<1e-9);
+  assert.equal(result.negative.low,7);
+  assert.equal(result.negative.high,24);
+  // Deret mendatar: kemiringan nol, jadi laju dipakai dari rata-rata empat pekan terakhir.
+  assert.equal(result.positive.direction,'flat');
+  assert.equal(result.positive.convincing,false);
+  assert.ok(Math.abs(result.positive.weeklyRate-2)<1e-9);
+  assert.ok(Math.abs(result.positive.projected-8)<1e-9);
+  assert.equal(result.signal,'worsening');
+  assert.equal(result.nssCurrent,0);
+  assert.ok(Math.abs(result.nssProjected.point-((8-46/3)/(8+46/3))*100)<1e-9);
+  assert.equal(result.nssProjected.low,(2-24)/(2+24)*100);
+  assert.equal(result.nssProjected.high,(14-7)/(14+7)*100);
+  assert.equal(result.themes.length,1);
+  assert.equal(result.themes[0].name,'Akses & performa aplikasi');
+  assert.ok(Math.abs(result.themes[0].projected-46/3)<1e-9);
+});
+test('stable weekly volume is reported as no measurable direction',()=>{
+  const result=projection(projectedFixture({ negative:[2,2,2,2,2,2,2,2], positive:[3,3,3,3,3,3,3,3] }));
+  assert.equal(result.signal,'stable');
+  assert.equal(result.negative.direction,'flat');
+  assert.ok(Math.abs(result.negative.projected-8)<1e-9);
+  assert.ok(Math.abs(result.nssProjected.point-result.nssCurrent)<1e-9);
+  assert.equal(projection(projectedFixture({ negative:[2,2,2,2,2,2,2,2], positive:[3,3,3,3,3,3,3,3] }),{ horizonWeeks:2 }).negative.projected>0,true);
 });
 test('sample star averages use only actual ratings',()=>{
   const s=ratingSummary(seedReviews);assert.equal(s.total,64);assert.ok(Math.abs(s.average-245/64)<1e-9);

@@ -1,5 +1,5 @@
 import { seedReviews, platforms, tags, tagColors, observationDate } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, ratingSummary, exportCsv } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionTrends, projectionSignals, exportCsv } from './model.js';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -238,21 +238,45 @@ function composition(data) {
   return `<article class="card"><div class="card-header"><div><h2>Komposisi sentimen</h2><p class="card-subtitle">Proporsi seluruh ulasan, termasuk yang masih perlu ditinjau</p></div>${icon('layers')}</div>${s.total?`<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${segments})" role="img" aria-label="${esc(sentimentKeys.map(k=>`${sentimentNames[k]}: ${s[k]} dari ${s.total} ulasan`).join('; '))}"><div class="donut-center"><strong>${s.total}</strong><span>total ulasan</span></div></div></div><div class="distribution-list">${sentimentKeys.map(key=>`<div class="distribution-item"><span class="legend-item"><span class="legend-swatch ${key}"></span>${esc(sentimentNames[key])}</span><strong>${s[key]}<small>ulasan</small></strong></div>`).join('')}</div><div class="insight-strip">${icon('spark')}${s.classified?`NSS ${s.nss>0?'+':''}${number(s.nss)} poin · dihitung dari ${s.classified} ulasan berlabel`:'NSS belum dapat dihitung; seluruh ulasan masih perlu ditinjau.'}</div>`:empty('Belum ada komposisi','Distribusi sentimen akan muncul setelah ada ulasan.')}</article>`;
 }
 const complaintName = group => group.id === 'general' ? 'Penilaian umum (tanpa rincian)' : group.name;
+// Tata letak disamakan dengan kartu "Topik yang dibahas": satu baris label, satu batang
+// bertumpuk komposisi sentimen, satu legenda. Urutan tetap menurut jumlah ulasan negatif.
 function complaintChart() {
-  const data=analyticalReviews(), groups=complaintStats(data), negative=summary(data).negative;
-  const ranked=groups.filter(g=>g.total>0), max=ranked[0]?.total || 0, zero=groups.length-ranked.length;
-  const axisMax=Math.max(4,Math.ceil(max/4)*4);
+  const data=analyticalReviews(), groups=complaintBreakdown(data).filter(g=>g.negative>0), negative=summary(data).negative;
   return `<article class="card complaint-card" aria-labelledby="complaint-heading">
-    <div class="card-header"><div><h2 id="complaint-heading">Area yang paling sering dikeluhkan</h2><p class="card-subtitle">Diurutkan dari jumlah ulasan negatif terbanyak. Panjang batang menunjukkan jumlah ulasan, bukan persentase.</p></div><span class="badge negative">${negative} ulasan negatif</span></div>
-    ${ranked.length?`<div class="complaint-chart">
-      <div class="complaint-axis" aria-hidden="true"><span>Kategori</span><div class="complaint-scale">${Array.from({length:5},(_,i)=>`<span>${axisMax*i/4}</span>`).join('')}</div><span>Ulasan · proporsi</span></div>
-      <ol class="complaint-list">${ranked.map((g,i)=>`<li><button class="complaint-row ${g.id==='general'?'is-general':''}" data-complaint="${esc(g.id)}" aria-label="${esc(`${complaintName(g)}: ${g.total} ulasan negatif unik, ${number(pct(g.total,negative))}% dari ${negative} ulasan negatif. Buka ulasan terkait.`)}">
-        <span class="complaint-label"><span class="complaint-rank" aria-hidden="true">${i+1}</span><span>${esc(complaintName(g))}</span></span>
-        <span class="complaint-track" aria-hidden="true"><span class="complaint-bar" style="width:${pct(g.total,axisMax)}%"></span></span>
-        <span class="complaint-value"><strong>${g.total} ulasan</strong><small>${number(pct(g.total,negative))}% dari ${negative} negatif</small></span>
-      </button></li>`).join('')}</ol>
+    <div class="card-header"><div><h2 id="complaint-heading">Area yang paling sering dikeluhkan</h2><p class="card-subtitle">Diurutkan dari jumlah ulasan negatif terbanyak. Batang menunjukkan komposisi sentimen seluruh ulasan yang membahas area tersebut.</p></div><span class="badge negative">${negative} ulasan negatif</span></div>
+    ${groups.length?`<div class="feature-list complaint-list">
+      ${groups.map((g,i)=>`<div class="feature-row complaint-row${g.id==='general'?' is-general':''}">
+        <div class="feature-row-label"><button class="btn-text" data-complaint="${esc(g.id)}" aria-label="${esc(`${complaintName(g)}: ${g.negative} ulasan negatif dari ${g.total} ulasan yang membahas area ini. Buka ulasan terkait.`)}"><span class="complaint-rank" aria-hidden="true">${i+1}</span>${esc(complaintName(g))}</button><strong>${g.negative} negatif · ${g.total} ulasan</strong></div>
+        <div class="feature-bar" role="img" aria-label="${esc(`${complaintName(g)}: ${sentimentKeys.map(k=>`${g[k]||0} ${sentimentNames[k]}`).join(', ')}`)}">${sentimentKeys.map(k=>`<span class="${k}" style="width:${pct(g[k]||0,g.total)}%" title="${esc(sentimentNames[k])}: ${g[k]||0}"></span>`).join('')}</div>
+      </div>`).join('')}
+      ${legend()}
     </div>`:empty(negative?'Belum ada kategori keluhan yang sesuai':'Tidak ada ulasan negatif dalam filter ini',negative?'Ada ulasan negatif, tetapi belum memiliki kategori keluhan yang dapat ditampilkan.':'Angka ini tidak membuktikan bahwa seluruh pengguna terbebas dari kendala. Perhatikan cakupan data dan jumlah ulasan.')}
-    ${negative?`<p class="note-inline">Persentase memakai dasar <strong>${negative} ulasan negatif</strong> dalam filter. Satu ulasan dapat memuat beberapa kategori, sehingga total persentase bisa melebihi 100%. Pilih batang untuk membaca ulasan sumber.</p><details class="chart-notes"><summary>Catatan interpretasi</summary><p>${zero?`${zero} kategori tanpa ulasan tidak ditampilkan. `:''}Penilaian umum ditampilkan abu-abu karena tidak menyebut fitur tertentu. Penyebutan keluhan belum membuktikan insiden operasional. Topik rinci digabungkan menjadi tema pada Analisis sentimen; label otomatis tetap perlu ditinjau.</p></details>`:''}
+    ${negative?`<p class="note-inline">Segmen dihitung dari ${groups.length} area yang memiliki ulasan negatif. Satu ulasan dapat membahas beberapa area dan dapat memuat pujian sekaligus keluhan, sehingga jumlah segmen tidak dijumlahkan menjadi ${negative} ulasan negatif. Pilih nama area untuk membaca ulasan sumber.</p><details class="chart-notes"><summary>Catatan interpretasi</summary><p>Penilaian umum tanpa objek yang jelas masuk pada baris terakhir. Penyebutan keluhan belum membuktikan insiden operasional. Label otomatis memakai aturan kata kunci dan masih perlu diperiksa manusia; segmen "Perlu tinjauan" menandakan teks yang polanya belum cukup, bukan sentimen netral.</p></details>`:''}
+  </article>`;
+}
+const trendArrow = { rising:'▲', falling:'▼', flat:'■' };
+function projectionCard(data) {
+  const p=projection(data), horizon=p.horizonWeeks, headText=`Dihitung dari kecepatan ulasan per pekan pada data ini dengan regresi kuadrat terkecil dan rentang Poisson 95%.`;
+  const head=`<div class="card-header"><div><h2>Proyeksi ${horizon} pekan ke depan</h2><p class="card-subtitle">${headText}</p></div>${p.ok?`<span class="badge ${p.signal==='worsening'?'negative':p.signal==='improving'?'positive':'neutral'}">${esc(projectionSignals[p.signal])}</span>`:''}</div>`;
+  if (!p.ok) return `<article class="card projection-card">${head}${empty('Proyeksi belum dapat dihitung', p.reason)}</article>`;
+  const scale=Math.max(1,...p.themes.map(t=>t.recentTotal+t.projected));
+  const top=p.themes.find(t=>t.projected>0);
+  const signed=value=>`${value>0?'+':''}${number(value)}`;
+  return `<article class="card projection-card">${head}
+    <div class="projection-stats">
+      <div><span>Ulasan negatif ${horizon} pekan ke depan</span><strong>${integer(Math.round(p.negative.projected))}</strong><small>rentang ${integer(p.negative.low)}–${integer(p.negative.high)} · ${integer(p.negative.recentTotal)} tercatat pada ${horizon} pekan terakhir</small></div>
+      <div><span>NSS proyeksi</span><strong>${p.nssProjected.point===null?'N/A':signed(p.nssProjected.point)}</strong><small>rentang ${p.nssProjected.low===null?'N/A':`${signed(p.nssProjected.low)} s.d. ${signed(p.nssProjected.high)}`} · NSS saat ini ${p.nssCurrent===null?'N/A':signed(p.nssCurrent)}</small></div>
+    </div>
+    <div class="feature-list projection-list">
+      ${p.themes.map(t=>`<div class="feature-row projection-row ${t.direction}">
+        <div class="feature-row-label"><span class="projection-name"><span class="trend-mark ${t.direction}" aria-hidden="true">${trendArrow[t.direction]}</span>${esc(t.name)}</span><strong>${integer(Math.round(t.projected))} proyeksi · ${integer(t.low)}–${integer(t.high)}</strong></div>
+        <div class="feature-bar" role="img" aria-label="${esc(`${t.name}: ${t.recentTotal} ulasan negatif tercatat pada ${horizon} pekan terakhir, proyeksi ${number(t.projected)} dengan rentang ${t.low} sampai ${t.high}. Arah ${projectionTrends[t.direction].toLowerCase()}.`)}"><span class="recorded" style="width:${pct(t.recentTotal,scale)}%" title="Tercatat pada ${horizon} pekan terakhir: ${t.recentTotal}"></span><span class="forecast" style="width:${pct(t.projected,scale)}%" title="Proyeksi ${horizon} pekan ke depan: ${number(t.projected)}"></span></div>
+        <p class="projection-meta">${esc(projectionTrends[t.direction])} · laju ${number(t.weeklyRate)} ulasan negatif per pekan · penanggung jawab: ${esc(t.owner)}</p>
+      </div>`).join('')}
+      <div class="legend"><span class="legend-item"><span class="legend-swatch recorded"></span>Tercatat ${horizon} pekan terakhir</span><span class="legend-item"><span class="legend-swatch forecast"></span>Proyeksi ${horizon} pekan ke depan</span></div>
+    </div>
+    <p class="note-inline">Bila kecepatan ${horizon} pekan terakhir berlanjut, sekitar <strong>${integer(Math.round(p.negative.projected))} ulasan negatif</strong> baru akan masuk (rentang ${integer(p.negative.low)}–${integer(p.negative.high)}). ${top?`Kontribusi terbesar diproyeksikan pada <strong>${esc(top.name)}</strong> (${integer(Math.round(top.projected))} ulasan, rentang ${integer(top.low)}–${integer(top.high)}). `:''}${p.signal==='stable'?'Perubahan arah belum dapat dinyatakan: kemiringan deret positif maupun negatif belum melampaui ambang |t| ≥ 2.':`Arah yang dapat dinyatakan: <strong>${esc(projectionSignals[p.signal].toLowerCase())}</strong>.`}</p>
+    <details class="chart-notes"><summary>Cara angka ini dihitung</summary><p>Ulasan dikelompokkan per pekan Senin–Minggu UTC menurut tanggal publikasi, lalu dihitung jumlah ulasan positif dan negatif tiap pekan. Kemiringan diuji dengan regresi kuadrat terkecil; arah hanya dinyatakan bila |t| ≥ 2. Bila kemiringan belum meyakinkan, laju mingguan diambil dari rata-rata ${horizon} pekan terakhir dan garis tren tidak diekstrapolasi. Rentang memakai sebaran Poisson (λ ± 1,96√λ); rentang NSS dihitung dari sudut terburuk dan terbaik kombinasi kedua rentang. Perhitungan dilakukan aturan statistik deterministik di perangkat ini — bukan model bahasa yang mengarang angka.</p><p>Batas baca: yang diproyeksikan adalah kecepatan ulasan publik masuk, bukan jumlah pengguna, transaksi, atau insiden. Jumlah data masih kecil (${p.weeks} pekan, ${integer(p.negative.observed)} ulasan negatif seluruhnya), sehingga satu pekan dengan banyak tanggal publikasi bersamaan dapat menggeser laju. Ulasan tanpa tanggal tidak masuk hitungan, dan jeda pengambilan data memengaruhi jumlah mingguan.</p></details>
   </article>`;
 }
 function sampleRating(data) {
@@ -336,7 +360,7 @@ function reviewTable(data, full=false) {
 }
 function overview(data) {
   const undated=data.filter(r=>!validDay(r.date)).length, mode=timelineMode(data,state.trend);
-  return `${metricCards(data)}${complaintChart()}${sampleRating(data)}<section class="grid-chart"><article class="card"><div class="card-header"><div><h2>Tren ulasan</h2><p class="card-subtitle">${mode!==state.trend?'Agregasi bulanan otomatis untuk rentang lebih dari satu tahun.':'Jumlah ulasan menurut tanggal publikasi'}</p></div><select id="trend-mode" aria-label="Agregasi grafik"><option value="week" ${mode==='week'?'selected':''}>Mingguan</option><option value="month" ${mode==='month'?'selected':''}>Bulanan</option></select></div><div class="chart-body" tabindex="0" role="region" aria-label="Grafik tren ulasan; gulir horizontal jika diperlukan">${legend()}${trendChart(data)}</div><div class="chart-caption">${icon('info')}Tren ini menggambarkan ulasan tertulis yang terkumpul, bukan seluruh pengguna atau aktivitas waktu nyata. ${undated?`${undated} ulasan tanpa tanggal tidak dimasukkan ke grafik.`:'Seluruh ulasan memiliki tanggal dan dimasukkan ke grafik.'}</div></article>${composition(data)}</section><section class="grid-lower">${featureCard(data)}${priorities(data)}</section>${reviewTable(data)}`;
+  return `${metricCards(data)}<section class="grid-complaint">${complaintChart()}${projectionCard(data)}</section>${sampleRating(data)}<section class="grid-chart"><article class="card"><div class="card-header"><div><h2>Tren ulasan</h2><p class="card-subtitle">${mode!==state.trend?'Agregasi bulanan otomatis untuk rentang lebih dari satu tahun.':'Jumlah ulasan menurut tanggal publikasi'}</p></div><select id="trend-mode" aria-label="Agregasi grafik"><option value="week" ${mode==='week'?'selected':''}>Mingguan</option><option value="month" ${mode==='month'?'selected':''}>Bulanan</option></select></div><div class="chart-body" tabindex="0" role="region" aria-label="Grafik tren ulasan; gulir horizontal jika diperlukan">${legend()}${trendChart(data)}</div><div class="chart-caption">${icon('info')}Tren ini menggambarkan ulasan tertulis yang terkumpul, bukan seluruh pengguna atau aktivitas waktu nyata. ${undated?`${undated} ulasan tanpa tanggal tidak dimasukkan ke grafik.`:'Seluruh ulasan memiliki tanggal dan dimasukkan ke grafik.'}</div></article>${composition(data)}</section><section class="grid-lower">${featureCard(data)}${priorities(data)}</section>${reviewTable(data)}`;
 }
 function driverCard(data,sentiment) {
   const groups=groupStats(data,sentiment==='positive'?positiveGroups:painGroups,sentiment).filter(g=>g.total).sort((a,b)=>b.total-a.total);

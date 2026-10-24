@@ -949,6 +949,7 @@ main {
 
 .grid-chart,
 .grid-lower,
+.grid-complaint,
 .analysis-grid,
 .method-grid,
 .coverage-grid {
@@ -963,6 +964,11 @@ main {
 
 .grid-lower {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+}
+
+.grid-complaint {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
 }
 
 .analysis-grid,
@@ -1167,127 +1173,59 @@ main {
   overflow-wrap: anywhere;
 }
 
-/* The count axis and each complaint track share one column definition. */
-.complaint-card {
+/* Kartu keluhan dan proyeksi memakai tata letak batang yang sama dengan "Topik yang dibahas". */
+.complaint-card,
+.projection-card {
   margin-bottom: 24px;
 }
 
-.complaint-chart {
-  --complaint-columns: 180px minmax(0, 1fr) 160px;
+.grid-complaint .complaint-card,
+.grid-complaint .projection-card {
+  margin-bottom: 0;
+}
+
+.complaint-list,
+.projection-list {
   padding: 16px;
 }
 
-.complaint-axis,
-.complaint-row {
+.complaint-row,
+.projection-row {
   display: grid;
-  grid-template-columns: var(--complaint-columns);
-  column-gap: 14px;
-}
-
-.complaint-axis {
-  align-items: center;
-  margin-bottom: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.complaint-axis > span:first-child {
-  text-align: left;
-}
-
-.complaint-axis > span:last-child {
-  text-align: right;
-}
-
-.complaint-scale {
-  position: relative;
-  min-width: 0;
-  height: 1.5em;
-  font-variant-numeric: tabular-nums;
-}
-
-.complaint-scale > span {
-  position: absolute;
-  top: 0;
-  left: 0;
-  white-space: nowrap;
-  text-align: center;
-  transform: translateX(-50%);
-}
-
-.complaint-scale > span:nth-child(2) {
-  left: 25%;
-}
-
-.complaint-scale > span:nth-child(3) {
-  left: 50%;
-}
-
-.complaint-scale > span:nth-child(4) {
-  left: 75%;
-}
-
-.complaint-scale > span:nth-child(5) {
-  left: 100%;
-}
-
-.complaint-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.complaint-list li {
-  border-bottom: 1px solid var(--line);
-}
-
-.complaint-list li:last-child {
-  border-bottom: 0;
-}
-
-.complaint-row {
-  align-items: center;
-  row-gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 12px 0;
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-}
-
-.complaint-row:hover {
-  background: var(--surface-soft);
-}
-
-.complaint-row:focus-visible {
-  outline-offset: -2px;
-}
-
-.complaint-label {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-  min-width: 0;
-  color: var(--heading);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.5;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  margin-bottom: 0;
+  padding: 12px 0;
 }
 
-.complaint-label > span {
-  min-width: 0;
+.complaint-row + .complaint-row,
+.projection-row + .projection-row {
+  border-top: 1px solid var(--line);
+}
+
+.complaint-list .legend,
+.projection-list .legend {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.complaint-row .btn-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0;
+  text-align: left;
 }
 
 .complaint-rank {
   display: grid;
   place-items: center;
-  min-height: 22px;
-  border-radius: var(--radius);
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   background: var(--surface-soft);
   color: var(--text-muted);
   font-size: 11px;
@@ -1295,57 +1233,85 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-.complaint-track {
+.feature-bar .recorded {
+  background: var(--neutral);
+}
+
+.feature-bar .forecast {
+  background: var(--danger);
+}
+
+.legend-swatch.recorded {
+  background: var(--neutral);
+}
+
+.legend-swatch.forecast {
+  background: var(--danger);
+}
+
+.projection-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px 16px 0;
+}
+
+.projection-stats > div {
+  display: grid;
+  gap: 4px;
   min-width: 0;
-  height: 8px;
-  overflow: hidden;
+  padding: 12px 14px;
   border-radius: var(--radius);
   background: var(--surface-soft);
 }
 
-.complaint-bar {
-  display: block;
-  min-width: 0;
-  height: 100%;
-  border-radius: var(--radius);
-  background: var(--danger);
-}
-
-.complaint-row:hover .complaint-label {
-  color: var(--primary);
-}
-
-.complaint-row.is-general .complaint-bar {
-  background: var(--neutral);
-}
-
-.complaint-value {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 0;
-  font-variant-numeric: tabular-nums;
+.projection-stats span {
+  color: var(--text-muted);
+  font-size: 11px;
   line-height: 1.5;
-  text-align: right;
-  overflow-wrap: anywhere;
 }
 
-.complaint-value strong {
-  color: var(--danger-text);
-  font-size: 13px;
+.projection-stats strong {
+  color: var(--heading);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.3px;
+}
+
+.projection-stats small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.projection-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--heading);
   font-weight: 500;
 }
 
-.complaint-value small {
-  display: block;
+.trend-mark {
+  flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 12px;
-  white-space: normal;
+  font-size: 10px;
 }
 
-.complaint-row.is-general .complaint-value strong {
-  color: #5e6374;
+.trend-mark.rising {
+  color: var(--danger-text);
+}
+
+.trend-mark.falling {
+  color: var(--success-text);
+}
+
+.projection-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .chart-notes {
@@ -2702,6 +2668,7 @@ tbody tr:hover {
 
 .grid-chart .card:nth-child(2),
 .grid-lower .card:nth-child(2),
+.grid-complaint .card:nth-child(2),
 .analysis-grid .analysis-card:nth-child(2),
 .coverage-grid .coverage-card:nth-child(3n + 2) {
   animation-delay: .06s;
@@ -2711,7 +2678,6 @@ tbody tr:hover {
   animation-delay: .12s;
 }
 
-.complaint-bar,
 .feature-bar span,
 .rating-track span {
   animation: vReveal .7s cubic-bezier(.22, .61, .36, 1) both;
@@ -2727,7 +2693,7 @@ tbody tr:hover {
   animation: vDonut .65s cubic-bezier(.22, .61, .36, 1) both;
 }
 
-#main.in-place-update :is(.card, .metric, .complaint-bar, .feature-bar span, .rating-track span, .trend-svg rect, .donut) {
+#main.in-place-update :is(.card, .metric, .feature-bar span, .rating-track span, .trend-svg rect, .donut) {
   animation: none;
 }
 
@@ -2800,6 +2766,7 @@ tbody tr:hover {
 
   .grid-chart,
   .grid-lower,
+  .grid-complaint,
   .analysis-grid,
   .method-grid,
   .coverage-grid {
@@ -2873,50 +2840,6 @@ tbody tr:hover {
   .pagination button {
     min-width: 36px;
     min-height: 36px;
-  }
-
-  .complaint-axis,
-  .complaint-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 44%);
-    column-gap: 10px;
-  }
-
-  .complaint-axis {
-    row-gap: 8px;
-  }
-
-  .complaint-axis > span:first-child {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .complaint-axis > span:last-child {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .complaint-scale {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
-  .complaint-row {
-    row-gap: 10px;
-  }
-
-  .complaint-label {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .complaint-track {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
-  .complaint-value {
-    grid-column: 2;
-    grid-row: 1;
   }
 
   .sample-rating {

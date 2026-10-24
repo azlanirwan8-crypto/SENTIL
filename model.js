@@ -8,6 +8,14 @@ export function complaintStats(reviews) {
     return { ...group, total: matches.length, reviews: matches };
   }).sort((a,b) => b.total - a.total);
 }
+// Komposisi sentimen seluruh ulasan pada satu topik keluhan. Urutan tetap menurut jumlah
+// ulasan negatif, sehingga segmen negatif pada baris ini selalu sama dengan complaintStats.
+export function complaintBreakdown(reviews) {
+  return complaintGroups.map(group => {
+    const matches = reviews.filter(r => (r.complaintTags || r.tags).includes(group.id));
+    return { ...group, ...summary(matches), reviews: matches };
+  }).sort((a,b) => b.negative - a.negative || b.total - a.total);
+}
 export function ratingSummary(reviews) {
   const rated = reviews.filter(r => Number.isInteger(r.rating) && r.rating >= 1 && r.rating <= 5);
   return { total: rated.length, average: rated.length ? rated.reduce((sum,r) => sum + r.rating,0) / rated.length : null, distribution: [1,2,3,4,5].map(stars => ({ stars, count: rated.filter(r => r.rating === stars).length })) };
@@ -73,6 +81,104 @@ export function timeline(reviews, mode = 'week') {
   }
   for (const r of dated) bins.get(key(r.date))[r.sentiment]++;
   return [...bins].map(([date, values]) => ({ date, ...values }));
+}
+// Proyeksi dihitung dengan rumus yang dapat diperiksa ulang: jumlah ulasan per pekan
+// (penjenisan Senin UTC) → regresi kuadrat terkecil untuk arah, tingkat mingguan dari
+// pekan-pekan terakhir bila arah belum meyakinkan → rentang Poisson. Tidak ada angka yang
+// dikarang; bila data belum cukup, fungsi mengembalikan ok:false beserta alasannya.
+export const projectionDefaults = { horizonWeeks: 4, minWeeks: 4, minEvents: 4, confidence: 1.96, convincingT: 2 };
+export const projectionMethod = 'ols-weekly-v1';
+export const projectionTrends = { rising: 'Naik', falling: 'Turun', flat: 'Relatif tetap' };
+export const projectionSignals = { improving: 'Cenderung membaik', worsening: 'Cenderung memburuk', stable: 'Belum ada perubahan yang dapat dinyatakan' };
+function weekStart(dateText) {
+  const date = new Date(`${dateText}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0,10);
+}
+function shiftWeek(dateText, weeks) {
+  const date = new Date(`${dateText}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + weeks * 7);
+  return date.toISOString().slice(0,10);
+}
+function linearFit(values) {
+  const n = values.length;
+  if (n < 3) return null;
+  const meanX = (n - 1) / 2;
+  const meanY = values.reduce((sum, value) => sum + value, 0) / n;
+  let sxx = 0, sxy = 0;
+  values.forEach((value, index) => { sxx += (index - meanX) ** 2; sxy += (index - meanX) * (value - meanY); });
+  const slope = sxx ? sxy / sxx : 0;
+  const intercept = meanY - slope * meanX;
+  const residual = values.reduce((sum, value, index) => sum + (value - (intercept + slope * index)) ** 2, 0);
+  const degrees = n - 2;
+  const standardError = degrees > 0 && sxx ? Math.sqrt((residual / degrees) / sxx) : null;
+  return { weeks: n, mean: meanY, slope, intercept, standardError, t: standardError ? slope / standardError : null };
+}
+function poissonRange(lambda, confidence) {
+  const spread = confidence * Math.sqrt(lambda);
+  return { low: Math.max(0, Math.floor(lambda - spread)), high: Math.ceil(lambda + spread) };
+}
+function nssRatio(positive, negative) {
+  return positive + negative > 0 ? (positive - negative) / (positive + negative) * 100 : null;
+}
+// Kesimpulan arah hanya dinyatakan bila kemiringan salah satu deret dapat dibedakan dari
+// kebisingan, dan tidak dibatalkan oleh deret lainnya.
+function conclusion(negative, positive) {
+  const movement = value => value.convincing ? value.direction : null;
+  const neg = movement(negative), pos = movement(positive);
+  if (neg === 'falling' && pos !== 'falling') return 'improving';
+  if (pos === 'rising' && neg !== 'rising') return 'improving';
+  if (neg === 'rising' && pos !== 'rising') return 'worsening';
+  if (pos === 'falling' && neg !== 'falling') return 'worsening';
+  return 'stable';
+}
+export function projection(reviews, options = {}) {
+  const { horizonWeeks, minWeeks, minEvents, confidence, convincingT } = { ...projectionDefaults, ...options };
+  const dated = reviews.filter(r => validDate(r.date));
+  const empty = { method: projectionMethod, horizonWeeks, weeks: 0, weekLabels: [], themes: [], ok: false };
+  if (!dated.length) return { ...empty, reason: 'Proyeksi dihitung dari tanggal publikasi ulasan. Dalam pilihan ini belum ada ulasan bertanggal.' };
+  const days = dated.map(r => r.date).sort();
+  const weekLabels = [];
+  for (let week = weekStart(days[0]); week <= weekStart(days.at(-1)) && weekLabels.length < 400; week = shiftWeek(week, 1)) weekLabels.push(week);
+  const buckets = new Map(weekLabels.map(week => [week, []]));
+  for (const review of dated) buckets.get(weekStart(review.date)).push(review);
+  const series = test => weekLabels.map(week => buckets.get(week).filter(test).length);
+  const total = values => values.reduce((sum, value) => sum + value, 0);
+  const base = { ...empty, weeks: weekLabels.length, weekLabels };
+  if (weekLabels.length < minWeeks) return { ...base, reason: `Baru ${weekLabels.length} pekan memuat ulasan bertanggal. Kemiringan tren memerlukan minimal ${minWeeks} pekan sebelum dapat diuji, jadi proyeksi sengaja tidak dihitung.` };
+  // Ekstrapolasi kemiringan hanya dilakukan bila secara statistik dapat dibedakan dari
+  // kebisingan (|t| >= convincingT). Jika tidak, tingkat mingguan dipakai dari rata-rata
+  // horizon terakhir yang benar-benar teramati — mencegah satu pekan memuncak menjadi tren.
+  const model = values => {
+    const fit = linearFit(values);
+    const observed = total(values);
+    const window = Math.min(horizonWeeks, values.length);
+    const recentTotal = total(values.slice(-window));
+    const recentRate = recentTotal / window;
+    // t bernilai null hanya bila sisa regresi nol (garis sempurna): arahnya pasti, jadi
+    // dianggap meyakinkan. Tanpa kemiringan, arah dinyatakan tetap, bukan tidak diketahui.
+    const significance = fit.t === null ? Infinity : Math.abs(fit.t);
+    const convincing = fit.slope !== 0 && significance >= convincingT;
+    const weeklyRate = convincing ? Math.max(0, fit.intercept + fit.slope * (values.length - 1)) : recentRate;
+    const lambda = weeklyRate * horizonWeeks;
+    return { ...fit, series: values, observed, recentTotal, recentRate, weeklyRate, convincing, projected: lambda, ...poissonRange(lambda, confidence), direction: fit.slope === 0 ? 'flat' : convincing ? (fit.slope > 0 ? 'rising' : 'falling') : 'flat' };
+  };
+  const negative = model(series(r => r.sentiment === 'negative'));
+  const positive = model(series(r => r.sentiment === 'positive'));
+  if (negative.observed < minEvents || positive.observed < minEvents) return { ...base, reason: `Ulasan berlabel pada ${weekLabels.length} pekan ini masih sedikit (positif ${positive.observed}, negatif ${negative.observed}). Proyeksi tidak dihitung supaya rentang angkanya tidak menyesatkan.` };
+  const bounds = [nssRatio(positive.low, negative.high), nssRatio(positive.high, negative.low)].filter(value => value !== null);
+  const nssPoint = nssRatio(positive.projected, negative.projected);
+  const themes = painGroups.map(group => ({ name: group.name, owner: group.owner, action: group.action, ...model(series(r => r.sentiment === 'negative' && r.tags.some(t => group.tags.includes(t)))) }))
+    .filter(theme => theme.observed > 0)
+    .sort((a,b) => b.projected - a.projected || b.observed - a.observed);
+  return {
+    ...base, ok: true, negative, positive, themes,
+    signal: conclusion(negative, positive),
+    nssCurrent: summary(dated).nss,
+    nssProjected: { point: nssPoint, low: bounds.length ? Math.min(...bounds) : null, high: bounds.length ? Math.max(...bounds) : null },
+    themeProjectedTotal: total(themes.map(t => t.projected)),
+    confidence,
+  };
 }
 const sourceDomains = { play: ['play.google.com'], appstore: ['apps.apple.com', 'itunes.apple.com'], x: ['x.com','twitter.com'], instagram: ['instagram.com'], tiktok: ['tiktok.com'], youtube: ['youtube.com','youtu.be'], googlemaps: ['google.com'] };
 export function validSource(value, platform) {
