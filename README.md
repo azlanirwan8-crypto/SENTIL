@@ -21,9 +21,35 @@ Prasyarat: Node.js 20 atau versi yang lebih baru.
 npm start
 ```
 
-Buka `http://127.0.0.1:4173/`.
+Buka `http://127.0.0.1:4173/`. Ganti port dengan `PORT=4174 npm start`.
 
 Data awal tersedia di dalam aplikasi. Setelah tombol **Tarik Analisis** digunakan, hasilnya disimpan di `online-data.json` pada direktori proyek. Hentikan aplikasi dengan `Ctrl+C`.
+
+### Mengisi kredensial kanal sosial
+
+Salin `.env.example` menjadi `.env` (atau `.env.local`) lalu isi nilainya. Kedua berkas sudah di-git-ignore dan tidak pernah disajikan lewat HTTP. Jangan menempelkan kunci ke kolom chat atau commit. Bila kunci Anda tersimpan di suatu lingkungan hosting, tarik sendiri ke folder ini, misalnya `vercel env pull .env.local`.
+
+- `GOOGLE_API_KEY` atau `YOUTUBE_API_KEY` — mengaktifkan konektor komentar YouTube Data API v3.
+- `APIFY_API_TOKEN` — mengaktifkan kanal X, Instagram, TikTok, Facebook, dan Google Reviews melalui actor Apify. Pemakaian actor memakan kuota berbayar pada akun Anda.
+
+Tanpa kredensial, kanal-kanal itu berstatus **perlu konfigurasi API** dan tidak ada permintaan yang dikirim — bukan nol keluhan dan bukan pula terhubung.
+
+## Menjalankan pada host Node berkelanjutan
+
+Aplikasi ini memakai satu proses Node yang berjalan terus, jadi host-nya harus mendukung proses berkelanjutan (Render, Railway, Fly.io, atau VPS). Platform serverless dengan function berbatas waktu dan disk hanya-baca tidak cocok tanpa penataan ulang penyimpanan dan pembatas waktu.
+
+| Variabel | Fungsi |
+| --- | --- |
+| `PORT` | Port yang disediakan host. |
+| `BIND_HOST` | `0.0.0.0` agar dapat diakses dari luar; bawaannya `127.0.0.1`. |
+| `ALLOWED_HOSTS` | Daftar domain yang dilayani, dipisah koma. |
+| `PUBLIC_SCHEME` | `https` (bawaan saat mode publik) atau `http`. |
+| `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | Wajib pada mode publik. |
+| `DATA_PATH` | Lokasi berkas data, misalnya disk yang dipasang permanen. |
+
+Mode publik **menolak start** bila kredensial belum diisi. Alasannya: tombol Tarik Analisis memicu actor Apify berbayar, sehingga tanpa autentikasi siapa pun yang mengetahui alamat situs dapat menghabiskan kuota akun Anda. `/api/status` tetap terbuka tanpa kredensial karena host memakai endpoint itu untuk pemeriksaan kesehatan; isinya hanya status hidup dan tidak memuat data ulasan.
+
+Beri `DATA_PATH` arah disk yang permanen bila host Anda menyimpan filesystem hanya sementara, jika tidak seluruh hasil penarikan akan hilang saat instance berganti.
 
 ## Pengujian
 
@@ -38,11 +64,11 @@ Suite pengujian mencakup perhitungan sentimen, filter, klasifikasi, pembacaan su
 - Google Play: <https://play.google.com/store/apps/details?id=id.bni.wfb&hl=id>
 - Apple App Store: <https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?l=id>
 
-Data awal per 23 Oktober 2026 memuat 55 ulasan tertulis Google Play — gabungan 38 ulasan pada kumpulan bahasa Indonesia dan 17 ulasan pada kumpulan bahasa Inggris — dari 74 penilaian halaman toko (19 penilaian tanpa teks), serta 9 ulasan tertulis App Store dari 17 penilaian halaman toko (8 penilaian tanpa teks). Penilaian tanpa teks tidak menyediakan nama atau isi publik sehingga tidak dapat dianalisis. Jumlah ulasan dan penilaian bertambah sewaktu karena ulasan baru terus masuk; setiap penarikan memuat seluruh halaman yang tersedia.
+Data awal per 23 Oktober 2026 memuat 55 ulasan tertulis Google Play — gabungan 38 ulasan pada kumpulan bahasa Indonesia dan 17 ulasan pada kumpulan bahasa Inggris — sedangkan halaman tokonya menampilkan 74 penilaian. App Store menampilkan 9 ulasan tertulis pada dua jalur publiknya, sedangkan halaman tokonya menunjukkan 17 penilaian. Selisih antara jumlah penilaian dan jumlah ulasan berteks adalah penilaian yang tidak muncul sebagai ulasan berteks pada daftar publik; penyebabnya per ulasan tidak disimpulkan dari selisih tersebut. Jumlah ulasan dan penilaian bertambah sewaktu karena ulasan baru terus masuk; setiap penarikan membaca seluruh halaman yang dikembalikan sumber sampai tidak ada halaman berikutnya.
 
 Google Play hanya mempublikasikan rentang unduhan, saat ini **10K+**. Apple tidak mempublikasikan jumlah unduhan pada halaman publik, sehingga metrik tersebut dilaporkan **tidak tersedia**, bukan nol.
 
-Kanal media sosial, forum, blog, portal berita, dan Google Reviews belum terhubung. Statusnya **tidak diambil**, bukan nol keluhan.
+Kanal YouTube, X, Instagram, TikTok, Facebook, dan Google Reviews memiliki konektor tetapi membutuhkan kredensial pada environment server; tanpa itu statusnya **perlu konfigurasi API** dan tidak ada satu baris pun yang diambil. Forum, blog, dan portal berita tidak memiliki konektor karena hasil pencarian dan berita bukan pengalaman pelanggan. Status **tidak diambil** tidak sama dengan nol keluhan.
 
 ## Metode
 
@@ -65,8 +91,9 @@ Kanal media sosial, forum, blog, portal berita, dan Google Reviews belum terhubu
 
 ## Struktur Proyek
 
-- `server.mjs` — server lokal, API, dan penyimpanan data.
-- `collectors.mjs` — pengambilan dan penguraian ulasan publik.
+- `server.mjs` — server lokal, API, penyimpanan data, dan konfigurasi deployment.
+- `collectors.mjs` — pengambilan dan penguraian ulasan publik serta komentar kanal yang berkredensial.
+- `local-env.mjs` — pembacaan `.env` / `.env.local` tanpa pernah menampilkan nilainya.
 - `model.js` — perhitungan sentimen, kategori, filter, dan ekspor CSV.
 - `data.js` — data awal dan daftar platform.
 - `app.js`, `index.html`, `styles.css` — antarmuka dasbor.

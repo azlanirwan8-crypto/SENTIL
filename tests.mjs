@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
 import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
-import { createDashboardServer } from './server.mjs';
+import { createDashboardServer, deploymentConfig } from './server.mjs';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { get } from 'node:http';
+import { get, request as httpRequest } from 'node:http';
 import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 
@@ -1166,6 +1166,82 @@ test('Local env file is parsed without exposing values and never overrides the r
     delete process.env.APIFY_ACTOR_X; delete process.env.GOOGLE_API_KEY;
   } finally {
     delete process.env.APIFY_API_TOKEN; delete process.env.APIFY_ACTOR_X;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// --- Deployment ke host Node berkelanjutan ---
+const rawRequest = (port, path, { host, headers = {}, method = 'GET' } = {}) => new Promise((resolve, reject) => {
+  const req = httpRequest({ host: '127.0.0.1', port, path, method, headers: { host, ...headers } }, res => {
+    const chunks = [];
+    res.on('data', chunk => chunks.push(chunk));
+    res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
+  });
+  req.on('error', reject);
+  req.end();
+});
+const basic = (user, password) => 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
+
+test('Deployment configuration stays loopback-only unless a public host is declared', () => {
+  const local = deploymentConfig({});
+  assert.equal(local.bindHost, '127.0.0.1');
+  assert.equal(local.exposed, false);
+  assert.equal(local.user, '', 'pemakaian lokal tidak dipaksa autentikasi');
+  assert.equal(local.scheme, 'http');
+  assert.equal(local.port, 4173);
+});
+
+test('Public deployment refuses to configure itself without credentials', () => {
+  assert.throws(() => deploymentConfig({ BIND_HOST: '0.0.0.0' }), /DASHBOARD_USER dan DASHBOARD_PASSWORD/);
+  assert.throws(() => deploymentConfig({ ALLOWED_HOSTS: 'saya.onrender.com' }), /DASHBOARD_USER dan DASHBOARD_PASSWORD/);
+  assert.throws(() => deploymentConfig({ ALLOWED_HOSTS: 'saya.onrender.com', DASHBOARD_USER: 'pemilik' }), /DASHBOARD_USER dan DASHBOARD_PASSWORD/);
+  const open = deploymentConfig({ ALLOWED_HOSTS: 'saya.onrender.com', DASHBOARD_USER: 'pemilik', DASHBOARD_PASSWORD: 'rahasia-uji' });
+  assert.equal(open.exposed, true);
+  assert.equal(open.scheme, 'https', 'mode publik memakai https');
+  assert.deepEqual(open.allowedHosts, ['saya.onrender.com']);
+});
+
+test('Public mode requires credentials, serves only its declared domain, and keeps health checks open', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-deploy-'));
+  const config = deploymentConfig({ ALLOWED_HOSTS: 'saya.test', DASHBOARD_USER: 'pemilik', DASHBOARD_PASSWORD: 'rahasia-uji', DATA_PATH: join(dir, 'data.json') });
+  const server = await createDashboardServer({ config, env: {}, collector: async () => [] });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    assert.equal((await rawRequest(port, '/', { host: 'saya.test' })).status, 401, 'tanpa kredensial harus ditolak');
+    assert.equal((await rawRequest(port, '/', { host: 'saya.test', headers: { authorization: basic('pemilik', 'salah') } })).status, 401);
+    assert.equal((await rawRequest(port, '/', { host: 'saya.test', headers: { authorization: basic('orang', 'rahasia-uji') } })).status, 401);
+    assert.equal((await rawRequest(port, '/api/data', { host: 'saya.test' })).status, 401, 'tanpa kredensial data tidak boleh terbaca');
+    const auth = basic('pemilik', 'rahasia-uji');
+    assert.equal((await rawRequest(port, '/', { host: 'saya.test', headers: { authorization: auth } })).status, 200);
+    const page = await rawRequest(port, '/', { host: 'saya.test', headers: { authorization: auth } });
+    assert.match(page.body, /<title>/);
+    assert.equal((await rawRequest(port, '/api/data', { host: 'saya.test', headers: { authorization: auth } })).status, 200);
+    assert.equal((await rawRequest(port, '/online-data.json', { host: 'saya.test', headers: { authorization: auth } })).status, 404, 'cache mentah tetap tidak disajikan');
+    assert.equal((await rawRequest(port, '/api/status', { host: 'saya.test' })).status, 200, 'pemeriksaan kesehatan host tetap terbuka');
+    assert.doesNotMatch((await rawRequest(port, '/api/status', { host: 'saya.test' })).body, /rahasia|pemilik|Bearer/);
+    assert.equal((await rawRequest(port, '/', { host: 'orang-lain.test', headers: { authorization: auth } })).status, 403, 'domain lain tidak dilayani');
+    const analyze = await rawRequest(port, '/api/analyze', { method: 'POST', host: 'saya.test', headers: { authorization: auth, origin: 'https://saya.test' } });
+    assert.equal(analyze.status, 200, 'Origin https milik sendiri harus diterima');
+    const crossSite = await rawRequest(port, '/api/analyze', { method: 'POST', host: 'saya.test', headers: { authorization: auth, origin: 'https://situs-lain.test' } });
+    assert.equal(crossSite.status, 403, 'Origin asing tetap ditolak');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Local mode still serves loopback without credentials', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-local-'));
+  const server = await createDashboardServer({ storagePath: join(dir, 'data.json'), env: {}, collector: async () => [] });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    assert.equal((await rawRequest(port, '/', { host: `127.0.0.1:${port}` })).status, 200);
+    assert.equal((await rawRequest(port, '/', { host: `localhost:${port}` })).status, 200);
+    assert.equal((await rawRequest(port, '/', { host: 'saya.test' })).status, 403);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
   }
 });
