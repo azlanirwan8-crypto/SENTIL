@@ -41,6 +41,18 @@ function unauthorized(message) {
 }
 
 export function middleware(request) {
+  // Kesalahan apa pun di sini tidak boleh membuat seluruh situs tidak dapat dibuka.
+  // Halaman dibiarkan lewat; hanya jalur berbayar yang ditutup bila terjadi galat.
+  try {
+    return decide(request);
+  } catch {
+    return new URL(request.url).pathname === ANALYZE
+      ? unauthorized('Penarikan data diblokir karena kesalahan pada gerbang masuk. Periksa environment deployment.')
+      : undefined;
+  }
+}
+
+function decide(request) {
   const user = (process.env.DASHBOARD_USER || '').trim();
   const password = process.env.DASHBOARD_PASSWORD || '';
   const path = new URL(request.url).pathname;

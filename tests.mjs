@@ -1489,6 +1489,14 @@ test('Middleware decodes Basic credentials using web APIs only', async () => {
   assert.equal((await runMiddleware('https://situs.example.com/', { headers: { authorization: 'Basic bukan-base64-###' } })).status, 401, 'header rusak ditolak tanpa melempar galat');
 });
 
+test('A failing gateway keeps the site open but shuts the paid route closed', async () => {
+  const { middleware } = await import('./middleware.js');
+  const broken = { url: 'https://situs.example.com/api/analyze', headers: { get: () => { throw new Error('runtime asing'); } } };
+  const blocked = middleware(broken);
+  assert.equal(blocked.status, 401, 'jalur berbayar tetap tertutup bila gerbangnya sendiri error');
+  assert.equal(middleware({ url: 'https://situs.example.com/', headers: { get: () => { throw new Error('runtime asing'); } } }), undefined, 'halaman tidak boleh ikut mati karena middleware');
+});
+
 test('The paid endpoint also checks credentials inside the Node function', async () => {
   const previousUser = process.env.DASHBOARD_USER, previousPassword = process.env.DASHBOARD_PASSWORD;
   const guard = await import('./serverless-auth.mjs');
