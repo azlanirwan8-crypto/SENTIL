@@ -327,6 +327,16 @@ export const apifyChannels = {
   facebook: { label: 'Facebook', actor: 'apify/facebook-pages-scraper', input: () => ({ searchTerms: ['wondr merchant bni'], maxResult: 20 }) },
 };
 const apifyTextFields = ['text', 'fullText', 'caption', 'content', 'body', 'reviewText', 'comment', 'shortText'];
+// Actor menerima batas jumlah hasil dari namanya sendiri. Nilai ini bukan batas milik kolektor,
+// tetapi tetap harus dilaporkan karena memotong hasil di sisi actor.
+const apifyResultCapFields = ['maxItems', 'resultsLimit', 'resultsPerPage', 'maxResult', 'requestsPerCrawl', 'limit'];
+export function apifyResultCap(input) {
+  for (const field of apifyResultCapFields) {
+    const value = Number(input?.[field]);
+    if (Number.isInteger(value) && value > 0) return { field, value };
+  }
+  return null;
+}
 const apifyAuthorFields = ['author', 'username', 'owner', 'nickname', 'authorName', 'reviewerName', 'user', 'handle', 'authorMeta'];
 const apifyIdFields = ['id', '_id', 'uniqueId', 'tweetId', 'idInline', 'reviewId'];
 const apifyUrlFields = ['url', 'link', 'permalink', 'tweetUrl', 'webVideoUrl', 'mapsUrl', 'reviewUrl'];
@@ -470,10 +480,19 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
   }
   const emptyEvidence = markers ? ` Actor mengembalikan ${markers} penanda tidak ada hasil${markerNotes.size ? ` (${[...markerNotes].join('; ')})` : ''} untuk kueri ini, artinya kanal dapat dihubungi tetapi tidak ada konten publik yang cocok.` : '';
   const identityEvidence = offIdentity ? ` ${offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas wondr merchant, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.` : '';
-  const complete = !issues.length;
-  return { id, status: complete ? 'success' : reviews.size ? 'partial' : 'error', fetched: reviews.size, reviews: [...reviews.values()],
-    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, emptyResultMarkers: markers, identityFiltered: offIdentity, sampleLimit: null, runFinished: status === 'SUCCEEDED' },
-    message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${run.id}); ${items} item dataset diperiksa dan ${expanded} di antaranya berasal dari komentar/ulasan bersarang.${emptyEvidence}${identityEvidence} ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set(issues)].join(' ')}`} Teks disimpan apa adanya dari actor. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
+  // Batas hasil pada input actor dilaporkan apa adanya: jika jumlah item yang dikembalikan
+  // mencapai batas itu, masih ada konten yang belum terbaca dan itu tidak boleh disebut lengkap.
+  const cap = apifyResultCap(channel.input);
+  const truncated = Boolean(cap && items >= cap.value);
+  const capEvidence = cap
+    ? ` Hasil dibatasi input actor ${cap.field}=${cap.value}; ${items} item dataset dikembalikan.${truncated ? ` Jumlah item mencapai batas tersebut, sehingga masih ada konten yang belum terbaca — naikkan ${cap.field} melalui APIFY_INPUT_${id.toUpperCase()} untuk membaca sisanya.` : ' Item yang dikembalikan belum mencapai batas tersebut.'}`
+    : ' Tidak ada batas jumlah hasil pada input actor ini; seluruh dataset run dibaca.';
+  const complete = !issues.length && !truncated;
+  // Dataset yang mencapai batas actor tetap bukti kanal menjawab (partial), bukan kegagalan,
+  // dan bukan pula "tidak ada percakapan".
+  return { id, status: complete ? 'success' : reviews.size || truncated ? 'partial' : 'error', fetched: reviews.size, reviews: [...reviews.values()],
+    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, emptyResultMarkers: markers, identityFiltered: offIdentity, sampleLimit: cap?.value ?? null, sampleLimitField: cap?.field ?? null, possiblyTruncated: truncated, runFinished: status === 'SUCCEEDED' },
+    message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${run.id}); ${items} item dataset diperiksa dan ${expanded} di antaranya berasal dari komentar/ulasan bersarang.${emptyEvidence}${identityEvidence}${capEvidence} ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set([...(truncated && cap ? [`item dataset mencapai ${cap.field}=${cap.value}`] : []), ...issues.map(String)])].join(' ')}`} Teks disimpan apa adanya dari actor. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
 }
 // Google Places API (New) adalah jalur resmi untuk ulasan di Google Maps. Kunci hanya dikirim
 // sebagai header X-Goog-Api-Key; tidak pernah masuk URL, browser, atau pesan galat.

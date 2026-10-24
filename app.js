@@ -270,7 +270,7 @@ function paginationTrace(id, coverage) {
   if (!coverage || typeof coverage !== 'object') return '';
   if (id === 'play' && Number.isInteger(coverage.pagesRead)) return `${coverage.pagesRead} halaman, ${coverage.rows} baris, tanpa batas sampel`;
   if (id === 'appstore' && Number.isInteger(coverage.shelfPages)) return `halaman ulasan ${coverage.shelfPages} halaman, feed resmi ${coverage.feedPages} halaman, ${coverage.sharedReviews} ulasan dikonfirmasi dua jalur`;
-  if (Number.isInteger(coverage.itemsRead)) return `${coverage.itemsRead} item dataset dibaca${Number.isInteger(coverage.emptyResultMarkers)?`, ${coverage.emptyResultMarkers} penanda tidak ada hasil`:''}${Number.isInteger(coverage.identityFiltered)?`, ${coverage.identityFiltered} teks di luar identitas produk`:''}, tanpa batas sampel`;
+  if (Number.isInteger(coverage.itemsRead)) return `${coverage.itemsRead} item dataset dibaca${Number.isInteger(coverage.emptyResultMarkers)?`, ${coverage.emptyResultMarkers} penanda tidak ada hasil`:''}${Number.isInteger(coverage.identityFiltered)?`, ${coverage.identityFiltered} teks di luar identitas produk`:''}, ${Number.isInteger(coverage.sampleLimit)?`batas hasil actor ${coverage.sampleLimitField ?? 'input'}=${coverage.sampleLimit}${coverage.possiblyTruncated?' (terpotong di batas ini)':' (belum tercapai)'}`:'tanpa batas hasil pada input actor'}`;
   if (Number.isInteger(coverage.placesFound)) return `${coverage.placesFound} place ditemukan, ${coverage.productMatches} bernama produk, ${coverage.reviewFieldsSeen} teks ulasan disediakan API`;
   if (Number.isInteger(coverage.pagesRead) && Number.isInteger(coverage.relevantVideos)) return `${coverage.pagesRead} halaman API, ${coverage.relevantVideos} video relevan, ${coverage.completedVideos} selesai dipaginasi`;
   return '';
@@ -292,7 +292,7 @@ function coverage() {
     const isStore = p.type === 'Toko aplikasi';
     const trace = paginationTrace(p.id, source.coverage ?? source.scope);
     const message = status==='success'&&isStore ? `Daftar ulasan publik dibaca sampai sumber tidak memberi halaman berikutnya${trace?` (${trace})`:''}; jumlah tersimpan adalah seluruh ulasan berteks yang dikembalikan jalur publik itu pada pemeriksaan terakhir. Status berhasil tidak berarti seluruh percakapan di internet atau seluruh penilaian toko terkumpul. Jumlah penilaian toko bukan jumlah teks ulasan.` : source.message || p.note;
-    const statusLabel = status==='success'?'Berhasil':status==='snapshot'?'Data tersimpan':sourceStatusNames[status];
+    const statusLabel = status==='success'?(Number.isInteger(fetched)&&fetched===0?'Terhubung · tanpa hasil':'Berhasil'):status==='snapshot'?'Data tersimpan':sourceStatusNames[status];
     const scoreClass = !s.classified?'':s.nss>0?'positive':s.nss<0?'negative':'neutral';
     return `<article class="card coverage-card ${unavailable?'is-unavailable':''}" data-source-card="${esc(p.id)}">
       <div class="coverage-header">

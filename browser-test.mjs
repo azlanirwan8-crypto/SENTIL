@@ -25,7 +25,14 @@ async function mockResults(){
         ? `${count} ulasan tertulis unik dibaca dari Google Play sebagai gabungan 38 ulasan kumpulan bahasa Indonesia dan 17 ulasan kumpulan bahasa Inggris. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. Halaman toko menampilkan 74 penilaian, sedangkan daftar ulasan publik menampilkan 55 ulasan berteks.`
         : `${count} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi dan feed ulasan pelanggan resmi, masing-masing 9 ulasan dikonfirmasi kedua jalur.`,
       reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]};
-  }).concat(collectorMode==='social'?[{id:'youtube',status:'success',fetched:socialFixtures.length,message:'Isolated API fixture only',reviews:socialFixtures}]:collectorMode==='social-missing'?[{id:'youtube',status:'needs_setup',fetched:null,message:'YOUTUBE_API_KEY belum dikonfigurasi; data tersimpan dipertahankan.',reviews:[]}]:[]);
+  }).concat(collectorMode==='social'?[
+    {id:'youtube',status:'success',fetched:socialFixtures.length,message:'Isolated API fixture only',reviews:socialFixtures},
+    // Kanal yang menjawab tetapi tidak mengirim satu pun teks: harus tampil sebagai
+    // "terhubung tanpa hasil", bukan "Berhasil" dan bukan nol keluhan.
+    {id:'facebook',status:'success',fetched:0,reviews:[],
+      coverage:{actor:'apify/facebook-pages-scraper',itemsRead:1,emptyResultMarkers:1,identityFiltered:0,sampleLimit:20,sampleLimitField:'maxResult',possiblyTruncated:false},
+      message:'0 teks unik dibaca dari Facebook melalui Apify actor apify/facebook-pages-scraper; 1 item dataset diperiksa. Actor mengembalikan 1 penanda tidak ada hasil untuk kueri ini, artinya kanal dapat dihubungi tetapi tidak ada konten publik yang cocok. Hasil dibatasi input actor maxResult=20; 1 item dataset dikembalikan. Item yang dikembalikan belum mencapai batas tersebut.'},
+  ]:collectorMode==='social-missing'?[{id:'youtube',status:'needs_setup',fetched:null,message:'YOUTUBE_API_KEY belum dikonfigurasi; data tersimpan dipertahankan.',reviews:[]}]:[]);
 }
 // Penarikan berjalan satu kanal per permintaan; keduanya di-mock agar pengujian tidak
 // pernah mengirim permintaan nyata ke Google, Apple, YouTube, atau Apify.
@@ -388,6 +395,13 @@ try {
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
   await click('[data-view="platforms"]');
   assert.match(await evaluate(`document.querySelector('.coverage-card').textContent`),/1 teks di luar penilaian pelanggan; 1 komentar belum jelas relevansinya/);
+  // Kanal sosial yang menjawab tanpa satu pun teks: label, jejak paginasi, dan status kartu.
+  await click('[data-platform="all"]');
+  const facebookCard=`[...document.querySelectorAll('[data-source-card="facebook"]')].map(c=>c.textContent).join('')`;
+  assert.match(await evaluate(facebookCard),/Terhubung · tanpa hasil/,'kanal tanpa hasil tidak diberi label "Berhasil"');
+  assert.match(await evaluate(facebookCard),/batas hasil actor maxResult=20 \(belum tercapai\)/,'batas hasil actor dibaca dari input yang dikirim');
+  assert.doesNotMatch(await evaluate(facebookCard),/tanpa batas/,'jejak Apify tidak boleh mengklaim tanpa batas');
+  assert.match(await evaluate(`[...document.querySelectorAll('[data-source-card="facebook"] .coverage-rating')].map(e=>e.textContent).join(' ')`),/N\/A/,'kanal tanpa teks tidak mengarang penilaian bintang');
   await click('[data-open-platform="youtube"]');
   assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),4);
   await click('[data-review="youtube|yt-a"]');

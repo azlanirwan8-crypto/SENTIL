@@ -7,7 +7,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
-import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
+import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyResultCap, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
@@ -1006,7 +1006,10 @@ test('Apify records keep actor text, expand nested comments, and never place the
   assert.equal(result.coverage.runId, 'run-1');
   assert.equal(result.coverage.itemsRead, 5);
   assert.equal(result.coverage.nestedRecords, 1);
-  assert.equal(result.coverage.sampleLimit, null);
+  assert.equal(result.coverage.sampleLimit, 100, 'batas hasil actor dibaca dari input yang benar-benar dikirim');
+  assert.equal(result.coverage.sampleLimitField, 'maxItems');
+  assert.equal(result.coverage.possiblyTruncated, false, '5 item di bawah batas 100 belum tentu habis');
+  assert.match(result.message, /belum mencapai batas tersebut/);
   const byId = new Map(result.reviews.map(r => [r.id, r]));
   assert.equal(byId.get('post-1').author, 'pelanggan_a');
   assert.equal(byId.get('post-1').date, '2026-10-20');
@@ -1048,6 +1051,30 @@ test('TikTok actor fields are read from the shapes the actor actually returns', 
   assert.equal(record.sourceUrl, 'https://www.tiktok.com/@goldie_sketchie/video/7677293170949967124');
   assert.equal(record.rating, null, 'video tidak memiliki penilaian bintang, jadi tidak dibuat-buat');
   assert.equal(result.coverage.emptyResultMarkers, 0);
+});
+
+test('A dataset that fills the actor result cap is disclosed as truncated, never complete', async () => {
+  assert.deepEqual(apifyResultCap({ maxItems: 100, queryType: 1 }), { field: 'maxItems', value: 100 });
+  assert.deepEqual(apifyResultCap({ resultsPerPage: 100 }), { field: 'resultsPerPage', value: 100 });
+  assert.deepEqual(apifyResultCap({ maxResult: 20 }), { field: 'maxResult', value: 20 });
+  assert.equal(apifyResultCap({ searchTerms: ['x'] }), null, 'input tanpa field batas tidak mengarang angka');
+  const items = Array.from({ length: 100 }, (_, index) => ({ id: `v-${index}`, text: `wondr merchant gagal login percobaan ${index}` }));
+  const { fetcher } = socialRoutes(items);
+  const result = await collectApify('tiktok', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.coverage.itemsRead, 100);
+  assert.equal(result.coverage.sampleLimit, 100);
+  assert.equal(result.coverage.possiblyTruncated, true, 'item sebanyak batas actor berarti masih ada yang belum terbaca');
+  assert.notEqual(result.status, 'success', 'hasil terpotong tidak boleh dilaporkan selesai');
+  assert.equal(result.status, 'partial');
+  assert.match(result.message, /masih ada konten yang belum terbaca/);
+  assert.match(result.message, /APIFY_INPUT_TIKTOK/);
+  // Tanpa satu pun teks, hasil terpotong juga tidak boleh disebut berhasil kosong.
+  const offTopic = socialRoutes(Array.from({ length: 100 }, (_, index) => ({ id: `o-${index}`, text: `warung makan biasa ${index}` })));
+  const empty = await collectApify('tiktok', offTopic.fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(empty.fetched, 0);
+  assert.equal(empty.coverage.possiblyTruncated, true);
+  assert.notEqual(empty.status, 'success', 'nol hasil karena terpotong bukan berarti tidak ada percakapan');
+  assert.equal(empty.status, 'partial', 'kanal menjawab tetapi datanya terpotong: sebagian, bukan gagal dan bukan nol');
 });
 
 test('Loose social search results that name another product are filtered and counted', async () => {

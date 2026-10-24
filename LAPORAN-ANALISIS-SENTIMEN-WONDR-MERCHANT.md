@@ -431,13 +431,15 @@ Enam kanal sosial dan web sudah memiliki konektor berkredensial dan dipanggil se
 | Kanal | Jalan pengambilan | Hasil pembacaan sumber | Teks tersimpan | Dianalisis sentimen |
 |---|---|---|---:|---:|
 | YouTube | YouTube Data API v3 | 10 komentar unik dari 7 video yang metadatanya menyebut wondr merchant; seluruh halaman API dan balasan diproses | 10 | 0 |
-| TikTok | Apify `clockworks/tiktok-scraper` | 94 item dataset diperiksa; 91 teks tidak menyebut identitas produk dan dibuang dengan pencatatan jumlah; 2 teks berasal dari akun resmi `bni46` | 2 | 0 |
-| X/Twitter | Apify `apidojo/tweet-scraper` | 10 item dataset seluruhnya penanda `noResults` | 0 | 0 |
-| Instagram | Apify `apify/instagram-scraper` | 1 item penanda `no_items` ("Empty or private data for provided input") | 0 | 0 |
-| Facebook | Apify `apify/facebook-pages-scraper` | 1 item penanda `no_items` ("Empty or private data for provided input") | 0 | 0 |
+| TikTok | Apify `clockworks/tiktok-scraper` | 100 item dataset diperiksa — sama persis dengan batas input `resultsPerPage: 100`, sehingga hasil **terpotong di batas itu**; 99 teks tidak menyebut identitas produk dan dibuang dengan pencatatan jumlah; 2 teks berasal dari akun resmi `bni46` | 2 | 0 |
+| X/Twitter | Apify `apidojo/tweet-scraper` | 10 item dataset seluruhnya penanda `noResults` (belum mencapai batas input `maxItems: 100`) | 0 | 0 |
+| Instagram | Apify `apify/instagram-scraper` | 1 item penanda `no_items` ("Empty or private data for provided input") untuk dua tagar produk; batas input `resultsLimit: 100` belum tercapai | 0 | 0 |
+| Facebook | Apify `apify/facebook-pages-scraper` | 1 item penanda `no_items` ("Empty or private data for provided input"); batas input `maxResult: 20`. Actor ini mengambil profil halaman, bukan pencarian kiriman/komentar, sehingga secara struktur tidak menghasilkan sentimen pelanggan | 0 | 0 |
 | Google Reviews | Google Places API (New) | 2 kueri dijawab, 4 halaman dibaca, 59 place dikembalikan; 0 place bernama wondr merchant dan API tidak menyertakan teks ulasan | 0 | 0 |
 
 Forum publik, blog dan ulasan web, serta portal berita tetap **tidak diambil** karena tidak memiliki konektor; status itu bukan nol keluhan.
+
+Batas jumlah hasil kini dibaca dari input actor yang benar-benar dikirim dan ditampilkan pada kartu kanal (`batas hasil actor <field>=<nilai>`), beserta penanda `terpotong di batas ini`. Angka `sampleLimit` pada jejak paginasi tidak lagi ditulis "tanpa batas" bila actor memotong hasil.
 
 Alasan seluruh teks sosial tidak masuk perhitungan sentimen:
 
@@ -531,6 +533,11 @@ Tabel berikut memuat 20 ulasan terbaru dari 64 ulasan, dengan urutan yang sama s
 - Pelabelan otomatis dapat keliru pada negasi, sarkasme, atau ulasan dengan beberapa aspek. Pada data akhir ini seluruh ulasan telah diberi label manual; belum ada pemeriksaan oleh penilai kedua.
 - Keluhan dalam ulasan merupakan pernyataan pengguna, bukan insiden yang telah terverifikasi.
 - Kanal sosial sudah dapat dipanggil, tetapi isinya belum dapat diperlakukan sebagai sentimen pelanggan: teks yang tersisa berasal dari akun resmi produk atau membahas BNI secara umum. Forum, blog, dan portal berita belum memiliki konektor, sehingga statusnya tidak diambil — bukan nol keluhan.
+- **Batas jumlah hasil actor.** Input bawaan memotong hasil di sisi Apify: `maxItems: 100` (X), `resultsLimit: 100` (Instagram), `resultsPerPage: 100` (TikTok), `maxResult: 20` (Facebook). Pada penarikan 24 Oktober 2026 TikTok mengembalikan tepat 100 item, artinya masih ada konten di luar yang dibaca. Batas ini dapat dinaikkan melalui `APIFY_INPUT_<KANAL>` (JSON), dan setiap pemotongan kini dilaporkan, bukan disembunyikan.
+- **Komentar tidak diambil.** Konektor sosial saat ini membaca teks kiriman/caption, bukan utas komentar. Komentar unggahan Instagram, balasan TikTok, dan kiriman/komentar Facebook adalah sumber sentimen paling padat dan belum tersentuh; `apify/facebook-pages-scraper` secara khusus hanya mengambil profil halaman, sehingga kanal Facebook tidak akan pernah menghasilkan sentimen pelanggan dengan actor tersebut.
+- **YouTube terbatas pada frasa persis.** Kolektor hanya membaca komentar video yang judul atau deskripsinya memuat "wondr merchant" atau `id.bni.wfb`. Video ulasan yang menyebut aplikasi hanya di dalam isi video, atau dengan variasi eja ("wonder merchant"), terlewat. Data API v3 tidak menyediakan pencarian komentar lintas platform, jadi cakupan ini adalah batas jalur resmi, bukan kelalaian pengambilan.
+- **Jalur resmi toko aplikasi tidak lebih lengkap dari halaman publik.** Google Play Reply to Reviews API hanya mengembalikan ulasan beberapa hari terakhir tanpa paginasi ([known limitation](https://support.google.com/googleplay/android-developer/thread/239806165/google-play-api-list-reviews-only-returns-last-7-days-of-reviews-and-does-not-return-pagination?hl=en)), sehingga daftar publik yang dibaca sekarang adalah jalur terluas yang tersedia tanpa hak akses penerbit. Untuk App Store, korpus ulasan lengkap hanya tersedia lewat App Store Connect API `GET /v1/apps/{id}/customerReviews` ([dokumentasi Apple](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps-_id_-customerreviews)) yang memerlukan kunci API milik akun penerbit aplikasi.
+- **Telaah manusia atas 12 teks sosial.** Satu komentar ("g bisa lanjut verifikasi krna ktp fisik hilang …") adalah keluhan verifikasi pendaftaran yang paling mungkin masuk kategori relevan namun kini berada di kantong "perlu tinjauan" karena tidak menyebut nama produk; satu komentar keluhan kehilangan dana Rp 63.825.450 muncul pada tiga video berbeda (tiga ID komentar nyata, satu grievance yang sama) dan dieksklusi dengan alasan yang benar karena teksnya membahas Wondr by BNI dan BNI Mobile Banking, bukan aplikasi merchant. Keduanya perlu keputusan penilai kedua sebelum angka apa pun diturunkan dari teks sosial.
 - Data internal yang diperlukan untuk menindaklanjuti: waktu persetujuan pendaftaran per pengajuan, catatan pengiriman notifikasi, status dan waktu pembaruan pencairan dana, tingkat keberhasilan transaksi QRIS, jumlah dan kategori tiket layanan, serta catatan perpindahan akun dari aplikasi lama.
 
 ---
