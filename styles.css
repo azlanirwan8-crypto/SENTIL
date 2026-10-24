@@ -367,15 +367,6 @@ main {
   flex: 1 1 280px;
 }
 
-.eyebrow {
-  margin-bottom: 6px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: .7px;
-  text-transform: uppercase;
-}
-
 .page-heading p {
   margin-top: 8px;
   color: var(--text-muted);
@@ -399,21 +390,6 @@ main {
   margin-left: auto;
 }
 
-.page-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  min-height: 60px;
-  margin-top: 24px;
-  padding: 20px 24px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.page-footer > span,
 .table-footer > span,
 .dialog-footer > small {
   min-width: 0;
@@ -618,29 +594,6 @@ main {
 .platform-tab.active .count {
   background: var(--primary-soft);
   color: var(--primary);
-}
-
-.platform-scroll {
-  display: grid;
-  flex: 0 0 38px;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--primary);
-}
-
-.platform-scroll:hover:not(:disabled) {
-  border-color: var(--primary-border);
-  background: var(--primary-soft);
-}
-
-.platform-scroll .icon {
-  width: 18px;
-  height: 18px;
 }
 
 .range-button {
@@ -2922,13 +2875,6 @@ tbody tr:hover {
     min-height: 36px;
   }
 
-  .page-footer {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-    padding: 16px;
-  }
-
   .complaint-axis,
   .complaint-row {
     grid-template-columns: minmax(0, 1fr) minmax(0, 44%);
@@ -3013,11 +2959,6 @@ tbody tr:hover {
     gap: 4px;
   }
 
-  .platform-scroll {
-    flex-basis: 32px;
-    width: 32px;
-  }
-
   .platform-tab {
     padding-right: 8px;
     padding-left: 8px;
@@ -3094,11 +3035,6 @@ tbody tr:hover {
 
   .table-footer {
     padding: 12px;
-  }
-
-  .page-footer {
-    padding-right: 12px;
-    padding-left: 12px;
   }
 
   .toast {
@@ -3203,5 +3139,186 @@ tbody tr:hover {
     scroll-behavior: auto !important;
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* ============================================================
+   Menu Review: urutan kolom, label berwarna, rincian dua kolom
+   ============================================================ */
+
+/* Nama penulis selalu satu baris; teks panjang dipotong elipsis dan tetap terbaca
+   utuh lewat atribut title serta dialog rincian. */
+td:first-child {
+  min-width: 176px;
+}
+
+.review-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Satu tinta per kategori, dikirim sebagai variabel inline dari tagColors. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--tag-line, transparent);
+  background: var(--tag-soft, var(--surface-soft));
+  color: var(--tag-ink, var(--text-muted));
+}
+
+.tag .icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+}
+
+.tag-chip-button:hover {
+  border-color: var(--tag-ink, var(--primary-border));
+  background: var(--tag-soft, var(--primary-soft));
+  color: var(--tag-ink, var(--primary));
+}
+
+.stars-tag {
+  --tag-ink: #b45309;
+  --tag-soft: rgba(180, 83, 9, .1);
+  --tag-line: rgba(180, 83, 9, .28);
+  letter-spacing: 1px;
+}
+
+/* Kepala kolom dapat diurut naik/turun; panah berputar mengikuti arah. */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.th-sort .icon {
+  width: 14px;
+  height: 14px;
+  opacity: .3;
+}
+
+.th-sort:hover {
+  color: var(--primary);
+}
+
+.th-sort.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.th-sort.active .icon {
+  opacity: 1;
+}
+
+th[aria-sort='descending'] .th-sort.active .icon {
+  transform: rotate(180deg);
+}
+
+.th-sep {
+  color: var(--text-muted);
+  opacity: .55;
+}
+
+/* Rincian ulasan disusun sebagai kartu metadata, bukan satu kolom memanjang. */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.detail-grid .detail-section {
+  margin-top: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.detail-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--heading);
+}
+
+.detail-section h3 .icon {
+  width: 15px;
+  height: 15px;
+  color: var(--primary);
+}
+
+.detail-author .review-date {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-author .platform-label {
+  display: inline-flex;
+}
+
+.detail-grid + .detail-section {
+  margin-top: 20px;
+}
+
+/* Tidak ada scrollbar atau tombol geser yang tampil di seluruh menu. */
+.platform-tabs,
+.table-wrap,
+.chart-body,
+.dialog-body {
+  scrollbar-width: none;
+}
+
+.platform-tabs::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar,
+.chart-body::-webkit-scrollbar,
+.dialog-body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.platform-tabs {
+  padding-bottom: 4px;
+}
+
+/* Dropdown filter: panah bawaan sistem diganti agar konsisten, opsi topik diberi tinta kategori.
+   Lebar ikut menyesuaikan isi supaya label topik panjang dan jumlahnya tidak terpotong. */
+.tag-filter {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1 1 200px;
+  min-width: 176px;
+  max-width: 300px;
+  padding-right: 32px;
+  text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235e6374' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 15px 15px;
+}
+
+.size-filter {
+  flex: 1 1 150px;
+  min-width: 132px;
+  max-width: 200px;
+}
+
+@media (max-width: 720px) {
+  .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

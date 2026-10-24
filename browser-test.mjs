@@ -105,7 +105,9 @@ try {
   await click('[data-view="overview"]');
   completed.push('Renamed navigation, matching page labels and removed methodology menu, workspace and profile');
   assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
-  assert.doesNotMatch(await evaluate(`document.querySelector('.page-footer').textContent`),/wondr pulse/i);
+  // Teks pemasaran dan footer dihapus atas permintaan pemilik akun; tidak ada lagi eyebrow atau footer.
+  assert.equal(await evaluate(`document.querySelectorAll('.eyebrow,.page-footer').length`),0,'eyebrow dan footer tidak boleh tersisa');
+  assert.doesNotMatch(await evaluate(`document.body.textContent`),/Analisis pengalaman pelanggan|Analisis pengalaman merchant|Dasbor independen|Bukan produk resmi BNI|Setiap label dapat ditelusuri/);
   await evaluate('document.fonts.ready');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).width`),'250px');
   assert.equal(await evaluate(`getComputedStyle(document.body).backgroundColor`),'rgb(243, 243, 249)');
@@ -144,6 +146,11 @@ try {
   await click('[data-driver="Pendaftaran belum tuntas"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
   await click('[data-review]');assert.equal(await evaluate(`document.querySelector('#detail-dialog').open`),true);
   assert.match(await evaluate(`document.querySelector('.detail-section p').textContent`),/pendaftaran|pengajuan/i);
+  // Rincian disusun sebagai kartu metadata dua kolom dengan judul berikon.
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#detail-dialog .detail-grid')).display`),'grid','rincian memakai kartu metadata dua kolom');
+  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .detail-section h3 .icon').length>=4`),true,'setiap bagian rincian diberi ikon');
+  assert.ok((await evaluate(`new Set([...document.querySelectorAll('#detail-dialog .tag')].map(t=>t.getAttribute('style'))).size`))>=2,'chip rincian memakai tinta berbeda');
+  await screenshot('review-detail.png',false);
   await click('[data-close="detail-dialog"]');await click('[data-action="clear-group"]');await click('[data-sentiment="all"]');
   assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/64 ulasan/);
   await click('[data-page="next"]');assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/11–20/);
@@ -156,6 +163,31 @@ try {
   assert.equal(await evaluate(`document.querySelector('.table-footer span').textContent.trim()`),'Menampilkan 1–25 dari 64 ulasan');
   await evaluate(`document.querySelector('#page-size').value='10';document.querySelector('#page-size').dispatchEvent(new Event('change',{bubbles:true}));`);
   assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),10);
+  // Urutan kolom: kepala tabel dapat diurut naik/turun untuk nama, tanggal, topik, platform, sentimen.
+  const defaultFirst=await evaluate(`document.querySelector('tbody [data-review]').dataset.review`);
+  assert.equal(await evaluate(`document.querySelectorAll('#main thead th[aria-sort]').length`),4,'empat kepala kolom dapat diurut');
+  assert.equal(await evaluate(`document.querySelector('#main thead th[aria-sort]').getAttribute('aria-sort')`),'descending','bawaan urutan: tanggal menurun');
+  assert.equal(await evaluate(`document.querySelectorAll('#main thead .th-sort').length`),5,'kolom pengguna menyediakan tombol nama dan tanggal');
+  await click('[data-sort="author"]');
+  assert.equal(await evaluate(`document.querySelector('#main thead th[aria-sort]').getAttribute('aria-sort')`),'ascending');
+  const ascNames=await evaluate(`[...document.querySelectorAll('tbody .review-name')].map(e=>e.textContent)`);
+  assert.deepEqual(ascNames,[...ascNames].sort((a,b)=>a.localeCompare(b,'id')),'urut naik nama pengguna');
+  await click('[data-sort="author"]');
+  const descNames=await evaluate(`[...document.querySelectorAll('tbody .review-name')].map(e=>e.textContent)`);
+  assert.deepEqual(descNames,[...descNames].sort((a,b)=>b.localeCompare(a,'id')),'urut turun nama pengguna');
+  await click('[data-sort="sentiment"]');
+  const sentiments=await evaluate(`[...document.querySelectorAll('tbody .badge')].map(e=>e.textContent.trim())`);
+  assert.equal(sentiments[0],'Positif');assert.equal(sentiments.at(-1),'Positif','halaman pertama terisi positif lebih dulu');
+  await click('[data-sort="date"]');
+  assert.equal(await evaluate(`document.querySelector('tbody [data-review]').dataset.review`),defaultFirst,'urutan tanggal bawaan pulih setelah berpindah kolom');
+  // Label berwarna, satu baris nama, dan dropdown berhitung.
+  assert.ok((await evaluate(`new Set([...document.querySelectorAll('tbody .tag')].map(t=>t.getAttribute('style'))).size`))>=3,'chip topik dan label metode memakai tinta berbeda');
+  assert.equal(await evaluate(`[...document.querySelectorAll('tbody .review-name')].every(e=>e.getBoundingClientRect().height<24)`),true,'nama penulis selalu satu baris');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('tbody .review-name')).textOverflow`),'ellipsis');
+  assert.match(await evaluate(`[...document.querySelectorAll('#tag-filter option')].map(o=>o.textContent).join('|')`),/Pendaftaran \(\d+\)/,'dropdown topik menampilkan jumlah nyata');
+  assert.match(await evaluate(`document.querySelector('#page-size option').textContent`),/^\d+ baris$/);
+  assert.deepEqual(await evaluate(`['#tag-filter','#page-size'].map(s=>{const e=document.querySelector(s);return Math.max(0,e.scrollWidth-e.clientWidth);})`),[0,0],'teks dropdown tidak terpotong');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#tag-filter')).getPropertyValue('-webkit-appearance')`),'none','panah dropdown bawaan sistem diganti');
   await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`new Promise(resolve=>{const check=()=>document.querySelectorAll('tbody tr').length===1?resolve(true):requestAnimationFrame(check);check();})`);
   assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
@@ -329,11 +361,14 @@ try {
   await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   await click('[data-view="overview"]');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-bar')).animationName`),'none');
-  assert.equal(await evaluate(`document.querySelector('[data-scroll-platforms="prev"]').disabled`),true);
-  await click('[data-scroll-platforms="next"]');
-  assert.equal(await evaluate(`document.querySelector('.platform-tabs').scrollLeft>0`),true);
-  await click('[data-scroll-platforms="prev"]');
-  assert.equal(await evaluate(`document.querySelector('.platform-tabs').scrollLeft`),0);
+  // Tombol geser dihapus dan scrollbar disembunyikan di seluruh menu; baris platform
+  // tetap dapat digulir dengan keyboard.
+  assert.equal(await evaluate(`document.querySelectorAll('[data-scroll-platforms]').length`),0,'tombol geser tidak dipakai lagi');
+  assert.deepEqual(await evaluate(`['#platform-tabs','.table-wrap','.chart-body'].map(s=>{const e=document.querySelector(s);return e.offsetHeight-e.clientHeight;})`),[0,0,0],'tidak ada scrollbar yang mengambil ruang tampilan');
+  // Tanpa tombol geser, tab yang mendapat fokus keyboard tetap ikut terlihat.
+  assert.equal(await evaluate(`(()=>{const tabs=document.querySelector('#platform-tabs');tabs.scrollLeft=0;const last=tabs.lastElementChild;last.focus({preventScroll:true});last.scrollIntoView({block:'nearest',inline:'nearest'});const a=last.getBoundingClientRect(),b=tabs.getBoundingClientRect();return a.left>=b.left-1&&a.right<=b.right+1;})()`),true,'tab terakhir ikut terlihat saat mendapat fokus keyboard');
+  await evaluate(`document.querySelector('#platform-tabs').scrollLeft=0`);
+  assert.equal(await evaluate(`document.querySelector('#platform-tabs').scrollLeft`),0);
   assert.equal(await evaluate(`document.querySelector('.chart-body').tabIndex`),0);
   await evaluate(`document.querySelector('.chart-body').focus()`);
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
@@ -423,7 +458,7 @@ try {
   await click('[data-platform="play"]');assert.equal((await metricValues())[0],'56');
   completed.push('Social fixtures preserve all IDs and context, exclude owner promotion from sentiment, and survive missing API access');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','sentiment-analysis.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();
