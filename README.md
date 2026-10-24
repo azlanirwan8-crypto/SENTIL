@@ -1,6 +1,6 @@
 # wondr merchant by BNI — Dasbor Sentimen
 
-Dasbor lokal untuk menganalisis sentimen ulasan publik **wondr merchant by BNI** di Google Play dan Apple App Store. Dasbor ini independen dan bukan produk resmi BNI.
+Dasbor lokal untuk menganalisis sentimen ulasan publik **wondr merchant by BNI** di Google Play dan Apple App Store, ditambah komentar media sosial (X, Instagram, TikTok, Facebook, YouTube), Google Reviews, dan liputan melalui RSS — semuanya dari halaman publik, tanpa login dan tanpa upaya melewati perlindungan akses. Dasbor ini independen dan bukan produk resmi BNI.
 
 ## Fitur
 
@@ -8,6 +8,11 @@ Dasbor lokal untuk menganalisis sentimen ulasan publik **wondr merchant by BNI**
 - Seluruh ulasan tertulis yang dapat diakses dimuat sampai halaman terakhir, dapat dicari berdasarkan nama atau teks, dan dapat diunduh sebagai CSV.
 - Google Play memisahkan daftar ulasannya menurut bahasa antarmuka. Kedua kumpulan (bahasa Indonesia dan bahasa Inggris) dibaca keduanya lalu digabung berdasarkan ID ulasan agar tidak ada ulasan terlewat.
 - Ringkasan sentimen, Net Sentiment Score (NSS), sebaran bintang, peringkat tema keluhan, faktor pendorong positif, dan cakupan sumber.
+- **Gauge NSS** dengan pita interpretasi, jumlah sampel minimum yang dinyatakan, serta NSS per kanal supaya satu kanal tidak menimpa yang lain.
+- **Pemantauan lonjakan** ulasan negatif: jendela 1 jam bila sumber mengirim waktu publikasi lengkap, jika tidak jendela 1 hari, dengan ambang >200% di atas rata-rata jendela sebelumnya. Spanduk selalu tampil, termasuk saat tidak ada anomali.
+- **ABSA** (aspek pengalaman, emosi, niat ulasan) yang diturunkan dari teks dengan aturan deterministik, plus ringkasan eksekutif dan klaster frasa keluhan yang dapat diklik.
+- **Proyeksi 4 pekan** dengan regresi kuadrat terkecil per pekan dan rentang Poisson 95%; arah hanya dinyatakan bila kemiringan meyakinkan (|t| ≥ 2).
+- **Laporan insiden eksekutif** sebagai CSV atau PDF (dialog cetak peramban): seluruh ulasan negatif pada filter aktif tanpa sampling, beserta waktu publikasi mentah, aspek, emosi, niat, dan tautan sumber.
 - Detail ulasan menampilkan teks asli, alasan pelabelan, sumber, waktu pengambilan, serta riwayat perubahan.
 - Status setiap sumber dilaporkan secara terpisah. Sumber yang belum terhubung tidak dihitung sebagai nol keluhan.
 - Metrik halaman toko (jumlah penilaian, nilai rata-rata, dan rentang unduhan) dilaporkan terpisah dari hasil analisis sentimen.
@@ -88,7 +93,7 @@ Data awal per 23 Oktober 2026 memuat 55 ulasan tertulis Google Play — gabungan
 
 Google Play hanya mempublikasikan rentang unduhan, saat ini **10K+**. Apple tidak mempublikasikan jumlah unduhan pada halaman publik, sehingga metrik tersebut dilaporkan **tidak tersedia**, bukan nol.
 
-Kanal YouTube memakai YouTube Data API v3, kanal Google Reviews memakai Google Places API (New), sedangkan kanal X, Instagram, TikTok, dan Facebook memakai actor Apify. Semua kanal itu butuh kredensial pada environment server; tanpa itu statusnya **perlu konfigurasi API** dan tidak ada satu baris pun yang diambil. Forum, blog, dan portal berita tidak memiliki konektor karena hasil pencarian dan berita bukan pengalaman pelanggan. Status **tidak diambil** tidak sama dengan nol keluhan.
+Kanal YouTube memakai YouTube Data API v3, kanal Google Reviews memakai Google Places API (New), sedangkan kanal X, Instagram, TikTok, dan Facebook memakai actor Apify. Kanal berita dan liputan memakai suaka RSS publik (`NEWS_RSS_URLS`) — tanpa biaya dan tanpa dependensi, tetapi judul/ringkasannya hanya dihitung sebagai konteks liputan dan tidak pernah masuk NSS. Semua kanal itu butuh konfigurasi pada environment server; tanpa itu statusnya **perlu konfigurasi API** dan tidak ada satu baris pun yang diambil. Forum dan blog tidak memiliki konektor karena hasil pencarian bukan pengalaman pelanggan. Status **tidak diambil** tidak sama dengan nol keluhan.
 
 Google Places API (New) tidak lagi menyertakan teks ulasan pada respons bagi pemanggil baru. Kanal ini melaporkan place yang benar-benar dikembalikan pencarian resmi dan jumlah teks ulasan yang tersedia; bila tidak ada place yang bernama produk, ulasan Google Maps tidak dikarang dan juga tidak dihitung.
 
@@ -104,7 +109,7 @@ Hasil penarikan daring pada 24 Oktober 2026 dengan kredensial pada server, terca
 | Instagram | berhasil, tanpa hasil | 0 | 1 item penanda `no_items` ("Empty or private data for provided input") |
 | Facebook | berhasil, tanpa hasil | 0 | 1 item penanda `no_items` ("Empty or private data for provided input") |
 | Google Reviews | berhasil, tanpa hasil | 0 | 2 kueri dijawab, 4 halaman, 59 place; 0 place bernama wondr merchant dan 0 teks ulasan disertakan API |
-| Forum, blog, berita | tidak diambil | 0 | Tidak ada konektor; hasil pencarian dan berita bukan pengalaman pelanggan |
+| Berita (RSS) | perlu konfigurasi | 0 | `NEWS_RSS_URLS` belum diisi; bila diisi, hanya teks yang menyebut identitas produk disimpan dan diperlakukan sebagai konteks liputan, bukan sentimen. Forum dan blog tetap tanpa konektor |
 
 Dari 76 baris yang tersimpan, 64 ulasan toko membawa label (41 positif, 22 negatif, 1 netral; NSS 29,6875). Dua belas teks sosial disimpan sebagai bukti tetapi **tidak** dinilai sebagai sentimen pelanggan: dua-dua konten akun resmi BNI dan sepuluh komentar YouTube yang membahas BNI secara umum atau belum jelas targetnya. Angka dasar toko tidak berubah karena konten sosial tidak masuk penyebut NSS.
 
@@ -115,8 +120,12 @@ Pencarian sosial bekerja longgar. Kueri `wondr merchant` pada TikTok mengembalik
 - Analisis menggunakan seluruh teks ulasan yang dapat diakses publik, tanpa pembatasan jumlah ulasan.
 - Pengambilan Google Play membaca setiap kumpulan ulasan yang ditampilkan menurut bahasa antarmuka sampai halaman terakhir, lalu menggabungkan hasilnya berdasarkan ID ulasan.
 - Sentimen ditentukan dari teks, bukan dari jumlah bintang. Data awal dilabeli manual; ulasan baru menggunakan aturan kata kunci versi 1.
-- NSS dihitung sebagai `(positif − negatif) ÷ jumlah ulasan berlabel × 100`. Ulasan yang perlu tinjauan tidak dihitung sebagai netral.
-- Duplikasi dicegah berdasarkan platform dan ID ulasan, dengan pencocokan tambahan berdasarkan nama pengguna, tanggal, dan teks.
+- NSS dihitung sebagai `(positif − negatif) ÷ jumlah ulasan berlabel × 100`. Ulasan yang perlu tinjauan tidak dihitung sebagai netral. Pita interpretasi pada gauge (−100…−50 tekanan berat sampai 50…100 positif kuat) hanya ambang baca, dan di bawah 20 ulasan berlabel angkanya ditandai belum representatif.
+- Lonjakan ulasan negatif diuji per jendela: minimal 3 ulasan negatif dalam satu jendela dan >200% di atas rata-rata 24 jendela sebelumnya (14 jendela bila jendela diperlebar menjadi harian). Jendela per jam hanya dipakai bila sumber benar-benar mengirim waktu publikasi; distribusi jam tidak pernah dikarang untuk teks yang hanya mengirim tanggal.
+- Penarikan berjalan dengan `Promise.allSettled` per kanal: satu kanal yang lambat atau gagal tidak membatalkan hasil kanal lain, dan kegagalannya dilaporkan sebagai status kanal itu sendiri.
+- Teks dari RSS dan actor dibersihkan dari markup (tag, entitas, CDATA) sebelum disimpan; jumlah teks yang hanya menyebut kata konteks merchant (`merchant`, `qris`, `edc`, `settlement`, `pencairan`, `toko`, `kasir`) tanpa identitas produk dihitung sebagai cakupan dan tidak disimpan sebagai ulasan aplikasi ini.
+- Duplikasi dicegah berdasarkan platform dan ID ulasan, dengan pencocokan tambahan berdasarkan nama pengguna, tanggal, dan teks; menekan **Tarik Analisis** berulang kali tidak menambah baris ganda.
+- Pada Vercel, function penarikan memakai `maxDuration` 60 detik dan anggaran tunggu actor dipotong ke 45 detik, sehingga run yang belum selesai dicatat lalu dilanjutkan pada penarikan berikutnya — bukan dimulai ulang dan dibayar ulang.
 - Perubahan pada ulasan tersimpan sebagai versi sebelumnya; versi lama tidak dihitung sebagai ulasan baru.
 - Tidak ada upaya melewati proses masuk atau perlindungan akses. Konten promosi resmi tidak diperlakukan sebagai sentimen pelanggan.
 

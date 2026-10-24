@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand } from './model.js';
 import { createDashboardServer, deploymentConfig } from './server.mjs';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -215,6 +215,56 @@ test('withAbsa adds structured fields without inventing sentiment',()=>{
   assert.deepEqual(row.aspects,['payment']);assert.equal(row.intent,'bug_report');assert.equal(row.sentiment,'negative','label sentimen tidak diubah ABSA');
   assert.deepEqual(Object.keys(source),['id','platform','author','date','text','rating','sentiment','tags','labeling'],'baris sumber tidak ditambah di tempat');
   assert.equal(withAbsa([row])[0],row,'perhitungan ulang menghasilkan baris yang sama');
+});
+const hourlyRow = (hour, sentiment, id) => ({ id, platform:'play', author:'Uji', date:'2026-10-01', publishedAt:`2026-10-01T${String(hour).padStart(2,'0')}:15:00.000Z`, text:'qris gagal', rating:2, sentiment, tags:['transactions'], labeling:'manual' });
+test('anomaly scan reads hourly spikes only from published timestamps', () => {
+  const rows = [];
+  for (let hour = 0; hour <= 22; hour++) rows.push(hourlyRow(hour, 'negative', `b${hour}`));
+  for (let i = 0; i < 5; i++) rows.push(hourlyRow(23, 'negative', `s${i}`));
+  const a = anomalyScan(rows);
+  assert.equal(a.window, 'hour', 'waktu publikasi per jam tersedia, jadi jendela jam yang dipakai');
+  assert.equal(a.rows.timed, 28);
+  assert.equal(a.ok, true);
+  assert.equal(a.findings.length, 1, 'hanya satu jendela yang melampaui ambang');
+  assert.equal(a.peak.negative, 5);
+  assert.ok(Math.abs(a.peak.baseline - 1) < 1e-9, 'baseline adalah rata-rata jendela-jendela sebelumnya');
+  assert.equal(a.peak.increasePct, 400);
+  assert.equal(a.peak.reviews.length, 5, 'isi lonjakan dapat diperiksa baris per baris');
+});
+test('Anomaly scan widens to daily windows when no source published an hour', () => {
+  const rows = [];
+  for (let day = 1; day <= 14; day++) rows.push({ id:`h${day}`, platform:'play', author:'Uji', date:`2026-10-${String(day).padStart(2,'0')}`, text:'qris gagal', rating:2, sentiment:'negative', tags:['transactions'] });
+  for (let i = 0; i < 4; i++) rows.push({ id:`s${i}`, platform:'play', author:'Uji', date:'2026-10-15', text:'qris gagal lagi', rating:1, sentiment:'negative', tags:['transactions'] });
+  const a = anomalyScan(rows);
+  assert.equal(a.window, 'day', 'tanpa jam publikasi nyata, jendela harian yang dipakai — bukan jam karangan');
+  assert.equal(a.rows.timed, 0);
+  assert.equal(a.peak.negative, 4);
+  assert.equal(a.peak.increasePct, 300);
+});
+test('A burst after quiet windows is reported as a rise from zero, not an infinite percent', () => {
+  const rows = [];
+  for (let hour = 0; hour < 6; hour++) for (let i = 0; i < 2; i++) rows.push(hourlyRow(hour, 'positive', `p${hour}-${i}`));
+  for (let i = 0; i < 3; i++) rows.push(hourlyRow(6, 'negative', `n${i}`));
+  const a = anomalyScan(rows);
+  assert.equal(a.window, 'hour');
+  assert.equal(a.findings.length, 1);
+  assert.equal(a.peak.baseline, 0);
+  assert.equal(Number.isFinite(a.peak.increasePct), false, 'baseline nol tidak diubah menjadi persentase tak hingga');
+});
+test('Anomaly scan states plainly when there is too little data to test', () => {
+  const a = anomalyScan([{ id:'x', platform:'play', author:'Uji', date:'2026-10-01', text:'qris gagal', rating:2, sentiment:'negative', tags:['transactions'] }]);
+  assert.equal(a.ok, false);
+  assert.equal(a.findings.length, 0);
+  assert.match(a.reason, /Baru 1 ulasan memiliki tanggal publikasi/);
+  assert.match(a.reason, /setidaknya 3 ulasan negatif dalam satu jendela/);
+});
+test('NSS bands label the score without changing it', () => {
+  assert.equal(nssBand(-100).id, 'tekanan-berat');
+  assert.equal(nssBand(-50).id, 'tekanan-berat', 'nilai tepat di ambang masuk pita di bawahnya');
+  assert.equal(nssBand(-49).id, 'cenderung-negatif');
+  assert.equal(nssBand(0).id, 'netral-negatif');
+  assert.equal(nssBand(100).id, 'positif-kuat');
+  assert.equal(nssBand(null), null, 'NSS yang belum dapat dihitung tidak diberi label pita');
 });
 test('CSV export carries the ABSA columns for analysts',()=>{
   const csv=exportCsv([{ ...seedReviews[0], aspects:['payment'], emotions:['frustration'], emotion:'frustration', intent:'complaint' }]);

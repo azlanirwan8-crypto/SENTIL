@@ -180,6 +180,72 @@ export function projection(reviews, options = {}) {
     confidence,
   };
 }
+// Lonjakan negatif hanya dihitung dari waktu publikasi yang benar-benar dikirim sumber
+// (publishedAt). Ulasan yang hanya punya tanggal tidak disebar ke dalam jam — itu mengarang
+// distribusi. Bila teks berhanya sedikit, jendela diperbesar menjadi harian dan jendela mana
+// yang dipakai selalu ikut dilaporkan supaya pembaca tahu apa yang sebenarnya diuji.
+export const anomalyDefaults = { thresholdPct: 200, baselineWindows: 24, dailyBaselineWindows: 14, minWindows: 6, minCurrent: 3, minHourlyRows: 12, maxBuckets: 4000 };
+export const anomalyWindowNames = { hour: '1 jam', day: '1 hari' };
+export function anomalyScan(reviews, options = {}) {
+  const settings = { ...anomalyDefaults, ...options };
+  const timed = reviews.filter(r => typeof r.publishedAt === 'string' && Number.isFinite(Date.parse(r.publishedAt)));
+  const dated = reviews.filter(r => validDate(r.date));
+  const hourly = timed.length >= settings.minHourlyRows;
+  const used = hourly ? timed : dated;
+  const size = hourly ? 3600000 : 86400000;
+  const baselineWindows = hourly ? settings.baselineWindows : settings.dailyBaselineWindows;
+  const base = {
+    ok: false, findings: [], peak: null, buckets: 0, baselineWindows,
+    thresholdPct: settings.thresholdPct, minCurrent: settings.minCurrent,
+    window: hourly ? 'hour' : 'day',
+    rows: { total: reviews.length, timed: timed.length, dated: dated.length, used: used.length },
+  };
+  if (used.length < settings.minCurrent) {
+    return { ...base, reason: `Baru ${used.length} ulasan ${hourly ? 'memiliki waktu publikasi per jam' : 'memiliki tanggal publikasi'} pada pilihan ini. Lonjakan memerlukan setidaknya ${settings.minCurrent} ulasan negatif dalam satu jendela, jadi belum ada yang dapat diuji.` };
+  }
+  const stamp = r => hourly ? Date.parse(r.publishedAt) : Date.parse(`${r.date}T00:00:00Z`);
+  const starts = used.map(r => Math.floor(stamp(r) / size) * size);
+  const first = Math.min(...starts), last = Math.max(...starts);
+  const count = Math.min(settings.maxBuckets, Math.floor((last - first) / size) + 1);
+  const negative = new Array(count).fill(0), total = new Array(count).fill(0), members = Array.from({ length: count }, () => []);
+  for (let i = 0; i < used.length; i++) {
+    const index = Math.floor((starts[i] - first) / size);
+    if (index < 0 || index >= count) continue;
+    total[index]++;
+    if (used[i].sentiment === 'negative') { negative[index]++; members[index].push(used[i]); }
+  }
+  const findings = [];
+  for (let index = 0; index < count; index++) {
+    if (negative[index] < settings.minCurrent) continue;
+    const prior = negative.slice(Math.max(0, index - baselineWindows), index);
+    if (prior.length < settings.minWindows) continue;
+    const baseline = prior.reduce((sum, value) => sum + value, 0) / prior.length;
+    // Baseline nol tidak menghasilkan persentase: jumlah dinaikkan dari nol dilaporkan apa
+    // adanya, bukan sebagai kelipatan yang tidak dapat dihitung.
+    const increasePct = baseline > 0 ? (negative[index] - baseline) / baseline * 100 : Number.POSITIVE_INFINITY;
+    if (!(increasePct > settings.thresholdPct)) continue;
+    findings.push({ start: first + index * size, end: first + (index + 1) * size, negative: negative[index], total: total[index], baseline, increasePct, reviews: members[index] });
+  }
+  findings.sort((a, b) => b.increasePct - a.increasePct || b.start - a.start);
+  const reason = findings.length ? null
+    : `Tidak ada satu pun jendela ${anomalyWindowNames[base.window]} dengan ${settings.minCurrent}+ ulasan negatif yang melampaui ${settings.thresholdPct}% di atas rata-rata ${baselineWindows} jendela sebelumnya (rentang ${count} jendela diperiksa).`;
+  return { ...base, ok: findings.length > 0, findings, peak: findings[0] || null, buckets: count, span: { first, last }, reason };
+}
+// Pita NSS hanya label interpretasi di atas angka yang sudah dihitung; ambangnya ditulis
+// agar dapat diperdebatkan, bukan ditutup sebagai kebenaran ilmiah.
+export const nssBands = [
+  { id: 'tekanan-berat', min: -100, max: -50, label: 'Tekanan berat', tone: 'negative' },
+  { id: 'cenderung-negatif', min: -50, max: -20, label: 'Cenderung negatif', tone: 'negative' },
+  { id: 'netral-negatif', min: -20, max: 0, label: 'Netral condong negatif', tone: 'neutral' },
+  { id: 'netral-positif', min: 0, max: 20, label: 'Netral condong positif', tone: 'neutral' },
+  { id: 'cenderung-positif', min: 20, max: 50, label: 'Cenderung positif', tone: 'positive' },
+  { id: 'positif-kuat', min: 50, max: 100, label: 'Positif kuat', tone: 'positive' },
+];
+export const nssMinSample = 20;
+export function nssBand(nss) {
+  if (nss === null || !Number.isFinite(nss)) return null;
+  return nssBands.find(band => nss >= band.min && nss <= band.max) || null;
+}
 const sourceDomains = { play: ['play.google.com'], appstore: ['apps.apple.com', 'itunes.apple.com'], x: ['x.com','twitter.com'], instagram: ['instagram.com'], tiktok: ['tiktok.com'], youtube: ['youtube.com','youtu.be'], googlemaps: ['google.com'] };
 export function validSource(value, platform) {
   try {

@@ -1,5 +1,5 @@
 import { seedReviews, platforms, tags, tagColors, observationDate } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, nssBand, nssBands, nssMinSample } from './model.js';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
@@ -111,6 +111,9 @@ const paths = {
   link:'<path d="M10 13.5a4.4 4.4 0 0 0 6.3 0l2.8-2.8a4.4 4.4 0 0 0-6.2-6.2l-1 1"/><path d="M14 10.5a4.4 4.4 0 0 0-6.3 0l-2.8 2.8a4.4 4.4 0 0 0 6.2 6.2l1-1"/>',
   tagIcon:'<path d="M12.6 3H5a2 2 0 0 0-2 2v7.6a2 2 0 0 0 .6 1.4l6.4 6.4a2 2 0 0 0 2.8 0l7-7a2 2 0 0 0 0-2.8L14 3.6a2 2 0 0 0-1.4-.6Z"/><path d="M8 8h.01"/>',
   database:'<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  alert:'<path d="M12 3 22 20H2L12 3Z"/><path d="M12 9v5m0 2.6v.2"/>',
+  shield:'<path d="M12 3 20 6v6c0 4-3.4 7.4-8 9-4.6-1.6-8-5-8-9V6l8-3Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  printer:'<path d="M7 8V3h10v5"/><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 13h10v8H7v-8Z"/>',
 };
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.message}</svg>`; }
 let reviews = [...seedReviews];
@@ -347,12 +350,172 @@ function clusterCard(data) {
     </div>`;}).join('')}${legend()}<p class="feature-hint">Kamus frasa bersifat tetap agar setiap klaster dapat diperiksa artinya; satu ulasan dapat masuk beberapa klaster, dan hanya ulasan negatif yang dapat dibuka dari tautan ini.</p></div>`:empty('Belum ada klaster yang cocok','Tidak ada ulasan negatif pada filter ini yang menyebut frasa dalam kamus klaster.')}
   </article>`;
 }
+// Gauge NSS: setengah lingkaran dengan pita interpretasi; jarum hanya menunjuk angka yang
+// sudah dihitung pada filter ini. Sampel kecil ditandai, tidak disamarkan.
+const gaugePoint = (fraction, radius) => ({ x: 160 - radius * Math.cos(Math.PI * fraction), y: 150 - radius * Math.sin(Math.PI * fraction) });
+const gaugeArc = (from, to, radius) => {
+  const a = gaugePoint(from, radius), b = gaugePoint(to, radius);
+  return `M${a.x.toFixed(1)} ${a.y.toFixed(1)} A${radius} ${radius} 0 0 1 ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+};
+const bandToneColor = { negative: colors.negative, neutral: colors.neutral, positive: colors.positive };
+function nssGauge(data) {
+  const s = summary(data), band = nssBand(s.nss);
+  const radius = 118;
+  const fraction = s.nss === null ? null : Math.min(1, Math.max(0, (s.nss + 100) / 200));
+  const needle = fraction === null ? '' : (() => {
+    const tip = gaugePoint(fraction, radius - 14), tail = gaugePoint(fraction, 18);
+    return `<line x1="${tail.x.toFixed(1)}" y1="${tail.y.toFixed(1)}" x2="${tip.x.toFixed(1)}" y2="${tip.y.toFixed(1)}" stroke="#2f3842" stroke-width="3" stroke-linecap="round"/><circle cx="${tip.x.toFixed(1)}" cy="${tip.y.toFixed(1)}" r="5" fill="${bandToneColor[band.tone]}"/>`;
+  })();
+  const scoped = filterReviews(reviews, { platform:'all', from:state.from, to:state.to });
+  const perSource = platforms.map(p => ({ p, rows: scoped.filter(r => r.platform === p.id) }))
+    .filter(entry => entry.rows.length).map(entry => ({ ...entry, s: summary(entry.rows) }));
+  return `<article class="card nss-card" aria-labelledby="nss-heading">
+    <div class="card-header"><div><h2 id="nss-heading">Skor sentimen neto</h2><p class="card-subtitle">NSS = (positif − negatif) ÷ ulasan berlabel × 100</p></div>${band?`<span class="badge ${esc(band.tone)}">${esc(band.label)}</span>`:`<span class="badge neutral">Belum dapat dihitung</span>`}</div>
+    ${s.classified ? `<div class="nss-wrap">
+      <svg class="nss-gauge" viewBox="0 0 320 168" role="img" aria-label="${esc(`NSS ${s.nss>0?'+':''}${number(s.nss)} poin dari ${s.classified} ulasan berlabel. Pita: ${band?band.label:'tidak ada'}.`)}">
+        ${nssBands.map(b => `<path d="${gaugeArc((b.min + 100) / 200, (b.max + 100) / 200, radius)}" fill="none" stroke="${bandToneColor[b.tone]}" stroke-opacity="${band && b.id === band.id ? '.95' : '.22'}" stroke-width="16" stroke-linecap="butt"/>`).join('')}
+        ${[-100, -50, 0, 50, 100].map(v => { const point = gaugePoint((v + 100) / 200, radius + 14); return `<text x="${point.x.toFixed(1)}" y="${point.y.toFixed(1)}" font-size="10" fill="#878a99" text-anchor="middle">${v}</text>`; }).join('')}
+        ${needle}
+        <text x="160" y="132" text-anchor="middle" font-size="30" font-weight="600" fill="#2f3842">${esc(`${s.nss>0?'+':''}${number(s.nss)}`)}</text>
+        <text x="160" y="150" text-anchor="middle" font-size="11" fill="#878a99">poin dari ${integer(s.classified)} ulasan berlabel</text>
+      </svg>
+      <div class="nss-side">
+        <div class="distribution-item"><span class="legend-item"><span class="legend-swatch positive"></span>Positif</span><strong>${s.positive}<small>${number(s.positivePct)}%</small></strong></div>
+        <div class="distribution-item"><span class="legend-item"><span class="legend-swatch negative"></span>Negatif</span><strong>${s.negative}<small>${number(s.negativePct)}%</small></strong></div>
+        <div class="distribution-item"><span class="legend-item"><span class="legend-swatch neutral"></span>Netral</span><strong>${s.neutral}<small>${number(s.neutralPct)}%</small></strong></div>
+        <div class="distribution-item"><span class="legend-item"><span class="legend-swatch unclassified"></span>Perlu tinjauan</span><strong>${s.unclassified}<small>tidak masuk rumus</small></strong></div>
+      </div>
+    </div>` : empty('NSS belum dapat dihitung', `Pada pilihan ini belum ada ulasan berlabel positif atau negatif (${integer(s.total)} teks, ${s.unclassified} masih perlu ditinjau). Angka nol bukan berarti tidak ada keluhan.`)}
+    <p class="note-inline">${s.classified ? `Jumlah sampel ${integer(s.classified)} ulasan berlabel${s.classified < nssMinSample ? ` masih di bawah ${nssMinSample} sehingga pita interpretasinya belum representatif — jadikan arah indikatif, bukan ukuran kepuasan` : ' cukup untuk membaca arahnya'}; pita hanyalah label ambang, bukan hasil uji statistik.` : ''}</p>
+    ${perSource.length ? `<div class="nss-sources"><h3>NSS per kanal</h3>${perSource.map(({ p, rows, s: one }) => `<div class="distribution-item"><span class="platform-label"><span style="color:${color(p.color)};display:flex">${icon(p.icon)}</span>${esc(p.short)}</span><strong>${one.classified ? esc(`${one.nss>0?'+':''}${number(one.nss)}`) : 'N/A'}<small>${one.classified ? `${one.positive}+ / ${one.negative}− dari ${one.classified} berlabel` : `${rows.length} teks, belum berlabel`}</small></strong></div>`).join('')}</div>` : ''}
+    <details class="chart-notes"><summary>Batas baca angka ini</summary><p>NSS dihitung dari ulasan publik yang terkumpul pada dasbor ini, bukan dari seluruh pengguna aplikasi. Kanal yang belum memiliki konektor, ulasan tanpa teks, dan teks yang masih perlu ditinjau tidak ikut membagi. Satu ulasan berbintang tinggi dapat saja bernada negatif, jadi NSS tidak dibandingkan dengan rata-rata bintang toko. Label otomatis memakai aturan kata kunci (rules-v1) dan dapat keliru pada negasi atau sarkasme.</p></details>
+  </article>`;
+}
+// Spanduk anomali: selalu ditampilkan, baik ada lonjakan maupun tidak, supaya pembaca tahu
+// pemantauan berjalan dan jendela mana yang dipakai. Tidak ada ambang yang diloloskan diam-diam.
+function anomalyBanner(data) {
+  const a = anomalyScan(data), windowName = anomalyWindowNames[a.window];
+  const label = value => timeLabel(new Date(value).toISOString());
+  if (!a.ok) {
+    return `<aside class="anomaly-strip" aria-live="polite">${icon('shield')}<div><strong>Pemantauan lonjakan: tidak ada anomali</strong><p>${esc(a.reason)}</p><p class="anomaly-meta">Jendela ${esc(windowName)} · ${integer(a.rows.timed)} dari ${integer(a.rows.total)} teks pada pilihan ini memiliki jam publikasi UTC, sehingga ${a.window === 'hour' ? 'jendela per jam yang diuji' : 'jendela diperlebar menjadi harian karena sumber tidak mengirim jam publikasi'} · ambang ${a.thresholdPct}% di atas rata-rata ${a.baselineWindows} jendela sebelumnya.</p></div></aside>`;
+  }
+  const p = a.peak, others = a.findings.slice(1, 4);
+  const day = new Date(p.start).toISOString().slice(0, 10);
+  const growth = Number.isFinite(p.increasePct) ? `${number(p.increasePct)}%` : 'dari nol';
+  return `<aside class="anomaly-alert" role="alert" aria-live="assertive">
+    <div class="anomaly-icon">${icon('alert')}</div>
+    <div class="anomaly-main"><h2>Lonjakan ulasan negatif terdeteksi</h2>
+      <p><strong>${p.negative} ulasan negatif</strong> dalam satu jendela ${esc(windowName)} pada ${esc(label(p.start))}–${esc(label(p.end - 1))} UTC, rata-rata ${a.baselineWindows} jendela sebelumnya ${number(p.baseline)} ulasan negatif per jendela (kenaikan ${esc(growth)}, ambang ${a.thresholdPct}%).</p>
+      <div class="anomaly-list">${a.findings.slice(0, 4).map(f => `<div class="anomaly-row"><span>${esc(label(f.start))}</span><strong>${f.negative} negatif · ${f.total} teks</strong><span class="anomaly-grow">${esc(Number.isFinite(f.increasePct) ? `+${number(f.increasePct)}%` : 'dari nol')}</span></div>`).join('')}</div>
+      <p class="anomaly-meta">Jendela dihitung dari waktu publikasi yang dikirim sumber (UTC). ${integer(a.rows.timed)} dari ${integer(a.rows.total)} teks pada pilihan ini memiliki jam publikasi; sumber yang hanya mengirim tanggal akan menumpuk pada satu jendela, jadi lonjakan jam hanya dapat dipercaya pada kanal yang mengirim waktu lengkap. Keluhan yang tertulis belum membuktikan insiden operasional.</p>
+      <div class="anomaly-actions"><button class="btn btn-primary" data-anomaly-day="${esc(day)}">${icon('search')}Buka ulasan negatif ${esc(dateLabel(day, { year:'numeric' }))}</button>${others.length ? `<span class="anomaly-more">${a.findings.length} jendela melampaui ambang; ${others.length} lainnya tercatat di daftar di atas.</span>` : ''}</div>
+    </div>
+  </aside>`;
+}
+// Laporan insiden: CSV dan cetak-PDF disusun dari baris yang sama dengan yang tampil, tanpa
+// sampling. PDF memakai stylesheet cetak browser sehingga tidak ada dependensi baru.
+function incidentCard(data) {
+  const s = summary(data), negative = data.filter(r => r.sentiment === 'negative'), a = anomalyScan(data);
+  const rows = (label, value) => `<div class="distribution-item"><span>${esc(label)}</span><strong>${value}</strong></div>`;
+  return `<article class="card incident-card" aria-labelledby="incident-heading">
+    <div class="card-header"><div><h2 id="incident-heading">Laporan insiden eksekutif</h2><p class="card-subtitle">Seluruh ulasan negatif pada filter ini, beserta aspek, emosi, niat, dan tautan sumbernya</p></div>${icon('download')}</div>
+    <div class="incident-facts">${rows('Ulasan negatif', `${integer(negative.length)} baris`)}${rows('Perlu tinjauan', `${integer(s.unclassified)} baris`)}${rows('Kanal terwakili', `${integer(new Set(negative.map(r => r.platform)).size)} kanal`)}${rows('Jendela pemantauan', esc(anomalyWindowNames[a.window]))}${rows('Status lonjakan', a.ok ? `${integer(a.findings.length)} jendela di atas ambang` : 'tidak ada anomali')}</div>
+    <div class="incident-actions"><button class="btn btn-primary" data-action="print-incident" ${negative.length ? '' : 'disabled'}>${icon('printer')}Cetak / simpan PDF</button><button class="btn" data-action="export-incident" ${negative.length ? '' : 'disabled'}>${icon('download')}Unduh CSV insiden</button></div>
+    <p class="note-inline">Laporan memuat ${integer(negative.length)} ulasan negatif tanpa pembatasan sampel dan tidak menambahkan baris yang tidak ada di data. Teks yang masih perlu ditinjau (${integer(s.unclassified)}) sengaja dikecualikan dari daftar insiden karena labelnya belum pasti; angka NSS dan komposisi di laporan tetap memakai denominasi yang sama dengan dasbor.</p>
+  </article>`;
+}
 function shareOfVoice() {
   const rows=platforms.map(p=>({p,total:reviews.filter(r=>r.platform===p.id).length})).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);
   const total=rows.reduce((sum,row)=>sum+row.total,0);
   let start=0;
   const segments=rows.map(({p,total:count})=>{const end=start+pct(count,total);const segment=`${color(p.color)} ${start}% ${end}%`;start=end;return segment;}).join(',');
   return `<article class="card sov-card"><div class="card-header"><div><h2>Pangsa volume per kanal</h2><p class="card-subtitle">Bagaimana teks yang terkumpul tersebar menurut kanal</p></div>${icon('layers')}</div>${total?`<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${segments})" role="img" aria-label="${esc(rows.map(({p,total:count})=>`${p.short}: ${count} dari ${total} teks`).join('; '))}"><div class="donut-center"><strong>${integer(total)}</strong><span>teks tersimpan</span></div></div></div><div class="distribution-list">${rows.map(({p,total:count})=>`<div class="distribution-item"><span class="platform-label"><span style="color:${color(p.color)};display:flex">${icon(p.icon)}</span>${esc(p.short)}</span><strong>${integer(count)}<small>${number(pct(count,total))}%</small></strong></div>`).join('')}</div><p class="note-inline">Yang dibagi di sini adalah volume teks yang benar-benar terkumpul pada dasbor ini, bukan pangsa percakapan di internet. Kanal tanpa konektor atau tanpa hasil tidak muncul, jadi angkanya bukan perbandingan popularitas aplikasi.</p>`:empty('Belum ada teks tersimpan','Pangsa kanal akan muncul setelah ada ulasan atau komentar yang tersimpan.')}</article>`;
+}
+// Laporan insiden ditulis ke wadah terpisah lalu dicetak lewat stylesheet cetak browser
+// (Simpan sebagai PDF). Tidak ada dependensi PDF, dan setiap tabel hanya memuat baris yang
+// memang ada pada dataset — kolom yang tidak dikirim sumber ditulis N/A.
+function reportScopeLabel() {
+  const platform = state.platform === 'all' ? 'Semua kanal' : (platformById(state.platform)?.name || state.platform);
+  const period = state.from || state.to ? `${state.from ? dateLabel(state.from, { year:'numeric' }) : 'awal data'} – ${state.to ? dateLabel(state.to, { year:'numeric' }) : 'tanggal terakhir'}` : 'Semua tanggal';
+  const group = state.complaint ? complaintStats(analyticalReviews()).find(g => g.id === state.complaint) : null;
+  const extra = [
+    state.complaint ? `area keluhan: ${complaintName(group || { name: state.complaint })}` : '',
+    state.cluster ? `klaster: ${painClusters.find(c => c.id === state.cluster)?.label || state.cluster}` : '',
+    state.group ? `topik: ${state.groupName}` : '',
+    state.tag ? `topik: ${tags[state.tag] || state.tag}` : '',
+    state.query ? `kata kunci: ${state.query}` : '',
+    state.sentiment !== 'all' ? `filter sentimen: ${sentimentNames[state.sentiment] || state.sentiment}` : '',
+  ].filter(Boolean);
+  return [platform, period, ...extra].join(' · ');
+}
+function incidentReportHtml(data) {
+  const generatedAt = new Date().toISOString();
+  const s = summary(data);
+  const negative = [...data].filter(r => r.sentiment === 'negative').sort(newestFirst);
+  const a = anomalyScan(data);
+  const p = projection(data);
+  const areas = complaintBreakdown(data).filter(g => g.negative > 0);
+  const aspects = aspectStats(data, 'negative').filter(x => x.negative > 0).sort((x, y) => y.negative - x.negative);
+  const clusters = clusterStats(data);
+  const intents = negative.map(absaOf);
+  const intentCount = id => intents.filter(x => x.intent === id).length;
+  const emotionCount = id => intents.filter(x => x.emotion === id).length;
+  const lastPull = sync.lastRun?.finishedAt ? timeLabel(sync.lastRun.finishedAt) : 'Belum ada penarikan pada sesi ini';
+  const kpi = (label, value) => `<div class="report-kpi"><span>${esc(label)}</span><strong>${value}</strong></div>`;
+  const list = rows => rows.length ? `<ul>${rows.map(x => `<li>${x}</li>`).join('')}</ul>` : '<p class="report-plain">Tidak ada baris yang memenuhi syarat ini pada lingkup laporan.</p>';
+  return `<header class="report-head">
+    <h1>Laporan Insiden Sentimen — wondr merchant by BNI</h1>
+    <p class="report-meta">Lingkup data: ${esc(reportScopeLabel())}</p>
+    <p class="report-meta">Dibuat ${esc(timeLabel(generatedAt))} (${esc(generatedAt)}) · Penarikan terakhir: ${esc(lastPull)} · Penjenisan: rules-v1 · ABSA: aspek/emosi/niat aturan kata kunci · Proyeksi: ${esc(projectionMethod)}</p>
+  </header>
+  <section class="report-block"><h2>1. Ringkasan</h2>
+    <div class="report-kpis">${kpi('Teks dalam lingkup', integer(s.total))}${kpi('Ulasan berlabel', integer(s.classified))}${kpi('Positif', `${integer(s.positive)}${s.classified ? ` · ${number(s.positivePct)}%` : ''}`)}${kpi('Negatif', `${integer(s.negative)}${s.classified ? ` · ${number(s.negativePct)}%` : ''}`)}${kpi('Netral', `${integer(s.neutral)}${s.classified ? ` · ${number(s.neutralPct)}%` : ''}`)}${kpi('Perlu tinjauan', integer(s.unclassified))}${kpi('NSS', s.classified ? `${esc(`${s.nss>0?'+':''}${number(s.nss)}`)} poin` : 'N/A')}${kpi('Pita NSS', esc(nssBand(s.nss)?.label || 'N/A'))}</div>
+    <p>Dari ${integer(s.classified)} teks berlabel sentimen pada lingkup ini, ${integer(s.negative)} bernada negatif dan ${integer(s.positive)} bernada positif, menghasilkan NSS ${s.classified ? `${s.nss>0?'+':''}${number(s.nss)} poin (${esc(nssBand(s.nss)?.label || 'N/A')})` : 'belum dapat dihitung'}. Teks yang masih perlu ditinjau (${integer(s.unclassified)}) tidak dihitung sebagai netral dan tidak membagi persentase. ${s.classified < nssMinSample ? `Jumlah sampel masih di bawah ${nssMinSample} ulasan berlabel, sehingga angka ini bersifat indikatif.` : ''}</p>
+    ${aspects.length ? `<p>Pendorong negatif terbesar: ${aspects.slice(0, 3).map(x => `${esc(x.name)} (${integer(x.negative)} ulasan negatif, ${number(pct(x.negative, s.negative))}% dari seluruh negatif)`).join('; ')}.</p>` : `<p>${negative.length ? `${integer(negative.length)} ulasan negatif belum dapat dipetakan ke aspek tertentu; umumnya penilaian tanpa objek yang jelas.` : 'Tidak ada ulasan negatif pada lingkup ini.'}</p>`}
+    <p>Niat pada ulasan negatif: laporan bug ${integer(intentCount('bug_report'))}, keluhan umum ${integer(intentCount('complaint'))}, permintaan fitur ${integer(intentCount('feature_request'))}, lainnya ${integer(intentCount('other'))}. Emosi: marah ${integer(emotionCount('anger'))}, frustrasi ${integer(emotionCount('frustration'))}, netral ${integer(emotionCount('neutral'))}, bertanya ${integer(emotionCount('query'))}, puas ${integer(emotionCount('satisfaction'))}.</p>
+  </section>
+  <section class="report-block"><h2>2. Pemantauan lonjakan (jendela ${esc(anomalyWindowNames[a.window])})</h2>
+    ${a.ok ? `<p>Terdeteksi ${integer(a.findings.length)} jendela dengan ulasan negatif melampaui ${a.thresholdPct}% di atas rata-rata ${a.baselineWindows} jendela sebelumnya (ambang minimal ${a.minCurrent} ulasan negatif per jendela):</p>
+    <table class="report-table"><thead><tr><th>Jendela mulai (UTC)</th><th>Jendela akhir (UTC)</th><th>Ulasan negatif</th><th>Total teks</th><th>Baseline rata-rata</th><th>Kenaikan</th></tr></thead><tbody>${a.findings.map(f => `<tr><td>${esc(timeLabel(new Date(f.start).toISOString()))}</td><td>${esc(timeLabel(new Date(f.end - 1).toISOString()))}</td><td>${integer(f.negative)}</td><td>${integer(f.total)}</td><td>${number(f.baseline)}</td><td>${esc(Number.isFinite(f.increasePct) ? `+${number(f.increasePct)}%` : 'dari nol')}</td></tr>`).join('')}</tbody></table>` : `<p>${esc(a.reason)}</p>`}
+    <p class="report-plain">Jendela dihitung dari waktu publikasi yang dikirim sumber dalam UTC. Pada lingkup ini ${integer(a.rows.timed)} dari ${integer(a.rows.total)} teks memiliki jam publikasi; sumber yang hanya mengirim tanggal akan menumpuk pada satu jendela, jadi kesimpulan lonjakan per jam hanya dapat dipakai pada kanal yang mengirim waktu lengkap. Kenaikan jumlah ulasan tertulis juga dipengaruhi jadwal penarikan data, bukan hanya kejadian di lapangan.</p>
+  </section>
+  <section class="report-block"><h2>3. Area yang paling sering dikeluhkan</h2>
+    ${areas.length ? `<table class="report-table"><thead><tr><th>#</th><th>Area</th><th>Negatif</th><th>Positif</th><th>Netral</th><th>Perlu tinjauan</th><th>Total ulasan area ini</th></tr></thead><tbody>${areas.map((g, i) => `<tr><td>${i + 1}</td><td>${esc(complaintName(g))}</td><td>${integer(g.negative)}</td><td>${integer(g.positive || 0)}</td><td>${integer(g.neutral || 0)}</td><td>${integer(g.unclassified || 0)}</td><td>${integer(g.total)}</td></tr>`).join('')}</tbody></table><p class="report-plain">Satu ulasan dapat membahas beberapa area dan dapat memuat pujian sekaligus keluhan, sehingga kolom negatif tidak dijumlahkan menjadi ${integer(s.negative)}.</p>` : list([])}
+    ${clusters.length ? `<h3>Klaster frasa berulang</h3><table class="report-table"><thead><tr><th>Klaster</th><th>Ulasan negatif</th></tr></thead><tbody>${clusters.map(c => `<tr><td>${esc(c.label)}</td><td>${integer(c.total)}</td></tr>`).join('')}</tbody></table>` : ''}
+  </section>
+  <section class="report-block"><h2>4. Proyeksi ${p.horizonWeeks} pekan ke depan</h2>
+    ${p.ok ? `<p>Bila kecepatan ulasan per pekan berlanjut, sekitar ${integer(Math.round(p.negative.projected))} ulasan negatif baru akan masuk (rentang ${integer(p.negative.low)}–${integer(p.negative.high)}), dari ${integer(p.negative.recentTotal)} yang tercatat pada ${p.horizonWeeks} pekan terakhir. NSS proyeksi ${p.nssProjected.point === null ? 'N/A' : `${p.nssProjected.point > 0 ? '+' : ''}${number(p.nssProjected.point)} poin`} (rentang ${p.nssProjected.low === null ? 'N/A' : `${number(p.nssProjected.low)} sampai ${number(p.nssProjected.high)}`}) terhadap NSS saat ini ${p.nssCurrent === null ? 'N/A' : `${p.nssCurrent > 0 ? '+' : ''}${number(p.nssCurrent)}`}. Arah: ${esc(projectionSignals[p.signal])}.</p>
+    <table class="report-table"><thead><tr><th>Area</th><th>Tercatat ${p.horizonWeeks} pekan</th><th>Proyeksi</th><th>Rentang</th><th>Arah</th><th>Penanggung jawab</th></tr></thead><tbody>${p.themes.map(t => `<tr><td>${esc(t.name)}</td><td>${integer(t.recentTotal)}</td><td>${integer(Math.round(t.projected))}</td><td>${integer(t.low)}–${integer(t.high)}</td><td>${esc(projectionTrends[t.direction])}</td><td>${esc(t.owner)}</td></tr>`).join('')}</tbody></table>` : `<p>Proyeksi tidak dihitung: ${esc(p.reason || 'data belum memenuhi syarat minimal.')}</p>`}
+  </section>
+  <section class="report-block"><h2>5. Daftar insiden — ${integer(negative.length)} ulasan negatif (seluruhnya, tanpa sampling)</h2>
+    ${negative.length ? `<div class="report-scroll"><table class="report-table incident-table"><thead><tr><th>Tanggal</th><th>Waktu publikasi (UTC)</th><th>Kanal</th><th>Penulis</th><th>Bintang</th><th>Aspek</th><th>Emosi</th><th>Niat</th><th>Teks asli</th><th>Sumber</th><th>ID</th></tr></thead><tbody>${negative.map(r => { const absa = absaOf(r); return `<tr><td>${esc(r.date || 'N/A')}</td><td>${esc(r.publishedAt || 'N/A')}</td><td>${esc(platformById(r.platform)?.name || r.platform)}</td><td>${esc(authorName(r))}</td><td>${esc(hasRating(r.rating) ? `${r.rating}/5` : 'N/A')}</td><td>${esc(absa.aspects.length ? absa.aspects.map(id => aspectNames[id]).join(', ') : 'N/A')}</td><td>${esc(emotionNames[absa.emotion] || 'N/A')}</td><td>${esc(intentNames[absa.intent] || 'N/A')}</td><td class="incident-text">${esc(r.title ? `${r.title} — ${r.text}` : r.text)}</td><td>${esc(safeHttps(r.sourceUrl) || 'N/A')}</td><td>${esc(r.id)}</td></tr>`; }).join('')}</tbody></table></div>` : list([])}
+  </section>
+  <section class="report-block"><h2>6. Metodologi dan batasan</h2>
+    <p>Seluruh teks, nama penulis, tanggal, penilaian bintang, dan tautan sumber diambil apa adanya dari halaman publik masing-masing kanal; tidak ada baris yang dibuat-buat dan tidak ada sampel yang dibatasi dalam daftar insiden di atas. Label sentimen, aspek, emosi, dan niat dihitung dengan aturan kata kunci deterministik di perangkat ini (bukan model bahasa), sehingga negasi, sarkasme, dan bahasa campur dapat keliru dan perlu pemeriksaan manusia.</p>
+    <p>Batasan yang harus dibaca bersama angka ini: (1) yang dianalisis adalah ulasan publik tertulis, bukan seluruh pengguna atau transaksi; (2) kanal yang konektornya belum tersedia atau sedang gagal tidak muncul sebagai nol keluhan; (3) jumlah ulasan per jendela sangat dipengaruhi jadwal penarikan data; (4) teks yang masih perlu ditinjau dikeluarkan dari pembilang dan penyebut persentase; (5) tren dan proyeksi memakai tanggal publikasi, dan ulasan tanpa tanggal tidak masuk grafik. Rincian status per kanal tersedia pada menu Platform dasbor ini.</p>
+  </section>`;
+}
+let reportTitleBefore = '';
+function restoreReportChrome() {
+  if (!document.body.classList.contains('reporting')) return;
+  document.body.classList.remove('reporting');
+  if (reportTitleBefore) { document.title = reportTitleBefore; reportTitleBefore = ''; }
+}
+function openIncidentReport(kind) {
+  const data = visibleReviews();
+  const negative = data.filter(r => r.sentiment === 'negative');
+  if (!negative.length) { notify('Tidak ada ulasan negatif dalam filter ini, jadi laporan insiden tidak dibuat.'); return; }
+  if (kind === 'csv') {
+    download(exportCsv(negative), `wondr-insiden-${state.platform}-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
+    notify(`${negative.length} ulasan negatif diekspor sebagai laporan insiden.`);
+    return;
+  }
+  reportTitleBefore = document.title;
+  document.title = `Laporan Insiden Sentimen wondr merchant ${new Date().toISOString().slice(0, 10)}`;
+  $('#report-root').innerHTML = incidentReportHtml(data);
+  document.body.classList.add('reporting');
+  window.print();
+  setTimeout(restoreReportChrome, 1500);
 }
 function sentimentLine(bins) {
   const width=650, height=182, left=30, right=12, top=12, bottom=30, plotW=width-left-right, plotH=height-top-bottom;
@@ -441,7 +604,7 @@ function reviewTable(data, full=false) {
 }
 function overview(data) {
   const undated=data.filter(r=>!validDay(r.date)).length, mode=timelineMode(data,state.trend);
-  return `${executiveSummary(data)}${metricCards(data)}<section class="grid-complaint">${complaintChart()}${projectionCard(data)}</section>${sampleRating(data)}<section class="grid-chart"><article class="card"><div class="card-header"><div><h2>Tren ulasan</h2><p class="card-subtitle">${mode==='line'?'Garis menunjukkan skor sentimen neto per pekan, bukan jumlah ulasan.':mode!==state.trend?'Agregasi bulanan otomatis untuk rentang lebih dari satu tahun.':'Jumlah ulasan menurut tanggal publikasi'}</p></div><select id="trend-mode" aria-label="Agregasi grafik"><option value="week" ${mode==='week'?'selected':''}>Batangan mingguan</option><option value="month" ${mode==='month'?'selected':''}>Batangan bulanan</option><option value="line" ${mode==='line'?'selected':''}>Garis skor sentimen</option></select></div><div class="chart-body" tabindex="0" role="region" aria-label="Grafik tren ulasan; gulir horizontal jika diperlukan">${mode==='line'?sentimentLine(timeline(data,'line')):`${legend()}${trendChart(data)}`}</div><div class="chart-caption">${icon('info')}${mode==='line'?'Periode tanpa satu pun ulasan berlabel tidak titik-gariskan; garis hanya menghubungkan periode yang punya data. ':' '}Tren ini menggambarkan ulasan tertulis yang terkumpul, bukan seluruh pengguna atau aktivitas waktu nyata. ${undated?`${undated} ulasan tanpa tanggal tidak dimasukkan ke grafik.`:'Seluruh ulasan memiliki tanggal dan dimasukkan ke grafik.'}</div></article>${composition(data)}</section><section class="grid-lower">${featureCard(data)}${shareOfVoice()}</section><section class="grid-lower">${clusterCard(data)}${priorities(data)}</section>${reviewTable(data)}`;
+  return `${executiveSummary(data)}${anomalyBanner(data)}${metricCards(data)}<section class="grid-complaint">${complaintChart()}${projectionCard(data)}</section>${sampleRating(data)}<section class="grid-chart"><article class="card"><div class="card-header"><div><h2>Tren ulasan</h2><p class="card-subtitle">${mode==='line'?'Garis menunjukkan skor sentimen neto per pekan, bukan jumlah ulasan.':mode!==state.trend?'Agregasi bulanan otomatis untuk rentang lebih dari satu tahun.':'Jumlah ulasan menurut tanggal publikasi'}</p></div><select id="trend-mode" aria-label="Agregasi grafik"><option value="week" ${mode==='week'?'selected':''}>Batangan mingguan</option><option value="month" ${mode==='month'?'selected':''}>Batangan bulanan</option><option value="line" ${mode==='line'?'selected':''}>Garis skor sentimen</option></select></div><div class="chart-body" tabindex="0" role="region" aria-label="Grafik tren ulasan; gulir horizontal jika diperlukan">${mode==='line'?sentimentLine(timeline(data,'line')):`${legend()}${trendChart(data)}`}</div><div class="chart-caption">${icon('info')}${mode==='line'?'Periode tanpa satu pun ulasan berlabel tidak titik-gariskan; garis hanya menghubungkan periode yang punya data. ':' '}Tren ini menggambarkan ulasan tertulis yang terkumpul, bukan seluruh pengguna atau aktivitas waktu nyata. ${undated?`${undated} ulasan tanpa tanggal tidak dimasukkan ke grafik.`:'Seluruh ulasan memiliki tanggal dan dimasukkan ke grafik.'}</div></article>${composition(data)}</section><section class="grid-lower">${nssGauge(data)}${shareOfVoice()}</section><section class="grid-lower">${featureCard(data)}${clusterCard(data)}</section><section class="grid-lower">${priorities(data)}${incidentCard(data)}</section>${reviewTable(data)}`;
 }
 function driverCard(data,sentiment) {
   const groups=groupStats(data,sentiment==='positive'?positiveGroups:painGroups,sentiment).filter(g=>g.total).sort((a,b)=>b.total-a.total);
@@ -520,6 +683,7 @@ function methodology() {
     <article class="card method-card"><h2>Cara membaca sentimen</h2><ul><li><strong>Positif:</strong> pujian, kepuasan, atau manfaat yang dinyatakan pengguna.</li><li><strong>Negatif:</strong> keluhan, masalah penggunaan, dan kekurangan yang mengganggu.</li><li><strong>Netral:</strong> informasi atau pertanyaan tanpa penilaian yang jelas; bukan label pengganti untuk teks yang tidak dipahami.</li><li><strong>Perlu tinjauan:</strong> teks belum cukup jelas untuk dinilai; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</li></ul><div class="formula">NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100</div><p>Ulasan berlabel sentimen mencakup ulasan positif, negatif, dan netral. Data awal: (${base.positive} − ${base.negative}) ÷ ${base.classified} × 100 = <strong>${base.nss>0?'+':''}${number(base.nss)} poin</strong>.</p></article>
     <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label pada data awal ditentukan dari pembacaan teks; teks yang tidak berubah mempertahankan labelnya. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (versi 1):</strong> menggunakan aturan kata kunci sederhana, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru; teks yang tidak dikenali ditandai perlu ditinjau.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh ${integer(storeRatingCount('play'))} penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
     <article class="card method-card"><h2>Penyimpanan dan jejak perubahan</h2><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban. Dasbor memuat data tersimpan saat dibuka; pembaruan tidak berlangsung terus-menerus. Status sumber dan waktu pemeriksaan mengikuti data tersimpan. Gangguan pengambilan tidak menghapus data yang sudah tersedia.</p><p>Ulasan baru ditambahkan, sedangkan perubahan teks, penilaian bintang, atau tanggal disimpan sebagai versi sebelumnya. Detail ulasan menampilkan waktu pengambilan, waktu pertama dan terakhir tercatat, serta riwayat perubahan. Versi lama tidak dihitung sebagai ulasan baru dalam grafik.</p><p>Jika data tersimpan tidak dapat dimuat saat awal, data awal tetap ditampilkan disertai pesan kesalahan yang jelas. Penilaian halaman toko hanya ditampilkan dari data daring yang berhasil diambil dan dipisahkan dari penilaian pada ulasan. Sumber publik tidak memverifikasi identitas penulis maupun kebenaran isi keluhan.</p></article>
+    <article class="card method-card"><h2>Deteksi lonjakan dan laporan insiden</h2><ul><li><strong>Jendela lonjakan.</strong> Teks dikelompokkan per jam UTC bila sumber mengirim waktu publikasi yang lengkap; bila tidak, jendela diperlebar menjadi harian dan jendela mana yang dipakai selalu tertulis pada spanduk. Ambang: minimal ${anomalyDefaults.minCurrent} ulasan negatif dalam satu jendela dan lebih dari ${anomalyDefaults.thresholdPct}% di atas rata-rata ${anomalyDefaults.baselineWindows} jendela sebelumnya (${anomalyDefaults.dailyBaselineWindows} jendela untuk versi harian). Baseline nol dilaporkan sebagai "dari nol", bukan persentase tak hingga.</li><li><strong>Pita NSS.</strong> ${nssBands.map(band=>`${band.min} sampai ${band.max} = ${band.label}`).join('; ')}. Pita hanya label ambang untuk membaca arah, bukan hasil uji statistik. Di bawah ${nssMinSample} ulasan berlabel, angka ditandai belum representatif.</li><li><strong>Laporan insiden.</strong> Daftarnya memuat seluruh ulasan negatif pada filter aktif tanpa pembatasan sampel, lengkap dengan waktu publikasi mentah (UTC), aspek, emosi, niat, dan tautan sumber; teks yang masih perlu ditinjau tidak dimasukkan karena labelnya belum pasti. PDF dibuat dari dialog cetak peramban dan CSV dari tombol di kartu yang sama — keduanya memakai baris data yang sama dengan dasbor.</li><li><strong>Batas waktu publikasi.</strong> Sebagian kanal mengirim waktu sampai detik (Google Play, App Store, YouTube); actor media sosial ada yang hanya mengirim tanggal atau jam penuh, sehingga teksnya menumpuk pada satu jendela. Distribusi per jam tidak pernah dikarang untuk teks yang sumbernya hanya mengirim tanggal.</li></ul></article>
   </div><article class="card method-card category-card"><h2>Kategori yang didukung</h2>${Object.values(tags).map(label=>`<span class="tag">${esc(label)}</span>`).join('')}<p>Seluruh kategori tetap terdaftar di bagian ini, termasuk yang belum memiliki ulasan. Jumlah ulasan per kategori mengikuti filter platform dan tanggal. Berkas CSV pada halaman ulasan mengikuti filter yang aktif.</p></article>`;
 }
 // Tombol geser sengaja tidak dipakai: baris platform dapat digulir dengan sentuhan, roda
@@ -750,6 +914,16 @@ document.addEventListener('click',event=>{
   if (button.dataset.view) { navigate(button.dataset.view); return; }
   if (button.dataset.platform) { state.platform=button.dataset.platform; state.page=1; render(); return; }
   if (button.dataset.openPlatform) { clearReviewFilters(); state.platform=button.dataset.openPlatform; navigate('reviews'); return; }
+  if (button.dataset.anomalyDay) {
+    // Jendela anomali bisa berupa satu jam; filter dasbor berversi harian, jadi tanggalnya
+    // yang dibuka dan tekanannya dinyatakan pada spanduk, bukan disembunyikan.
+    clearReviewFilters();
+    const day = button.dataset.anomalyDay;
+    state.period='custom'; state.from=day; state.to=day; state.sentiment='negative';
+    navigate('reviews');
+    notify(`Filter dibuka pada seluruh ulasan negatif ${dateLabel(day, { year:'numeric' })}; jendela lonjakannya lebih sempit dari satu hari.`);
+    return;
+  }
   if (button.dataset.review) { openReview(button.dataset.review); return; }
   if (button.dataset.close==='detail-dialog') { $('#detail-dialog').close(); return; }
   if (button.dataset.close==='pull-dialog') { $('#pull-dialog').close(); sync.pull=null; return; }
@@ -786,6 +960,8 @@ document.addEventListener('click',event=>{
     download(exportCsv(data),`wondr-sentiment-${state.platform}-${new Date().toISOString().slice(0,10)}.csv`,'text/csv;charset=utf-8');
     notify(`${data.length} ulasan diekspor sesuai filter aktif.`);
   }
+  if (action==='print-incident') { openIncidentReport('pdf'); return; }
+  if (action==='export-incident') { openIncidentReport('csv'); return; }
   if (action==='apply-dates') {
     const from=$('#date-from').value, to=$('#date-to').value;
     if ((from&&!validDay(from)) || (to&&!validDay(to)) || (from&&to&&from>to)) { $('#date-error').textContent='Gunakan tanggal valid; tanggal awal harus sebelum atau sama dengan tanggal akhir.'; return; }
@@ -819,6 +995,7 @@ document.addEventListener('input',event=>{
     },180);
   }
 });
+window.addEventListener('afterprint', restoreReportChrome);
 for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('click',event=>{
   if (event.target===dialog) {
     const rect=dialog.getBoundingClientRect();
