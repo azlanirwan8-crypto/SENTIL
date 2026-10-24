@@ -156,6 +156,13 @@ function sourceFor(p) {
 }
 const numericCount = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
 const storeRatingCount = id => { const p = platformById(id); return numericCount(sourceFor(p).ratingCount ?? p?.ratingCount) ?? 0; };
+// Histogram halaman toko memuat SELURUH penilaian, termasuk bintang yang tidak menulis
+// teks. Angka ini diambil apa adanya dari halaman sumber, bukan hasil perkiraan.
+const storeHistogram = id => { const h = latestListing(id)?.ratingHistogram; return Array.isArray(h) && h.length === 5 && h.every(v => Number.isInteger(v) && v >= 0) ? h : null; };
+function histogramRows(histogram, label) {
+  const max = Math.max(1, ...histogram);
+  return `<div class="rating-distribution" role="list" aria-label="${esc(label)}">${histogram.map((count, i) => `<div class="rating-row" role="listitem" aria-label="${5 - i} bintang: ${count} penilaian"><span>${5 - i} ★</span><span class="rating-track" aria-hidden="true"><span style="width:${pct(count, max)}%"></span></span><strong>${count}</strong></div>`).join('')}</div>`;
+}
 const storeInstalls = id => { const p = platformById(id); return sourceFor(p).installs ?? p?.installs ?? null; };
 const fetchedCount = source => numericCount(source?.fetched);
 function wasFetched(source) {
@@ -251,8 +258,15 @@ function complaintChart() {
 function sampleRating(data) {
   const r=ratingSummary(data), max=Math.max(1,...r.distribution.map(d=>d.count));
   const single=data.length&&data.every(d=>d.platform===data[0].platform)?data[0].platform:null;
-  const storeCount=single?storeRatingCount(single):0, textless=storeCount>r.total?storeCount-r.total:0;
-  return `<article class="card sample-rating"><div><h2>Penilaian bintang pada ulasan</h2><p><strong>${r.total?`${decimal(r.average)} / 5`:'N/A'}</strong> · ${r.total} dari ${data.length} ulasan menyertakan penilaian bintang</p><small>Hanya ulasan dalam filter ini, bukan seluruh penilaian di halaman toko aplikasi.${textless?` Halaman toko memperhitungkan ${integer(storeCount)} penilaian bintang — ${integer(textless)} di antaranya tanpa teks publik, sehingga tidak tampil di sini dan tidak dapat dianalisis sentimennya.`:''}</small></div><div class="rating-distribution" role="list" aria-label="Distribusi penilaian bintang pada ulasan">${[...r.distribution].reverse().map(d=>`<div class="rating-row" role="listitem" aria-label="${d.stars} bintang: ${d.count} ulasan"><span>${d.stars} ★</span><span class="rating-track" aria-hidden="true"><span style="width:${pct(d.count,max)}%"></span></span><strong>${d.count}</strong></div>`).join('')}</div></article>`;
+  const histogram=single&&platformById(single)?.type==='Toko aplikasi'?storeHistogram(single):null;
+  const storeCount=single?storeRatingCount(single):0, textless=!histogram&&storeCount>r.total?storeCount-r.total:0;
+  let storeBlock='';
+  if (histogram) {
+    const total=histogram.reduce((s,v)=>s+v,0), average=total?histogram.reduce((s,v,i)=>s+v*(5-i),0)/total:null;
+    const written=reviews.filter(x=>x.platform===single).length, noText=Math.max(0,total-written), listing=latestListing(single);
+    storeBlock=`<div class="store-rating"><div class="store-rating-head"><h3>Penilaian seluruh halaman toko ${esc(platformById(single).short||platformById(single).name)}</h3><p><strong>${average!=null?`${number(average)} / 5`:'N/A'}</strong> · ${integer(total)} penilaian · ${integer(noText)} di antaranya tanpa teks publik</p><small>Dibaca dari halaman toko pada ${esc(timeLabel(listing.lastSuccessAt||listing.checkedAt))}. Seluruh penilaian ikut dihitung, termasuk bintang tanpa teks; analisis sentimen tetap hanya memakai ${integer(written)} ulasan berteks karena teks tidak dapat dikarang.</small></div>${histogramRows(histogram,'Distribusi penilaian seluruh halaman toko')}</div>`;
+  }
+  return `<article class="card sample-rating"><div><h2>Penilaian bintang pada ulasan</h2><p><strong>${r.total?`${decimal(r.average)} / 5`:'N/A'}</strong> · ${r.total} dari ${data.length} ulasan menyertakan penilaian bintang</p><small>Hanya ulasan dalam filter ini, bukan seluruh penilaian di halaman toko aplikasi.${textless?` Halaman toko memperhitungkan ${integer(storeCount)} penilaian bintang — ${integer(textless)} di antaranya tanpa teks publik, sehingga tidak tampil di sini dan tidak dapat dianalisis sentimennya.`:''}</small></div><div class="rating-distribution" role="list" aria-label="Distribusi penilaian bintang pada ulasan">${[...r.distribution].reverse().map(d=>`<div class="rating-row" role="listitem" aria-label="${d.stars} bintang: ${d.count} ulasan"><span>${d.stars} ★</span><span class="rating-track" aria-hidden="true"><span style="width:${pct(d.count,max)}%"></span></span><strong>${d.count}</strong></div>`).join('')}</div>${storeBlock}</article>`;
 }
 function featureCard(data) {
   const groups=groupStats(data,featureGroups);
@@ -280,7 +294,7 @@ function labelChip(r) {
   return `<span class="tag" title="${esc(labelMethod(r))}"${tagStyle(labelStyles[r.labeling] || '#878a99')}>${icon(r.labeling === 'manual' ? 'pen' : 'spark')}${esc(labelBadge(r))}</span>`;
 }
 function reviewRows(data) {
-  return data.map((r,i)=>`<tr><td><div class="review-author"><span class="review-avatar ${['','warm','mint'][i%3]}">${esc(initials(r))}</span><div><div class="review-name" title="${esc(authorName(r))}">${esc(authorName(r))}</div><div class="review-date">${esc(dateLabel(r.date,{year:'numeric'}))}</div></div></div></td><td><button class="review-text-button" data-review="${esc(r.platform+'|'+r.id)}" aria-label="Baca ulasan ${esc(authorName(r))}"><span class="review-text">${esc(r.text)}</span></button><div class="review-tags">${reviewTags(r).slice(0,2).map(t=>topicChip(t,true)).join('')}${labelChip(r)}</div></td><td>${platformLabel(r.platform)}${hasRating(r.rating)?`<div class="stars" aria-label="${r.rating} dari 5 bintang">${'★'.repeat(r.rating)}<span class="unfilled-stars">${'★'.repeat(5-r.rating)}</span></div>`:'<div class="review-date">Penilaian N/A</div>'}</td><td>${badge(r.sentiment)}</td><td><button class="icon-button" data-review="${esc(r.platform+'|'+r.id)}" aria-label="Detail ulasan ${esc(authorName(r))}">${icon('chevron')}</button></td></tr>`).join('');
+  return data.map((r,i)=>`<tr><td><div class="review-author"><span class="review-avatar ${['','warm','mint'][i%3]}">${esc(initials(r))}</span><div><div class="review-name" title="${esc(authorName(r))}">${esc(authorName(r))}</div><div class="review-date">${esc(dateLabel(r.date,{year:'numeric'}))}</div></div></div></td><td><button class="review-text-button" data-review="${esc(r.platform+'|'+r.id)}" aria-label="Baca ulasan ${esc(authorName(r))}"><span class="review-text">${esc(r.text)}</span></button><div class="review-tags">${reviewTags(r).map(t=>topicChip(t,true)).join('')}${labelChip(r)}</div></td><td>${platformLabel(r.platform)}${hasRating(r.rating)?`<div class="stars" aria-label="${r.rating} dari 5 bintang">${'★'.repeat(r.rating)}<span class="unfilled-stars">${'★'.repeat(5-r.rating)}</span></div>`:'<div class="review-date">Penilaian N/A</div>'}</td><td>${badge(r.sentiment)}</td><td><button class="icon-button" data-review="${esc(r.platform+'|'+r.id)}" aria-label="Detail ulasan ${esc(authorName(r))}">${icon('chevron')}</button></td></tr>`).join('');
 }
 const sortHeaders = [
   { cell: 'Pengguna / tanggal', keys: [['author','Pengguna'],['date','Tanggal']] },
@@ -378,7 +392,7 @@ function coverage() {
       </dl>
       ${unavailable?'':`<div class="coverage-rating-panel">
         <div class="coverage-rating"><h4>Penilaian bintang</h4><div class="coverage-rating-value">${rating.total?`<strong>${decimal(rating.average)} / 5 <span aria-hidden="true">★</span></strong><span>dari ${rating.total} ulasan</span>`:'<strong>N/A</strong><span>Tidak ada penilaian bintang</span>'}</div><p>Dalam periode terpilih. ${isStore?'Bukan penilaian seluruh halaman toko.':'Bukan penilaian seluruh platform.'}</p></div>
-        ${isStore?`<div class="coverage-rating listing-rating"><h4>Skor halaman toko</h4><div class="coverage-rating-value">${listing?`<strong>${number(listing.rating)} / 5</strong><span>· ${numericCount(listing.ratingCount)!==null?integer(numericCount(listing.ratingCount)):'N/A'} penilaian halaman toko</span>`:'<strong>N/A</strong><span>Belum ada pengambilan berhasil</span>'}</div><p>${listing?`Diambil pada ${esc(timeLabel(listing.lastSuccessAt || listing.checkedAt))}. Bukan jumlah teks ulasan atau data waktu nyata.`:'Data awal tidak ditampilkan sebagai data terbaru.'}</p></div>`:''}
+        ${isStore?`<div class="coverage-rating listing-rating"><h4>Skor halaman toko</h4><div class="coverage-rating-value">${listing?`<strong>${number(listing.rating)} / 5</strong><span>· ${numericCount(listing.ratingCount)!==null?integer(numericCount(listing.ratingCount)):'N/A'} penilaian halaman toko</span>`:'<strong>N/A</strong><span>Belum ada pengambilan berhasil</span>'}</div><p>${listing?`Diambil pada ${esc(timeLabel(listing.lastSuccessAt || listing.checkedAt))}. Bukan jumlah teks ulasan atau data waktu nyata.`:'Data awal tidak ditampilkan sebagai data terbaru.'}</p>${storeHistogram(p.id)?`<div class="listing-histogram">${histogramRows(storeHistogram(p.id),`Distribusi seluruh penilaian halaman toko ${p.name}`)}</div>`:''}</div>`:''}
       </div>`}
       ${status==='success'?`<details class="coverage-scope"><summary>Cakupan pengambilan</summary><p class="source-message">${esc(message)}</p></details>`:!unavailable?`<p class="source-message source-alert">${esc(message)}</p>`:''}
       ${!unavailable||url?`<div class="coverage-actions">${unavailable?'':`<button class="btn-text" data-open-platform="${esc(p.id)}">Jelajahi ulasan ${icon('arrow')}</button>`}${url?`<a class="btn-text action-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Halaman publik ${icon('external')}</a>`:''}</div>`:''}

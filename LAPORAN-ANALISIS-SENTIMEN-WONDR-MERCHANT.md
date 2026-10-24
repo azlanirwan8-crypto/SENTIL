@@ -15,7 +15,7 @@ Cakupan Google Play diperoleh dengan membaca **kedua kumpulan ulasan yang ditamp
 
 Pada data ini, **41 ulasan positif (64,1%)**, **22 ulasan negatif (34,4%)**, dan **1 ulasan netral (1,6%)**. Net Sentiment Score (NSS) berada pada **+29,7 poin**, yang menunjukkan kecenderungan positif. Namun, 34,4% ulasan negatif tetap perlu ditangani, terutama karena keluhan terkonsentrasi pada proses pendaftaran.
 
-Rata-rata penilaian bintang dari 64 ulasan tertulis yang menyertakan bintang adalah **3,83 dari 5**. Angka ini berbeda dari nilai halaman toko, yaitu 4,0/5 dari 74 penilaian di Google Play dan 4,8/5 dari 17 penilaian di App Store. Perbedaan tersebut terjadi karena penilaian tanpa teks tidak menyediakan nama atau isi yang dapat dianalisis.
+Rata-rata penilaian bintang dari 64 ulasan tertulis yang menyertakan bintang adalah **3,83 dari 5**. Angka ini berbeda dari nilai halaman toko — 4,0 dari 5 atas 75 penilaian pada histogram Google Play (angka agregat halaman yang sama menyebut 76) dan 4,8 dari 5 atas 17 penilaian App Store — karena sebagian penilaian hanya berupa bintang tanpa tulisan. Seluruh penilaian itu tetap dihitung pada kartu **Penilaian seluruh halaman toko**, yang menampilkan histogram per bintang persis seperti yang dipublikasikan sumber. Yang tidak dihitung hanyalah sentimennya, karena sentimen memerlukan teks.
 
 Tema keluhan yang paling sering muncul adalah **pendaftaran belum tuntas (8 ulasan)**, diikuti **notifikasi dan pembaruan laporan (6 ulasan)**, **akses dan performa aplikasi (5 ulasan)**, serta **migrasi kurang jelas (5 ulasan)**. Tema pujian yang paling sering muncul adalah **kemudahan penggunaan dan manfaat usaha (16 ulasan)**, diikuti **transaksi dan notifikasi yang membantu (8 ulasan)**.
 
@@ -47,10 +47,10 @@ Enam kanal lain sudah memiliki konektor berkredensial dan **pernah dipanggil nya
 Keterangan:
 
 - Tanda **—** berarti data tidak diambil, bukan bernilai nol.
-- Google Play memisahkan daftar ulasannya menurut bahasa antarmuka. Pengambilan membaca kumpulan bahasa Indonesia (38 ulasan) dan kumpulan bahasa Inggris (17 ulasan) sampai halaman terakhir, kemudian menggabungkan 55 ulasan unik berdasarkan ID ulasan. Tidak ada tumpang tindih ID di antara kedua kumpulan.
-- Angka **91 penilaian halaman toko** merupakan gabungan 74 penilaian Google Play dan 17 penilaian App Store. Angka ini bukan jumlah ulasan yang dianalisis.
-- Selisih 74 − 55 = **19 penilaian Google Play** dan 17 − 9 = **8 penilaian App Store** tidak menyertakan teks, sehingga nama dan isinya tidak tersedia untuk dianalisis.
-- Jumlah penilaian halaman toko berubah setiap saat. Selama penyusunan laporan ini, nilai Google Play berpindah dari 68 → 69 → 73 → 74 penilaian dan jumlah penilaian App Store dari 15 menjadi 17, sedangkan jumlah ulasan tertulis yang dapat dibaca tetap 55 di Google Play dan 9 di App Store. Angka pada laporan mengikuti pemeriksaan terakhir, dan halaman dasbor menampilkan waktu pemeriksaan tersebut.
+- Google Play memisahkan daftar ulasannya menurut bahasa antarmuka. Pengambilan membaca kumpulan bahasa Indonesia (39 ulasan) dan kumpulan bahasa Inggris (18 ulasan) sampai halaman terakhir, kemudian menggabungkan 57 ulasan unik berdasarkan ID ulasan. Tidak ada tumpang tindih ID di antara kedua kumpulan.
+- Histogram bintang per-star halaman toko ikut dibaca dan dihitung, sehingga penilaian tanpa teks tetap masuk sebagai penilaian. Google Play mempublikasikan 5★=52, 4★=3, 3★=2, 2★=4, 1★=14 (75 penilaian) dan App Store 5★=16, 4★=0, 3★=0, 2★=0, 1★=1 (17 penilaian). Rata-rata yang dihitung dari histogram Google Play adalah 4,0 dari 5 — sama dengan angka yang ditampilkan Google pada halaman toko.
+- Selisih antara angka toko dan angka ulasan tertulis kini terbukti per bintang, bukan dugaan. Pada Google Play, jumlah 1★–4★ histogram (14+4+2+3 = 23) sama persis dengan jumlah 1★–4★ ulasan tertulis, sedangkan bintang lima berbeda: 52 di halaman toko versus 34 yang berteks. Selisihnya tepat 18 penilaian bintang lima tanpa teks. Di App Store: 16 bintang lima versus 9 yang berteks (7 tanpa teks) ditambah 1 bintang satu tanpa teks, sehingga 8 penilaian tanpa teks.
+- Angka agregat `ld+json` Google Play menyebut 76 penilaian sementara caption histogram menyebut 75; keduanya dipublikasikan Google pada elemen halaman yang berbeda dan tidak dipaksa sama. Jumlah ini berubah setiap saat — selama penyusunan laporan, nilai Google Play berpindah dari 68 → 73 → 74 → 76 — sedangkan ulasan tertulis yang terbaca 57 di Google Play dan 9 di App Store. Dasbor menampilkan waktu pemeriksaan terakhir untuk kedua angka.
 - **Unduhan.** Google Play hanya mempublikasikan rentang, saat ini **10K+**, bukan angka pasti. Apple tidak mempublikasikan jumlah unduhan pada halaman publik, sehingga metrik tersebut **tidak tersedia** dan tidak diperkirakan. Keduanya bukan ukuran sentimen maupun jumlah pengguna aktif, dan rasio ulasan-terhadap-unduhan tidak dapat dihitung presisi dari data publik.
 - Data ditarik melalui tombol **Tarik Analisis** dan disimpan di komputer tempat dasbor dijalankan. Pembaruan tidak berlangsung terus-menerus.
 
@@ -527,7 +527,7 @@ Tabel berikut memuat 20 ulasan terbaru dari 64 ulasan, dengan urutan yang sama s
 
 ## 8. Keterbatasan dan Data Lanjutan yang Dibutuhkan
 
-- Ulasan publik tidak mewakili seluruh pengguna aplikasi. Dari 74 penilaian Google Play, 19 tidak menyertakan teks; dari 17 penilaian App Store, 8 tidak menyertakan teks. Penilaian tanpa teks tidak dapat dianalisis tanpa mengarang data.
+- Ulasan publik tidak mewakili seluruh pengguna aplikasi. Histogram per bintang yang dipublikasikan sumber sekarang ikut dibaca dan dihitung sebagai penilaian: 18 dari 75 penilaian Google Play dan 8 dari 17 penilaian App Store tidak menyertakan teks. Keduanya tetap tampil pada kartu **Penilaian seluruh halaman toko**, tetapi tidak dapat diberi label sentimen tanpa mengarang isi teks.
 - Google Play menampilkan daftar ulasan terpisah menurut bahasa antarmuka. Kedua kumpulan telah dibaca dan digabung. Jika Google mengubah pembagian kumpulan tersebut, metode pengambilan perlu diperiksa ulang.
 - Jumlah ulasan bertambah antar penarikan. Setiap penarikan memuat seluruh halaman yang tersedia, sehingga angka pada laporan mengikuti pemeriksaan terakhir dan bukan hasil pembatasan sampel.
 - Ulasan App Store berjumlah kecil dan seluruhnya positif; jumlah ini tidak cukup untuk membandingkan mutu platform.

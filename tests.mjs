@@ -7,7 +7,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
-import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
+import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
@@ -186,13 +186,40 @@ test('Play install range is read only from the published listing block',()=>{
   assert.equal(parsePlayInstalls('<div class="ClM7O">500K+</div><div class="g1rdde">Unduhan</div>'),'500K+');
   assert.equal(parsePlayInstalls(listingFixture),null);
 });
+const playHistogramFixture=[52,3,2,4,14].map((count,i)=>`<div class="JzwBgb" role="img" aria-label="${count} reviews for star rating ${5-i}"><div aria-hidden="true" class="Qjdn7d">${5-i}</div><div class="RutFAf" style="width: ${count}%"></div></div>`).join('');
+test('Play star histogram is read from the published page, including ratings without text',()=>{
+  assert.deepEqual(parsePlayRatingHistogram(playHistogramFixture).histogram,[52,3,2,4,14]);
+  assert.equal(parsePlayRatingHistogram(playHistogramFixture).total,75);
+  const bahasa=playHistogramFixture.replace(/(\d+) reviews for star rating/g,'$1 ulasan untuk rating bintang');
+  assert.deepEqual(parsePlayRatingHistogram(bahasa).histogram,[52,3,2,4,14],'halaman berbahasa Indonesia memakai label yang berbeda');
+  assert.equal(parsePlayRatingHistogram(listingFixture),null,'halaman tanpa histogram tidak boleh mengarang angka');
+  assert.equal(parsePlayRatingHistogram(playHistogramFixture.replace('4 reviews for star rating 2','4 reviews for star rating 6')),null,'satu bintang hilang atau tidak sah membuat histogram ditolak');
+});
+test('Play pull keeps star-only ratings in the dataset as ratings, not as sentiment',async()=>{
+  const result=await collectGoogle(async url=>{
+    if(String(url).startsWith('https://play.google.com/store/apps/details'))return new Response(`${listingFixture}${playHistogramFixture}`);
+    return new Response(rpcFixture([googleRowB,googleRowC]));
+  });
+  assert.deepEqual(result.ratingHistogram,[52,3,2,4,14]);
+  assert.equal(result.ratingHistogramTotal,75);
+  assert.match(result.message,/Histogram penilaian halaman toko dibaca penuh: 5★=52, 4★=3, 3★=2, 2★=4, 1★=14/);
+  assert.match(result.message,/2 ulasan membawa teks publik dan masuk analisis sentimen; 73 penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya/);
+});
 test('Apple parser uses actual UTC records, not relative dates or duplicated nested shelves',()=>{
   const review={$kind:'Review',id:'fixture',reviewerName:'Fixture',contents:'Bagus',title:'Uji',date:'2026-09-22T08:30:52.000Z',dateText:'* null *',rating:5};
   const root={data:[{intent:{id:'6741567238',storefront:'id'},data:{shelfMapping:{allProductReviews:{items:[{review},{review}],url:null},productRatings:{items:[{productId:'6741567238',ratingAverage:4.7,totalNumberOfRatings:15}]}}}}]};
   const html=`<script id="serialized-server-data" type="application/json">${JSON.stringify(root)}</script>`;
   const parsed=parseApplePage(html);assert.equal(parsed.reviews.length,1);assert.equal(parsed.reviews[0].date,'2026-09-22');assert.equal(parsed.reviews[0].publishedAt,review.date);assert.equal(parsed.ratingCount,15);
+  assert.equal(parsed.ratingHistogram,null,'jumlah per bintang yang tidak dikirim sumber tidak boleh diada-adakan');
   assert.throws(()=>parseApplePage('<html>Login required</html>'),/parse_error/);
   assert.throws(()=>parseApplePage(html.replaceAll('6741567238','1234')),/parse_error/);
+});
+const appleHistogramPage=counts=>`<script id="serialized-server-data" type="application/json">${JSON.stringify({data:[{intent:{id:'6741567238',storefront:'id'},data:{shelfMapping:{allProductReviews:{items:[],url:null},productRatings:{items:[{productId:'6741567238',ratingAverage:4.8,totalNumberOfRatings:17,ratingCounts:counts}]}}}}]})}</script>`;
+test('Apple star counts are accepted only after the published average confirms the order',()=>{
+  assert.deepEqual(parseApplePage(appleHistogramPage([16,0,0,0,1])).ratingHistogram,[16,0,0,0,1],'urutan 5→1 cocok dengan rata-rata 4,8 yang dipublikasikan');
+  assert.equal(parseApplePage(appleHistogramPage([1,0,0,0,16])).ratingHistogram,null,'urutan terbalik ditolak karena rata-rata terbobot tidak cocok');
+  assert.equal(parseApplePage(appleHistogramPage([16,0,0,0,2])).ratingHistogram,null,'jumlah yang tidak sama dengan total penilaian ditolak');
+  assert.equal(parseApplePage(appleHistogramPage([16,0,0,1])).ratingHistogram,null,'array tidak lengkap ditolak');
 });
 test('pagination failure retains fetched records as explicitly partial',async()=>{
   let requests=0;
@@ -218,7 +245,8 @@ test('Google collector reads both review pools and merges them without double co
   assert.equal(result.fetched,3);
   assert.deepEqual(result.reviews.map(r=>r.id).sort(),['pool-en-only','pool-shared','unit-test-only']);
   assert.match(result.message,/2 ulasan kumpulan bahasa Indonesia dan 1 ulasan kumpulan bahasa Inggris/);
-  assert.match(result.message,/73 penilaian, sedangkan 3 muncul sebagai ulasan berteks|73 penilaian, sedangkan daftar ulasan publik menampilkan 3 ulasan berteks/);
+  assert.match(result.message,/Histogram per bintang tidak terbaca pada pemeriksaan ini/,'histogram yang tidak dikirim halaman tidak boleh dikarang');
+  assert.match(result.message,/Angka agregat halaman toko menyebut 73 penilaian/);
   assert.doesNotMatch(result.message,/tidak menyertakan teks sehingga nama dan isinya tidak tersedia/);
   assert.equal(result.coverage.sampleLimit,null);
   assert.deepEqual(result.coverage.pools.map(p=>[p.hl,p.pagesRead,p.rows]),[['id',1,2],['en',1,2]]);
@@ -261,7 +289,7 @@ test('A failing first review pool still lets the second pool be read',async()=>{
 const appleReviewFixture={$kind:'Review',id:'14696447164',reviewerName:'okerbk',title:'Fresh & helpful',contents:'Suka bgt sama appsnya',rating:5,date:'2026-10-22T09:02:33.000Z'};
 const appleEntryFixture={id:{label:'14696447164'},author:{name:{label:'okerbk'}},title:{label:'Fresh & helpful'},content:{label:'Suka bgt sama appsnya'},'im:rating':{label:'5'},updated:{label:'2026-10-22T02:02:33-07:00'}};
 const appleFeedOnlyFixture={id:{label:'14000000001'},author:{name:{label:'pengguna-lain'}},title:{label:'Lain'},content:{label:'Pencairan lambat'},'im:rating':{label:'2'},updated:{label:'2026-09-01T01:02:03-07:00'}};
-const applePage=(rows,next=null)=>`<script id="serialized-server-data" type="application/json">${JSON.stringify({data:[{intent:{id:'6741567238',storefront:'id'},data:{shelfMapping:{allProductReviews:{items:rows,url:next},productRatings:{items:[{productId:'6741567238',ratingAverage:4.8,totalNumberOfRatings:17}]}}}}]})}</script>`;
+const applePage=(rows,next=null)=>`<script id="serialized-server-data" type="application/json">${JSON.stringify({data:[{intent:{id:'6741567238',storefront:'id'},data:{shelfMapping:{allProductReviews:{items:rows,url:next},productRatings:{items:[{productId:'6741567238',ratingAverage:4.8,totalNumberOfRatings:17,ratingCounts:[16,0,0,0,1]}]}}}}]})}</script>`;
 const appleFeed=entries=>JSON.stringify({feed:{id:{label:'https://itunes.apple.com/id/rss/customerreviews'},entry:entries}});
 test('Apple collector reads the public review page and the official customer-review feed together',async()=>{
   const requested=[];
@@ -286,7 +314,10 @@ test('Apple collector reads the public review page and the official customer-rev
   assert.equal(feedOnly.date,'2026-09-01');
   assert.equal(result.reviews.find(r=>r.id==='apple-14696447164').publishedAt,'2026-10-22T09:02:33.000Z','jalur halaman tidak boleh ditimpa bentuk waktu jalur lain');
   assert.match(result.message,/dua jalur publik sekaligus/);
-  assert.match(result.message,/17 penilaian, sedangkan 2 muncul sebagai ulasan berteks/);
+  assert.deepEqual(result.ratingHistogram,[16,0,0,0,1]);
+  assert.equal(result.ratingHistogramTotal,17);
+  assert.match(result.message,/Histogram penilaian halaman toko dibaca penuh: 5★=16, 4★=0, 3★=0, 2★=0, 1★=1 \(total 17 penilaian\)/);
+  assert.match(result.message,/2 ulasan membawa teks publik dan masuk analisis sentimen; 15 penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya/);
   assert.ok(requested.some(url=>url.includes('itunes.apple.com/id/rss/customerreviews')));
 });
 test('Apple page failure keeps feed results and reports the run as partial',async()=>{

@@ -47,6 +47,17 @@ export function parseGoogleListing(html) {
   check(rating >= 1 && rating <= 5 && Number.isInteger(ratingCount) && ratingCount >= 0,'nilai rating Google Play tidak terbaca');
   return {rating,ratingCount};
 }
+// Histogram bintang pada halaman toko ikut dihitung karena Google menampilkan jumlah
+// per bintang untuk SELURUH penilaian, termasuk yang tidak membawa teks ulasan.
+export function parsePlayRatingHistogram(html) {
+  const counts = new Map();
+  for (const match of html.matchAll(/aria-label="(\d{1,7})\s*(?:reviews?|ulasan)\s+for star rating\s+([1-5])"/gi)) counts.set(Number(match[2]), Number(match[1]));
+  for (const match of html.matchAll(/aria-label="(\d{1,7})\s*(?:reviews?|ulasan)\s+untuk rating bintang\s+([1-5])"/gi)) counts.set(Number(match[2]), Number(match[1]));
+  if (counts.size !== 5) return null;
+  const histogram = [5,4,3,2,1].map(star => counts.get(star));
+  if (histogram.some(value => !Number.isInteger(value) || value < 0)) return null;
+  return { histogram, total: histogram.reduce((sum, value) => sum + value, 0) };
+}
 // Google hanya menampilkan rentang unduhan, misalnya "10K+", bukan angka pasti.
 export function parsePlayInstalls(html) {
   const match = html.match(/<div class="[^"]*">([^<]{1,24})<\/div><div class="[^"]*">\s*(Downloads|Unduhan)\s*<\/div>/i);
@@ -82,6 +93,12 @@ export function parseApplePage(html) {
   check(listing?.productId === appleId,'identitas aplikasi di App Store berubah');
   const rating = Number(listing.ratingAverage), ratingCount = Number(listing.totalNumberOfRatings);
   check(rating >= 1 && rating <= 5 && Number.isInteger(ratingCount) && ratingCount >= 0,'nilai rating App Store tidak terbaca');
+  // Apple menyimpan jumlah per bintang pada urutan 5→1. Urutan tidak diasumsikan:
+  // diverifikasi dari jumlah total dan rata-rata terbobot yang dipublikasikan sumber.
+  const rawCounts = Array.isArray(listing.ratingCounts) && listing.ratingCounts.length === 5 && listing.ratingCounts.every(value => Number.isInteger(value) && value >= 0) ? listing.ratingCounts : null;
+  const countsSum = rawCounts ? rawCounts.reduce((sum, value) => sum + value, 0) : null;
+  const weighted = countsSum ? rawCounts.reduce((sum, value, index) => sum + value * (5 - index), 0) / countsSum : null;
+  const ratingHistogram = rawCounts && countsSum === ratingCount && Math.abs(weighted - rating) <= 0.06 ? rawCounts : null;
   const unique = new Map();
   for (const item of shelf.items) {
     const r = item.review;
@@ -89,12 +106,14 @@ export function parseApplePage(html) {
     const review = normalizeReview({id:r.id,author:r.reviewerName,title:r.title,text:r.contents ?? '',rating:r.rating,date:r.date},'appstore',appleUrl);
     if (review.text.trim()) unique.set(review.id,review);
   }
-  return {reviews:[...unique.values()],rating,ratingCount,continuationUrl: shelf.url ?? null};
+  return {reviews:[...unique.values()],rating,ratingCount,ratingHistogram,continuationUrl: shelf.url ?? null};
 }
 // Paginasi dibaca sampai sumber tidak mengirim token halaman berikutnya; tidak ada batas jumlah sampel.
 const timeBudget = 240000;
 export async function collectGoogle(fetcher = fetch) {
-  const metadata = parseGoogleListing(await fetchText(playUrl + '&gl=ID',{},fetcher));
+  const listingHtml = await fetchText(playUrl + '&gl=ID',{},fetcher);
+  const metadata = parseGoogleListing(listingHtml);
+  const breakdown = parsePlayRatingHistogram(listingHtml);
   let installs = null;
   try { installs = parsePlayInstalls(await fetchText('https://play.google.com/store/apps/details?id=id.bni.wfb&hl=en&gl=US',{},fetcher)); }
   catch { installs = null; }
@@ -123,11 +142,13 @@ export async function collectGoogle(fetcher = fetch) {
   }
   const allPoolsComplete = pools.every(p => p.complete);
   const issues = pools.filter(p => p.error).map(p => `${p.label}: ${p.error}`);
-  const notListed = metadata.ratingCount - reviews.size;
   const depth = pools.map(p => `${p.label}: ${p.pagesRead} halaman, ${p.rows} baris`).join('; ');
-  return {id:'play',status:allPoolsComplete?'success':'partial',...metadata,installs,reviews:[...reviews.values()],fetched:reviews.size,
+  const histogramNote = breakdown
+    ? `Histogram penilaian halaman toko dibaca penuh: ${breakdown.histogram.map((value, index) => `${5 - index}★=${value}`).join(', ')} (total ${breakdown.total} penilaian). ${reviews.size} ulasan membawa teks publik dan masuk analisis sentimen; ${breakdown.total - reviews.size} penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya.`
+    : 'Histogram per bintang tidak terbaca pada pemeriksaan ini, sehingga hanya angka agregat halaman toko yang tersedia.';
+  return {id:'play',status:allPoolsComplete?'success':'partial',...metadata,...(breakdown?{ratingHistogram:breakdown.histogram,ratingHistogramTotal:breakdown.total}:{}),installs,reviews:[...reviews.values()],fetched:reviews.size,
     coverage:{pools:pools.map(({hl,gl,label,pagesRead,rows,added,complete,error})=>({hl,gl,label,pagesRead,rows,added,complete,error})),pagesRead:pools.reduce((sum,p)=>sum+p.pagesRead,0),rows:pools.reduce((sum,p)=>sum+p.rows,0),sampleLimit:null},
-    message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya dibaca agar tidak ada ulasan terlewat. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya (${depth}); kolektor tidak memiliki batas jumlah sampel. ${allPoolsComplete?'Kedua kumpulan selesai dipaginasi.':`Hasil belum lengkap; ${issues.join('; ')}`} Halaman toko menampilkan ${metadata.ratingCount} penilaian, sedangkan daftar ulasan publik menampilkan ${reviews.size} ulasan berteks; selisih ${notListed} penilaian tidak muncul sebagai ulasan berteks pada daftar publik dan penyebabnya tidak disimpulkan per ulasan. Unduhan: ${installs ? `${installs} (rentang yang dipublikasikan Google, bukan angka pasti)` : 'tidak terbaca pada pemeriksaan ini'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
+    message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya dibaca agar tidak ada ulasan terlewat. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya (${depth}); kolektor tidak memiliki batas jumlah sampel. ${allPoolsComplete?'Kedua kumpulan selesai dipaginasi.':`Hasil belum lengkap; ${issues.join('; ')}`} ${histogramNote} Angka agregat halaman toko menyebut ${metadata.ratingCount} penilaian; kedua angka dipublikasikan Google pada elemen halaman yang berbeda dan tidak dipaksa sama. Unduhan: ${installs ? `${installs} (rentang yang dipublikasikan Google, bukan angka pasti)` : 'tidak terbaca pada pemeriksaan ini'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
 }
 // Feed ulasan pelanggan publik Apple menjadi jalur resmi kedua, sehingga daftar halaman web dapat diuji silang.
 export function parseAppleRss(text) {
@@ -151,7 +172,7 @@ function appleNextUrl(value, current) {
 }
 async function collectAppleShelf(fetcher) {
   const reviews = new Map(), seen = new Set();
-  let url = appleUrl, rating = null, ratingCount = null, pages = 0, complete = false, error = null;
+  let url = appleUrl, rating = null, ratingCount = null, ratingHistogram = null, pages = 0, complete = false, error = null;
   for (;;) {
     if (seen.has(url)) { error = 'pagination_error: tautan lanjutan berulang; pengambilan dihentikan.'; break; }
     seen.add(url);
@@ -161,13 +182,14 @@ async function collectAppleShelf(fetcher) {
     catch (cause) { error = cause.message; break; }
     pages++;
     rating = result.rating; ratingCount = result.ratingCount;
+    if (ratingHistogram == null) ratingHistogram = result.ratingHistogram ?? null;
     for (const review of result.reviews) if (!reviews.has(review.id)) reviews.set(review.id,review);
     const next = appleNextUrl(result.continuationUrl, url);
     if (result.continuationUrl != null && !next) { error = 'continuation_error: tautan halaman berikutnya bukan halaman publik aplikasi ini; pengambilan dihentikan.'; break; }
     if (!next) { complete = true; break; }
     url = next;
   }
-  return {reviews,rating,ratingCount,pages,complete,error};
+  return {reviews,rating,ratingCount,ratingHistogram,pages,complete,error};
 }
 async function collectAppleFeed(fetcher) {
   const reviews = new Map();
@@ -192,9 +214,10 @@ export async function collectApple(fetcher = fetch) {
   const complete = shelf.complete && feed.complete;
   const issues = [shelf.error && `halaman ulasan: ${shelf.error}`, feed.error && `feed ulasan: ${feed.error}`].filter(Boolean);
   const shared = [...shelf.reviews.keys()].filter(id => feed.reviews.has(id)).length;
-  return {id:'appstore',status:complete?'success':'partial',reviews:[...reviews.values()],fetched:reviews.size,rating:shelf.rating,ratingCount:shelf.ratingCount,
+  const histogramNote = shelf.ratingHistogram ? `Histogram penilaian halaman toko dibaca penuh: ${shelf.ratingHistogram.map((value, index) => `${5 - index}★=${value}`).join(', ')} (total ${shelf.ratingCount} penilaian). ${reviews.size} ulasan membawa teks publik dan masuk analisis sentimen; ${shelf.ratingCount - reviews.size} penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya.` : 'Histogram per bintang tidak terbaca atau tidak cocok dengan rata-rata yang dipublikasikan sumber, sehingga hanya angka agregat yang tersedia.';
+  return {id:'appstore',status:complete?'success':'partial',reviews:[...reviews.values()],fetched:reviews.size,rating:shelf.rating,ratingCount:shelf.ratingCount,...(shelf.ratingHistogram?{ratingHistogram:shelf.ratingHistogram,ratingHistogramTotal:shelf.ratingCount}:{}),
     coverage:{shelfPages:shelf.pages,feedPages:feed.pages,shelfReviews:shelf.reviews.size,feedReviews:feed.reviews.size,sharedReviews:shared,feedOnly:feedOnly.length,sampleLimit:null},
-    message:`${reviews.size} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi (${shelf.reviews.size} ulasan pada ${shelf.pages} halaman) dan feed ulasan pelanggan resmi (${feed.reviews.size} ulasan pada ${feed.pages} halaman); ${shared} ulasan dikonfirmasi oleh kedua jalur dan ${feedOnly.length} hanya dikembalikan salah satu jalur. Paginasi kedua jalur diikuti sampai sumber tidak memberi halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. ${complete?'Kedua jalur selesai dibaca.':`Hasil belum lengkap; ${issues.join('; ')}.`} ${Number.isInteger(shelf.ratingCount)?`Halaman toko menampilkan ${shelf.ratingCount} penilaian, sedangkan ${reviews.size} muncul sebagai ulasan berteks pada jalur publik; sisanya tidak ditampilkan sebagai teks ulasan dan penyebabnya tidak disimpulkan per ulasan. Jumlah ini bukan jumlah seluruh pengguna iOS.`:'Nilai halaman toko tidak terbaca pada pemeriksaan ini.'} Apple tidak mempublikasikan jumlah unduhan.`};
+    message:`${reviews.size} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi (${shelf.reviews.size} ulasan pada ${shelf.pages} halaman) dan feed ulasan pelanggan resmi (${feed.reviews.size} ulasan pada ${feed.pages} halaman); ${shared} ulasan dikonfirmasi oleh kedua jalur dan ${feedOnly.length} hanya dikembalikan salah satu jalur. Paginasi kedua jalur diikuti sampai sumber tidak memberi halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. ${complete?'Kedua jalur selesai dibaca.':`Hasil belum lengkap; ${issues.join('; ')}.`} ${Number.isInteger(shelf.ratingCount)?histogramNote:'Nilai halaman toko tidak terbaca pada pemeriksaan ini.'} Apple tidak mempublikasikan jumlah unduhan.`};
 }
 const merchantIdentity = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])|\b(?:id)?6741567238\b/i;
 export function youtubeConfiguration(env = process.env) {

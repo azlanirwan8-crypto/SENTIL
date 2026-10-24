@@ -18,11 +18,12 @@ async function mockResults(){
   return ['play','appstore'].map(id=>{
     const count=seedReviews.filter(r=>r.platform===id).length;
     return {id,status:'success',fetched:count,rating:id==='play'?4:4.8,ratingCount:id==='play'?74:17,installs:id==='play'?'10K+':null,
+      ratingHistogram:id==='play'?[52,3,2,4,14]:[16,0,0,0,1],ratingHistogramTotal:id==='play'?75:17,
       coverage:id==='play'
         ? {pools:[{hl:'id',gl:'ID',label:'kumpulan bahasa Indonesia',pagesRead:1,rows:38,added:38,complete:true,error:null},{hl:'en',gl:'US',label:'kumpulan bahasa Inggris',pagesRead:1,rows:17,added:17,complete:true,error:null}],pagesRead:2,rows:55,sampleLimit:null}
         : {shelfPages:1,feedPages:1,shelfReviews:9,feedReviews:9,sharedReviews:9,feedOnly:0,sampleLimit:null},
       message:id==='play'
-        ? `${count} ulasan tertulis unik dibaca dari Google Play sebagai gabungan 38 ulasan kumpulan bahasa Indonesia dan 17 ulasan kumpulan bahasa Inggris. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. Halaman toko menampilkan 74 penilaian, sedangkan daftar ulasan publik menampilkan 55 ulasan berteks.`
+        ? `${count} ulasan tertulis unik dibaca dari Google Play sebagai gabungan 38 ulasan kumpulan bahasa Indonesia dan 17 ulasan kumpulan bahasa Inggris. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. Histogram penilaian halaman toko dibaca penuh: 5★=52, 4★=3, 3★=2, 2★=4, 1★=14 (total 75 penilaian). 55 ulasan membawa teks publik dan masuk analisis sentimen; 20 penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya.`
         : `${count} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi dan feed ulasan pelanggan resmi, masing-masing 9 ulasan dikonfirmasi kedua jalur.`,
       reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]};
   }).concat(collectorMode==='social'?[
@@ -183,7 +184,13 @@ try {
   // Label berwarna, satu baris nama, dan dropdown berhitung.
   assert.ok((await evaluate(`new Set([...document.querySelectorAll('tbody .tag')].map(t=>t.getAttribute('style'))).size`))>=3,'chip topik dan label metode memakai tinta berbeda');
   assert.equal(await evaluate(`[...document.querySelectorAll('tbody .review-name')].every(e=>e.getBoundingClientRect().height<24)`),true,'nama penulis selalu satu baris');
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('tbody .review-name')).textOverflow`),'ellipsis');
+  assert.equal(await evaluate(`[...document.querySelectorAll('tbody .review-name')].every(e=>e.scrollWidth-e.clientWidth<=1)`),true,'nama pengguna tampil utuh tanpa elipsis');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('tbody .review-text')).webkitLineClamp`),'none','teks ulasan tampil utuh tanpa pemotongan baris');
+  await evaluate(`document.querySelector('#page-size').value='all';document.querySelector('#page-size').dispatchEvent(new Event('change',{bubbles:true}));`);
+  assert.equal(await evaluate(`Math.max(...[...document.querySelectorAll('tbody .review-tags')].map(e=>e.querySelectorAll('.tag-chip-button').length))`),4,'seluruh chip topik tampil, tidak dibatasi dua');
+  assert.equal(await evaluate(`[...document.querySelectorAll('tbody .review-text')].every(e=>e.scrollHeight<=e.clientHeight+1)`),true,'isi teks ulasan tidak terpotong di selnya');
+  await evaluate(`document.querySelector('#page-size').value='10';document.querySelector('#page-size').dispatchEvent(new Event('change',{bubbles:true}));`);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('tbody td:last-child')).textAlign`),'right','kolom aksi rata kanan');
   assert.match(await evaluate(`[...document.querySelectorAll('#tag-filter option')].map(o=>o.textContent).join('|')`),/Pendaftaran \(\d+\)/,'dropdown topik menampilkan jumlah nyata');
   assert.match(await evaluate(`document.querySelector('#page-size option').textContent`),/^\d+ baris$/);
   assert.deepEqual(await evaluate(`['#tag-filter','#page-size'].map(s=>{const e=document.querySelector(s);return Math.max(0,e.scrollWidth-e.clientWidth);})`),[0,0],'teks dropdown tidak terpotong');
@@ -255,6 +262,16 @@ try {
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
   assert.equal(await evaluate(`document.querySelector('.complaint-bar').getBoundingClientRect().width>0`),true);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sample-rating')).display`),'grid');
+  assert.equal(await evaluate(`document.querySelectorAll('.store-rating').length`),0,'histogram halaman toko tidak ditampilkan saat filter gabungan lintas platform');
+  await click('[data-platform="play"]');
+  assert.equal(await evaluate(`document.querySelectorAll('.store-rating').length`),1,'satu platform toko menampilkan distribusi seluruh penilaian halaman toko');
+  assert.match(await evaluate(`document.querySelector('.store-rating').textContent`),/4,0 \/ 5/);
+  assert.match(await evaluate(`document.querySelector('.store-rating').textContent`),/75 penilaian · 20 di antaranya tanpa teks publik/);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.store-rating .rating-row strong')].map(e=>Number(e.textContent))`),[52,3,2,4,14],'angka histogram tampil persis seperti yang dipublikasikan halaman toko');
+  assert.match(await evaluate(`document.querySelector('.store-rating small').textContent`),/analisis sentimen tetap hanya memakai 55 ulasan berteks/);
+  await evaluate(`document.querySelector('.store-rating').scrollIntoView({block:'center'})`);
+  await screenshot('store-rating-play.png');
+  await click('[data-platform="all"]');
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.complaint-scale span')].map(e=>Number(e.textContent))`),[0,2,4,6,8]);
   assert.equal(await evaluate(`Math.abs(document.querySelector('.complaint-scale').getBoundingClientRect().left-document.querySelector('.complaint-track').getBoundingClientRect().left)<1`),true);
   assert.equal(await evaluate(`Math.abs(parseFloat(document.querySelector('[data-complaint="migration"] .complaint-bar').style.width)-62.5)<0.01`),true);
@@ -264,7 +281,7 @@ try {
   await click('[data-complaint="onboarding"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
   await click('[data-view="overview"]');await click('[data-platform="appstore"]');
   assert.equal(await evaluate(`document.querySelectorAll('[data-complaint]').length`),0);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.rating-row')].filter(e=>e.querySelector('strong').textContent==='0').map(e=>e.querySelector('.rating-track span').getBoundingClientRect().width)`),[0,0,0,0]);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.sample-rating > .rating-distribution .rating-row')].filter(e=>e.querySelector('strong').textContent==='0').map(e=>e.querySelector('.rating-track span').getBoundingClientRect().width)`),[0,0,0,0]);
   await click('[data-platform="all"]');completed.push('Ranked complaint chart, aligned count axis, exact drilldown and zero-value bars');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
   await click('[data-view="overview"]');
@@ -297,6 +314,7 @@ try {
     statusLeft:card.querySelector('.coverage-state').getBoundingClientRect().left,
     ratingSections:card.querySelectorAll('.coverage-rating-panel > .coverage-rating').length,
     ratings:card.querySelector('.coverage-rating-panel').textContent,
+    histogramRows:card.querySelectorAll('.listing-histogram .rating-row').length,
     scoreColor:getComputedStyle(card.querySelector('.coverage-score')).color,
     totalColor:getComputedStyle(card.querySelector('.coverage-stats strong')).color,
     factsSeparated:[...card.querySelectorAll('.source-facts > div')].every(row=>row.querySelector('dt').getBoundingClientRect().right<=row.querySelector('dd').getBoundingClientRect().left)
@@ -306,6 +324,11 @@ try {
   for(const card of storeLayout){assert.ok(card.statusLeft>=card.titleRight);assert.equal(card.ratingSections,2);assert.notEqual(card.scoreColor,card.totalColor);assert.equal(card.factsSeparated,true);}
   assert.match(storeLayout[0].ratings,/3,64 \/ 5.*dari 55 ulasan/s);
   assert.match(storeLayout[0].ratings,/4,0 \/ 5.*74 penilaian halaman toko/s);
+  assert.equal(storeLayout[0].histogramRows,5,'histogram halaman toko Play Store menampilkan lima baris bintang');
+  assert.match(storeLayout[0].ratings,/5 ★\s*52/,'jumlah bintang lima halaman toko tampil apa adanya termasuk yang tanpa teks');
+  assert.match(storeLayout[0].ratings,/1 ★\s*14/);
+  assert.equal(storeLayout[1].histogramRows,5);
+  assert.match(storeLayout[1].ratings,/5 ★\s*16/);
   assert.equal(await evaluate(`document.querySelectorAll('.is-unavailable .coverage-rating-panel').length`),0);
   await evaluate(`document.querySelector('[data-source-card="play"] .coverage-scope summary').focus()`);
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});
@@ -399,6 +422,11 @@ try {
   await screenshot('platform-mobile.png');
   await click('[data-view="overview"]');
   assert.equal(await evaluate(`document.querySelector('.breadcrumb strong').textContent`),'Dashboard');
+  await click('[data-platform="play"]');
+  assert.equal(await evaluate(`document.querySelectorAll('.store-rating').length`),1,'blok histogram halaman toko tampil di layar sempit');
+  assert.equal(await evaluate(`(()=>{const b=document.querySelector('.store-rating'),c=b.closest('.sample-rating');return Math.abs(b.getBoundingClientRect().width-(c.getBoundingClientRect().width-32))<2;})()`),true,'blok halaman toko selebar kartu tanpa meluber');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth`),390,'tidak ada overflow horizontal pada layar 390px');
+  await click('[data-platform="all"]');
   assert.equal(await evaluate(`document.documentElement.scrollWidth`),390);
   assert.equal(await evaluate(`window.innerWidth`),390);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
@@ -458,7 +486,7 @@ try {
   await click('[data-platform="play"]');assert.equal((await metricValues())[0],'56');
   completed.push('Social fixtures preserve all IDs and context, exclude owner promotion from sentiment, and survive missing API access');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();
