@@ -238,6 +238,14 @@ try {
   assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis selesai sebagian · 0 ulasan baru · 0 diperbarui · 64 tidak berubah\. 2 dari 11 sumber berhasil dibaca/);
   assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-selesai').length`),2,'kanal yang mengembalikan hasil ditandai selesai');
   assert.match(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-row')].find(row=>/Google Play/.test(row.textContent)).textContent`),/55 ulasan tertulis unik/,'baris kanal memuat pesan nyata dari sumber');
+  // Kartu per kanal: nama + chip status, pesan nyata, jumlah teks, dan panel metadata dari cakupan sumber.
+  assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-selesai .pull-meta').length`),2,'kanal yang selesai menampilkan panel metadata');
+  assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-row.is-selesai .pull-meta').textContent`),/Analisis bahasa\s*ID 38 · EN 17/,'metadata menyalin cakupan nyata dari sumber');
+  assert.match(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-row')].find(r=>/Google Play/.test(r.textContent)).textContent`),/Ulasan publik:\s*55 teks/);
+  assert.match(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-row')].find(r=>/App Store/.test(r.textContent)).textContent`),/Penilaian halaman toko\s*17 · 8 tanpa teks/);
+  assert.equal(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-row.is-selesai')].every(r=>r.querySelectorAll('.pull-chip').length===2)`),true,'kepala dan kaki kartu kanal selesai diberi chip status');
+  // Diambil tanpa jeda helper karena modal menutup otomatis 2,5 detik setelah selesai.
+  { const shot=await send('Page.captureScreenshot',{format:'png'}); await writeFile(new URL('pull-progress.png',output),Buffer.from(shot.data,'base64')); }
   await click('#pull-dialog [data-close="pull-dialog"]');
   await click('[data-view="reviews"]');assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
   assert.equal(await evaluate(`document.querySelectorAll('.data-note,.local-card,.snapshot-indicator').length`),0);
@@ -486,7 +494,7 @@ try {
   await click('[data-platform="play"]');assert.equal((await metricValues())[0],'56');
   completed.push('Social fixtures preserve all IDs and context, exclude owner promotion from sentiment, and survive missing API access');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();

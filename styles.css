@@ -3087,66 +3087,179 @@ tbody tr:hover {
   }
 }
 
+/* Modal progres: kartu kanal + panel metadata butuh ruang lebih lebar dari dialog biasa. */
 .dialog-compact {
-  width: min(480px, calc(100vw - 32px));
+  width: min(680px, calc(100vw - 32px));
 }
 
 .pull-progress {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
   color: var(--text-muted);
   font-size: 13px;
 }
 
+.pull-progress strong {
+  color: var(--heading);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 .pull-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* Satu kartu per kanal: nama + status, hasil nyata, lalu panel metadata di sisi kanan. */
 .pull-row {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
+  grid-template-columns: 12px minmax(0, 1fr) minmax(0, 208px);
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.pull-row.is-mengunggu,
+.pull-row.is-diproses {
+  grid-template-columns: 12px minmax(0, 1fr);
 }
 
 .pull-dot {
   width: 10px;
   height: 10px;
+  margin-top: 5px;
   border-radius: 50%;
   background: var(--muted);
 }
 
-.pull-info {
+.pull-main {
+  display: grid;
   min-width: 0;
+  gap: 8px;
 }
 
-.pull-info strong {
-  display: block;
+.pull-head,
+.pull-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pull-head strong {
+  color: var(--heading);
   font-size: 13px;
 }
 
-.pull-info small {
-  display: block;
+.pull-msg {
+  margin: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.6;
   overflow-wrap: anywhere;
 }
 
-.pull-state {
-  font-size: 11px;
+.pull-foot {
   color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pull-foot strong {
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.pull-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+  font-size: 11px;
   white-space: nowrap;
 }
 
-.pull-count {
+.pull-chip.is-selesai {
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.pull-chip.is-gagal {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.pull-chip.is-belum\ dikonfigurasi,
+.pull-chip.is-belum\ diuji,
+.pull-chip.is-data\ tersimpan,
+.pull-chip.is-tidak\ diambil {
+  background: var(--info-soft);
+  color: var(--info-text);
+}
+
+.pull-state {
+  color: var(--text-muted);
   font-size: 11px;
-  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pull-meta {
+  align-self: stretch;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.pull-meta h4 {
+  margin: 0 0 8px;
+  color: var(--heading);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pull-meta dl,
+.pull-meta dl > div {
+  margin: 0;
+}
+
+.pull-meta dl > div + div {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.pull-meta dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.pull-meta dd {
+  margin: 1px 0 0;
+  color: var(--heading);
+  font-size: 11px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .pull-row,
+  .pull-row.is-mengunggu,
+  .pull-row.is-diproses {
+    grid-template-columns: 12px minmax(0, 1fr);
+  }
+
+  .pull-meta {
+    grid-column: 2;
+  }
 }
 
 .pull-row.is-diproses .pull-dot {

@@ -7,7 +7,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
-import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
+import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
@@ -995,7 +995,7 @@ function apifyRoutes(routes) {
 // Schema input actor ditiru dari API Apify: daftar field yang actor terima. Bawaan menampung
 // field yang benar-benar dipakai kanal agar pengujian lama tidak tersandung penjaga pra-jalan.
 const apifySchema = fields => apifyJson({ data: { inputSchema: JSON.stringify({ properties: Object.fromEntries(fields.map(field => [field, { type: 'string' }])) }) } });
-const apifyKnownFields = ['searchTerms', 'maxItems', 'sort', 'resultsType', 'searchType', 'search', 'searchLimit', 'resultsLimit', 'searchQueries', 'resultsPerPage', 'videoSearchSorting', 'categories'];
+const apifyKnownFields = ['searchTerms', 'maxItems', 'sort', 'conversationIds', 'resultsType', 'searchType', 'search', 'searchLimit', 'resultsLimit', 'directUrls', 'addParentData', 'searchQueries', 'resultsPerPage', 'videoSearchSorting', 'topLevelCommentsPerPost', 'maxRepliesPerComment', 'categories'];
 const socialRoutes = (items, fields = apifyKnownFields) => apifyRoutes([
   [/GET \/v2\/acts\/.+\/builds\/default$/, () => apifySchema(fields)],
   [/POST \/v2\/acts\/.+\/runs$/, () => apifyJson({ data: apifyRun() })],
@@ -1148,8 +1148,8 @@ test('Social actor names and inputs match the fields the actors actually accept'
   // query/queryType, type/keywords, dan searchTerms/maxResult yang sudah tidak ada, sehingga actor
   // berjalan tanpa kueri dan mengembalikan "tidak ada hasil" palsu.
   assert.deepEqual(config.channels.instagram.input, { resultsType: 'posts', searchType: 'hashtag', search: 'wondrmerchant, wondrmerchantbni, wondrmerchantbybni', searchLimit: 250, resultsLimit: 250 });
-  assert.deepEqual(config.channels.tiktok.input, { searchQueries: ['"wondr merchant"', '"wondr merchant by BNI"'], resultsPerPage: 1000, videoSearchSorting: 'LATEST' });
-  assert.deepEqual(config.channels.x.input, { searchTerms: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant'], sort: 'Latest + Top' });
+  assert.deepEqual(config.channels.tiktok.input, { searchQueries: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'], resultsPerPage: 300, videoSearchSorting: 'LATEST', topLevelCommentsPerPost: 35, maxRepliesPerComment: 10 }, 'TikTok diminta membawa komentar dan balasan per video');
+  assert.deepEqual(config.channels.x.input, { searchTerms: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'], sort: 'Latest + Top' });
   assert.equal(config.channels.x.input.maxItems, undefined, 'kanal X tidak lagi membatasi jumlah hasil di sisi input');
   assert.equal(config.channels.facebook.actor, 'apify/facebook-search-scraper', 'facebook-pages-scraper hanya menerima startUrls, tidak dapat mencari kata kunci');
   assert.deepEqual(config.channels.facebook.input, { categories: ['wondr merchant', 'wondr merchant by BNI'], searchType: 'posts', resultsLimit: 250 });
@@ -1158,12 +1158,22 @@ test('Social actor names and inputs match the fields the actors actually accept'
   const verified = {
     x: ['startUrls', 'searchTerms', 'twitterHandles', 'conversationIds', 'maxItems', 'sort', 'tweetLanguage', 'includeSearchTerms'],
     instagram: ['resultsType', 'directUrls', 'resultsLimit', 'onlyPostsNewerThan', 'search', 'searchType', 'searchLimit', 'addParentData'],
-    tiktok: ['hashtags', 'resultsPerPage', 'searchQueries', 'videoSearchSorting', 'commentsPerPost', 'postURLs'],
+    tiktok: ['hashtags', 'resultsPerPage', 'searchQueries', 'videoSearchSorting', 'commentsPerPost', 'topLevelCommentsPerPost', 'maxRepliesPerComment', 'postURLs'],
     facebook: ['categories', 'locations', 'searchType', 'resultsLimit'],
   };
   for (const [id, fields] of Object.entries(verified)) {
     assert.deepEqual(apifyUnknownInputFields(config.channels[id].input, fields), [], `${id}: input bawaan memakai field yang tidak dikenal actor`);
   }
+  // Fase komentar memakai field yang juga terverifikasi ada di schema actor.
+  const instagramComments = apifyCommentRuns.instagram.input({ urls: ['https://www.instagram.com/p/ABC/', 'https://example.com/lain', 'https://www.instagram.com/reel/XYZ/'] });
+  assert.deepEqual(instagramComments, { resultsType: 'comments', directUrls: ['https://www.instagram.com/p/ABC/', 'https://www.instagram.com/reel/XYZ/'], addParentData: true, resultsLimit: 3000 });
+  assert.deepEqual(apifyUnknownInputFields(instagramComments, verified.instagram), [], 'input komentar Instagram harus dikenali actor');
+  const xThread = apifyCommentRuns.x.input({ conversationIds: ['19', '19', '20'] });
+  assert.deepEqual(xThread, { conversationIds: ['19', '20'], maxItems: 3000, sort: 'Top' });
+  assert.deepEqual(apifyUnknownInputFields(xThread, verified.x), [], 'input balasan X harus dikenali actor');
+  assert.equal(apifyCommentRuns.instagram.input({ urls: [] }), null, 'tanpa postingan, fase komentar tidak dijalankan dan tidak menagih biaya');
+  assert.equal(apifyCommentRuns.x.input({}), null);
+  assert.equal(apifyCommentRuns.facebook, undefined, 'actor Facebook yang tersedia tidak menyediakan komentar postingan');
 });
 
 test('Apify dataset is read through every page instead of stopping at the first', async () => {
@@ -1182,6 +1192,79 @@ test('Apify dataset is read through every page instead of stopping at the first'
   const itemCalls = calls.filter(call => call.key.includes('/items'));
   assert.equal(itemCalls.length, 2);
   assert.match(itemCalls.at(-1).url, /offset=2&limit=2/);
+});
+
+test('TikTok comments kept in a linked dataset are read and counted separately', async () => {
+  const video = { id: 'vid-1', text: 'wondr merchant login gagal', url: 'https://www.tiktok.com/@qa/video/1', commentsDatasetURL: 'https://api.apify.com/v2/datasets/ds-komentar/items' };
+  const comment = { id: 'cmt-1', text: 'saya juga mengalami wondr merchant lama sekali' };
+  const { calls, fetcher } = apifyRoutes([
+    [/GET \/v2\/acts\/.+\/builds\/default$/, () => apifySchema(apifyKnownFields)],
+    [/POST \/v2\/acts\/.+\/runs$/, () => apifyJson({ data: apifyRun() })],
+    [/GET \/v2\/actor-runs\/run-1$/, () => apifyJson({ data: { status: 'SUCCEEDED' } })],
+    [/GET \/v2\/datasets\/dataset-run-1\/items$/, (n, options, url) => apifyJson(new URL(url).searchParams.get('offset') === '0' ? [video] : [])],
+    [/GET \/v2\/datasets\/ds-komentar\/items$/, (n, options, url) => apifyJson(new URL(url).searchParams.get('offset') === '0' ? [comment] : [])],
+  ]);
+  const result = await collectApify('tiktok', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.status, 'success');
+  assert.equal(result.fetched, 2, 'teks komentar dari dataset tertaut ikut tersimpan');
+  assert.equal(result.coverage.itemsRead, 1, 'item video dan item komentar tidak dicampur');
+  assert.equal(result.coverage.commentItemsRead, 1);
+  assert.equal(result.coverage.commentDatasets, 1);
+  assert.match(result.message, /Fase komentar: 1 item dataset komentar dibaca dari 1 dataset tertaut/);
+  assert.ok(calls.some(call => call.key.includes('/datasets/ds-komentar/items')), 'dataset komentar benar-benar dibaca');
+});
+
+test('Instagram posts found by the main run trigger a second paid run for their comments', async () => {
+  const post = { id: 'post-1', caption: 'wondr merchant bikin nyaman', url: 'https://www.instagram.com/p/AAA/' };
+  const comment = { id: 'cmt-9', text: 'kak wondr merchant saya error terus', createdAt: '2026-10-20T00:00:00.000Z' };
+  let started = 0;
+  const { calls, fetcher } = apifyRoutes([
+    [/GET \/v2\/acts\/.+\/builds\/default$/, () => apifySchema(apifyKnownFields)],
+    [/POST \/v2\/acts\/.+\/runs$/, () => { started += 1; return apifyJson({ data: apifyRun(started === 1 ? 'run-1' : 'run-2') }); }],
+    [/GET \/v2\/actor-runs\/run-1$/, () => apifyJson({ data: { status: 'SUCCEEDED' } })],
+    [/GET \/v2\/actor-runs\/run-2$/, () => apifyJson({ data: { status: 'SUCCEEDED' } })],
+    [/GET \/v2\/datasets\/dataset-run-1\/items$/, (n, options, url) => apifyJson(new URL(url).searchParams.get('offset') === '0' ? [post] : [])],
+    [/GET \/v2\/datasets\/dataset-run-2\/items$/, (n, options, url) => apifyJson(new URL(url).searchParams.get('offset') === '0' ? [comment] : [])],
+  ]);
+  const result = await collectApify('instagram', fetcher, apifyConfig(), { pollMs: 0 });
+  const runPosts = calls.filter(call => call.key.startsWith('POST'));
+  assert.equal(runPosts.length, 2, 'fase komentar menjalankan run keduanya sendiri');
+  const followBody = JSON.parse(runPosts[1].options.body);
+  assert.equal(followBody.resultsType, 'comments');
+  assert.deepEqual(followBody.directUrls, ['https://www.instagram.com/p/AAA/']);
+  assert.equal(followBody.addParentData, true);
+  assert.equal(result.fetched, 2);
+  assert.equal(result.coverage.followUp.runId, 'run-2');
+  assert.equal(result.coverage.followUp.finished, true);
+  assert.equal(result.coverage.commentItemsRead, 1);
+  assert.match(result.message, /Fase komentar: 1 item dataset komentar dibaca, run apify\/instagram-scraper run-2 selesai/);
+});
+
+test('A comment phase with unknown fields is refused without cancelling the paid main results', async () => {
+  const post = { id: 'post-1', caption: 'wondr merchant oke', url: 'https://www.instagram.com/p/BBB/' };
+  const fields = apifyKnownFields.filter(field => field !== 'addParentData');
+  const { calls, fetcher } = apifyRoutes([
+    [/GET \/v2\/acts\/.+\/builds\/default$/, () => apifySchema(fields)],
+    [/POST \/v2\/acts\/.+\/runs$/, () => apifyJson({ data: apifyRun() })],
+    [/GET \/v2\/actor-runs\/run-1$/, () => apifyJson({ data: { status: 'SUCCEEDED' } })],
+    [/GET \/v2\/datasets\/dataset-run-1\/items$/, (n, options, url) => apifyJson(new URL(url).searchParams.get('offset') === '0' ? [post] : [])],
+  ]);
+  const result = await collectApify('instagram', fetcher, apifyConfig({ APIFY_API_TOKEN: apifyToken, APIFY_ACTOR_INSTAGRAM: 'fixture/instagram-comment-guard' }), { pollMs: 0 });
+  assert.equal(calls.filter(call => call.key.startsWith('POST')).length, 1, 'fase komentar tidak boleh dijalankan dengan field asing');
+  assert.equal(result.fetched, 1, 'hasil pencarian utama tetap tersimpan');
+  assert.equal(result.status, 'partial', 'fase komentar yang gagal tidak boleh dilaporkan sebagai sukses');
+  assert.deepEqual(result.coverage.followUp.unknownInputFields, ['addParentData']);
+  assert.match(result.message, /fase komentar pada postingan tidak dijalankan: field addParentData tidak dikenal actor/);
+});
+
+test('Linked comment links resolve from dataset URLs and key-value records alike', async () => {
+  const fetcher = async url => new Response(JSON.stringify({ datasetUrl: 'https://api.apify.com/v2/datasets/ds-kv/items' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const resolved = await apifyLinkedDatasetIds(['https://api.apify.com/v2/datasets/ds-a/items', 'https://api.apify.com/v2/key-value-stores/kv1/records/comments'], 'token', fetcher);
+  assert.deepEqual(resolved.ids.sort(), ['ds-a', 'ds-kv']);
+  assert.equal(resolved.failed, 0);
+  const broken = await apifyLinkedDatasetIds(['https://example.com/bukan-apify'], 'token', fetcher);
+  assert.deepEqual(broken.ids, []);
+  assert.equal(broken.failed, 1, 'tautan yang tidak dapat diurai dicatat, tidak silently hilang');
 });
 
 test('Unknown actor input fields stop the run before any paid request', async () => {
@@ -1609,7 +1692,7 @@ test('Serverless pull stores results on disk and resumes an unfinished actor run
       let resumed = null;
       const again = await second.pull({ collector: async options => { resumed = options.resume; return [{ id: 'play', status: 'success', fetched: 0, message: 'Tidak ada ulasan baru', reviews: [] }]; } });
       assert.equal(again.reviews.length, seedReviews.length + 1, 'ulasan dari instance sebelumnya tetap ada');
-      assert.deepEqual(resumed.get('x'), { runId: 'runBelumSelesai', datasetId: 'dsBelumSelesai', status: 'RUNNING' }, 'run actor berbayar dilanjutkan, tidak dijalankan ulang');
+      assert.deepEqual(resumed.get('x'), { runId: 'runBelumSelesai', datasetId: 'dsBelumSelesai', status: 'RUNNING', followUp: null }, 'run actor berbayar dilanjutkan, tidak dijalankan ulang');
       assert.equal(resumed.has('play'), false);
     });
   } finally { await rm(dir, { recursive: true, force: true }); }

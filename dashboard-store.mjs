@@ -80,7 +80,16 @@ async function runStep(produce, { recordRun }) {
 
 function resumeMap(previous) {
   // Run actor yang belum selesai dilanjutkan, bukan diulang, agar kuota berbayar tidak terbuang.
+  // Fase komentar (run kedua pada kanal yang sama) punya runId sendiri dan ikut dilanjutkan.
   return new Map(previous.sources
-    .filter(source => source.coverage?.runId && source.coverage.runFinished === false)
-    .map(source => [source.id, { runId: source.coverage.runId, datasetId: source.coverage.datasetId, status: 'RUNNING' }]));
+    .filter(source => (source.coverage?.runId && source.coverage.runFinished === false)
+      || (source.coverage?.followUp?.runId && source.coverage.followUp.finished === false))
+    .map(source => [source.id, {
+      runId: source.coverage.runId,
+      datasetId: source.coverage.datasetId,
+      status: 'RUNNING',
+      followUp: source.coverage.followUp?.runId && source.coverage.followUp.finished === false
+        ? { runId: source.coverage.followUp.runId, datasetId: source.coverage.followUp.datasetId, status: 'RUNNING' }
+        : null,
+    }]));
 }

@@ -349,7 +349,7 @@ function paginationTrace(id, coverage) {
   if (!coverage || typeof coverage !== 'object') return '';
   if (id === 'play' && Number.isInteger(coverage.pagesRead)) return `${coverage.pagesRead} halaman, ${coverage.rows} baris, tanpa batas sampel`;
   if (id === 'appstore' && Number.isInteger(coverage.shelfPages)) return `halaman ulasan ${coverage.shelfPages} halaman, feed resmi ${coverage.feedPages} halaman, ${coverage.sharedReviews} ulasan dikonfirmasi dua jalur`;
-  if (Number.isInteger(coverage.itemsRead)) return `${coverage.itemsRead} item dataset dibaca${Number.isInteger(coverage.emptyResultMarkers)?`, ${coverage.emptyResultMarkers} penanda tidak ada hasil`:''}${Number.isInteger(coverage.identityFiltered)?`, ${coverage.identityFiltered} teks di luar identitas produk`:''}, ${Number.isInteger(coverage.sampleLimit)?`batas hasil actor ${coverage.sampleLimitField ?? 'input'}=${coverage.sampleLimit}${coverage.possiblyTruncated?' (terpotong di batas ini)':' (belum tercapai)'}`:'tanpa batas hasil pada input actor'}`;
+  if (Number.isInteger(coverage.itemsRead)) return `${coverage.itemsRead} item dataset dibaca${Number.isInteger(coverage.commentItemsRead)&&coverage.commentItemsRead?`, ${coverage.commentItemsRead} item dataset komentar`:''}${Number.isInteger(coverage.emptyResultMarkers)?`, ${coverage.emptyResultMarkers} penanda tidak ada hasil`:''}${Number.isInteger(coverage.identityFiltered)?`, ${coverage.identityFiltered} teks di luar identitas produk`:''}${coverage.followUp?.runId?`, run komentar ${coverage.followUp.runId}${coverage.followUp.finished===false?' belum selesai':''}`:''}${Number.isInteger(coverage.sampleLimit)?`, batas hasil actor ${coverage.sampleLimitField ?? 'input'}=${coverage.sampleLimit}${coverage.possiblyTruncated?' (terpotong di batas ini)':' (belum tercapai)'}`:', tanpa batas hasil pada input actor'}`;
   if (Number.isInteger(coverage.placesFound)) return `${coverage.placesFound} place ditemukan, ${coverage.productMatches} bernama produk, ${coverage.reviewFieldsSeen} teks ulasan disediakan API`;
   if (Number.isInteger(coverage.pagesRead) && Number.isInteger(coverage.relevantVideos)) return `${coverage.pagesRead} halaman API, ${coverage.relevantVideos} video relevan, ${coverage.completedVideos} selesai dipaginasi`;
   return '';
@@ -509,19 +509,49 @@ async function loadData() {
 const pullStatusNames = { menunggu:'Menunggu giliran', diproses:'Sedang diambil…', selesai:'Selesai diperiksa', gagal:'Gagal', 'belum dikonfigurasi':'Perlu konfigurasi API', 'belum diuji':'Akses belum diuji', 'tidak diambil':'Tidak diambil', 'data tersimpan':'Data tersimpan' };
 const pullFinalStates = new Set(['selesai','gagal','belum dikonfigurasi','belum diuji','tidak diambil','data tersimpan']);
 const pullStateFor = source => ({ success:'selesai', partial:'selesai', error:'gagal', needs_setup:'belum dikonfigurasi', ready:'belum diuji', unsupported:'tidak diambil', snapshot:'data tersimpan' })[source?.status] || 'gagal';
+// Baris metadata diisi dari cakupan yang benar-benar dilaporkan sumber, bukan teks tetap,
+// sehingga angka bahasa/actor/batas hasil pada modal dapat ditelusuri ke hasil pengambilan.
+function pullMeta(source) {
+  const c = source?.coverage || source?.scope || {};
+  const rows = [];
+  if (source?.id === 'play') {
+    if (Array.isArray(c.pools)) rows.push(['Analisis bahasa', c.pools.map(p => `${String(p.hl).toUpperCase()} ${integer(p.added)}`).join(' · ')]);
+    rows.push(['Sumber', 'Halaman publik Google Play']);
+  }
+  if (source?.id === 'appstore') {
+    rows.push(['Sumber', 'Halaman resmi + feed resmi']);
+    if (Number.isInteger(c.sharedReviews)) rows.push(['Dikonfirmasi dua jalur', `${integer(c.sharedReviews)} ulasan`]);
+  }
+  if (Number.isInteger(c.itemsRead)) {
+    if (c.actor) rows.push(['Actor', String(c.actor).split('/').pop() || c.actor]);
+    rows.push(['Item dataset', `${integer(c.itemsRead)}${Number.isInteger(c.commentItemsRead) && c.commentItemsRead ? ` + ${integer(c.commentItemsRead)} komentar` : ''}`]);
+    if (Number.isInteger(c.identityFiltered)) rows.push(['Di luar identitas produk', integer(c.identityFiltered)]);
+    rows.push(['Batas hasil actor', Number.isInteger(c.sampleLimit) ? `${c.sampleLimitField || 'input'}=${c.sampleLimit}${c.possiblyTruncated ? ' (terpotong)' : ''}` : 'tanpa batas']);
+  }
+  if (Number.isInteger(c.relevantVideos)) rows.push(['Video relevan', `${integer(c.relevantVideos)} dari ${integer(c.pagesRead)} panggilan API`]);
+  if (Number.isInteger(c.placesFound)) rows.push(['Tempat ditemukan', `${integer(c.placesFound)} · ${integer(c.productMatches)} bernama produk`]);
+  const storeTotal = numericCount(source?.ratingHistogramTotal);
+  if (storeTotal !== null && Number.isInteger(source?.fetched)) rows.push(['Penilaian halaman toko', `${integer(storeTotal)} · ${integer(Math.max(0, storeTotal - source.fetched))} tanpa teks`]);
+  return rows.slice(0, 4);
+}
 function pullQueue() {
   // Hanya kanal yang memiliki konektor yang dikirim ke server. Kanal tanpa konektor tidak
   // pernah diminta, sehingga tidak pernah muncul sebagai "nol" yang keliru.
   return platforms.filter(p => sourceFor(p).status !== 'unsupported')
-    .map(p => ({ id: p.id, name: p.name, status: 'menunggu', fetched: null, message: '' }));
+    .map(p => ({ id: p.id, name: p.name, status: 'menunggu', fetched: null, message: '', meta: pullMeta(sourceFor(p)) }));
 }
 function renderPullDialog() {
   const dialog = $('#pull-dialog');
   if (!dialog || !sync.pull) return;
   const { queue, finished } = sync.pull;
   const checked = queue.filter(row => pullFinalStates.has(row.status)).length;
-  const note = row => row.message ? `<small>${esc(shortMessage(row.message))}</small>` : '';
-  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="pull-heading">Mengambil dan menganalisis</h2><p>Kanal diambil satu per satu. Status di bawah adalah hasil nyata dari kanal tersebut, bukan perkiraan.</p></div><button class="icon-button" data-close="pull-dialog" aria-label="Tutup progres">${icon('close')}</button></div><div class="dialog-body"><p class="pull-progress"><strong>${checked}</strong> dari ${queue.length} kanal diperiksa${finished?'; riwayat penarikan diperbarui.':'…'}</p><ol class="pull-list" aria-live="polite">${queue.map(row=>`<li class="pull-row is-${row.status}"><span class="pull-dot" aria-hidden="true"></span><div class="pull-info"><strong>${esc(row.name)}</strong>${note(row)}</div><span class="pull-state">${esc(pullStatusNames[row.status])}</span>${Number.isInteger(row.fetched)?`<span class="pull-count">${integer(row.fetched)} teks</span>`:''}</li>`).join('')}</ol></div><div class="dialog-footer"><small>Kanal yang menjawab tanpa hasil berarti terhubung tetapi tidak mengirim konten; itu bukan nol keluhan.</small></div>`;
+  const chip = row => `<span class="pull-chip is-${row.status}">${esc(pullStatusNames[row.status])}</span>`;
+  const count = row => Number.isInteger(row.fetched) ? `${integer(row.fetched)} teks` : '—';
+  const meta = row => row.meta?.length ? `<div class="pull-meta"><h4>Detail metadata</h4><dl>${row.meta.map(([key, value]) => `<div><dt>${esc(key)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl></div>` : '';
+  const card = row => pullFinalStates.has(row.status)
+    ? `<div class="pull-main"><div class="pull-head"><strong>${esc(row.name)}</strong>${chip(row)}</div>${row.message ? `<p class="pull-msg">${esc(shortMessage(row.message))}</p>` : ''}<div class="pull-foot"><span>Ulasan publik: <strong>${count(row)}</strong></span>${chip(row)}</div></div>${meta(row)}`
+    : `<div class="pull-main"><div class="pull-head"><strong>${esc(row.name)}</strong></div><div class="pull-foot"><span>Ulasan/Teks: <strong>—</strong></span><span class="pull-state">${esc(pullStatusNames[row.status])}</span></div></div>`;
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="pull-heading">Mengambil dan menganalisis</h2><p>Kanal diambil satu per satu. Status di bawah adalah hasil nyata dari kanal tersebut, bukan perkiraan.</p></div><button class="icon-button" data-close="pull-dialog" aria-label="Tutup progres">${icon('close')}</button></div><div class="dialog-body"><div class="pull-progress"><span>Platform</span><strong>${checked} dari ${queue.length} kanal diperiksa${finished?'; riwayat diperbarui':''}</strong></div><ol class="pull-list" aria-live="polite">${queue.map(row => `<li class="pull-row is-${row.status}"><span class="pull-dot" aria-hidden="true"></span>${card(row)}</li>`).join('')}</ol></div><div class="dialog-footer"><small>Kanal yang menjawab tanpa hasil berarti terhubung tetapi tidak mengirim konten; itu bukan nol keluhan.</small></div>`;
   if (!dialog.open) dialog.showModal();
 }
 function shortMessage(message) {
@@ -550,6 +580,7 @@ async function analyze() {
     try {
       applyPayload(await requestData(`/api/analyze?platform=${encodeURIComponent(row.id)}`,'POST'));
       const source = sync.sources.find(s => s.id === row.id);
+      row.meta = pullMeta(source);
       row.status = pullStateFor(source);
       row.fetched = Number.isInteger(source?.fetched) ? source.fetched : null;
       row.message = source?.message || '';

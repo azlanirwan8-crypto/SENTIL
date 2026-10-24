@@ -347,11 +347,46 @@ export async function collectYouTube(fetcher = fetch, config = youtubeConfigurat
 // sudah tidak ada (query/queryType, type/keywords, searchTerms/maxResult), sehingga actor berjalan
 // dengan input kosong dan mengembalikan "tidak ada hasil" — bukan karena kontennya tidak ada, melainkan
 // karena pencariannya tidak pernah terjadi. Lihat apifyInputFields untuk penjaga pra-jalan.
+// Batas jumlah komentar per fase dibaca dari environment saat dipakai, agar deployment
+// dapat menaikkan atau menurunkan tanpa mengubah kode. Nilai bawaan dipilih agar biaya
+// tetap terkendali; setiap batas yang tercapai selalu dilaporkan pada coverage.
+function commentLimit(name, fallback) {
+  const value = Number(process.env[`APIFY_COMMENT_${name}`]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
 export const apifyChannels = {
-  x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: () => ({ searchTerms: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant'], sort: 'Latest + Top' }) },
+  x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: () => ({ searchTerms: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'], sort: 'Latest + Top' }) },
   instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: () => ({ resultsType: 'posts', searchType: 'hashtag', search: 'wondrmerchant, wondrmerchantbni, wondrmerchantbybni', searchLimit: 250, resultsLimit: 250 }) },
-  tiktok: { label: 'TikTok', actor: 'clockworks/tiktok-scraper', input: () => ({ searchQueries: ['"wondr merchant"', '"wondr merchant by BNI"'], resultsPerPage: 1000, videoSearchSorting: 'LATEST' }) },
+  // Komentar TikTok dikembalikan actor ke dataset terpisah yang ditaut dari item video,
+  // sehingga jumlah komentar per video harus diminta lewat input di bawah.
+  tiktok: { label: 'TikTok', actor: 'clockworks/tiktok-scraper', input: () => ({ searchQueries: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'], resultsPerPage: commentLimit('TIKTOK_VIDEOS', 300), videoSearchSorting: 'LATEST', topLevelCommentsPerPost: commentLimit('TIKTOK_COMMENTS', 35), maxRepliesPerComment: commentLimit('TIKTOK_REPLIES', 10) }) },
   facebook: { label: 'Facebook', actor: 'apify/facebook-search-scraper', input: () => ({ categories: ['wondr merchant', 'wondr merchant by BNI'], searchType: 'posts', resultsLimit: 250 }) },
+};
+// Fase kedua: KOMENTAR pada konten yang sudah ditemukan. Nama field dibatasi pada schema
+// actor yang terverifikasi (penjaga pra-jalan yang sama berlaku), dan setiap fase dicatat
+// terpisah karena actor ini menagih per hasil.
+// - Instagram: resultsType 'comments' + directUrls postingan yang baru ditemukan.
+// - X: conversationIds utas dari tweet yang ditemukan, untuk mengambil balasan.
+// - TikTok: tidak butuh fase kedua; komentarnya datang sebagai dataset tertaut.
+// - Facebook: actor yang tersedia di akun ini hanya mengembalikan hasil pencarian, bukan
+//   komentar pada sebuah postingan, jadi keterbatasan ini dilaporkan apa adanya.
+// Fase kedua memakai actor yang sama dengan pencarian utamanya (hanya inputnya yang berubah),
+// sehingga override APIFY_ACTOR_<KANAL> dan penjaga schema tetap berlaku untuk kedua fase.
+export const apifyCommentRuns = {
+  instagram: {
+    label: 'pada postingan',
+    input: ({ urls = [] } = {}) => {
+      const list = [...new Set(urls.filter(url => /instagram\.com\/(p|reel)\//i.test(url)))].slice(0, commentLimit('INSTAGRAM_POSTS', 100));
+      return list.length ? { resultsType: 'comments', directUrls: list, addParentData: true, resultsLimit: commentLimit('RESULTS', 3000) } : null;
+    },
+  },
+  x: {
+    label: 'dalam utas',
+    input: ({ conversationIds = [] } = {}) => {
+      const list = [...new Set(conversationIds)].slice(0, commentLimit('X_THREADS', 100));
+      return list.length ? { conversationIds: list, maxItems: commentLimit('RESULTS', 3000), sort: 'Top' } : null;
+    },
+  },
 };
 const apifyTextFields = ['text', 'fullText', 'caption', 'content', 'body', 'reviewText', 'comment', 'shortText'];
 // Actor menerima batas jumlah hasil dari namanya sendiri. Nilai ini bukan batas milik kolektor,
@@ -474,85 +509,174 @@ export function apifyUnknownInputFields(input, fields) {
   const known = new Set(fields);
   return Object.keys(input ?? {}).filter(key => key !== 'cleanInputs' && !known.has(key));
 }
+// Komentar TikTok disimpan actor di dataset terpisah yang ditaut dari item video. Tautan bisa
+// berupa URL dataset langsung atau record key-value yang berisi URL itu; keduanya diurai di sini.
+export async function apifyLinkedDatasetIds(links, token, fetcher = fetch) {
+  const ids = new Set();
+  let failed = 0;
+  for (const link of links) {
+    const text = String(link);
+    const direct = text.match(/\/datasets\/([A-Za-z0-9_-]+)/);
+    if (direct) { ids.add(direct[1]); continue; }
+    if (!/\/(key-value-stores|records)\//.test(text)) { failed++; continue; }
+    try {
+      const response = await fetcher(text, { headers: { authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(20000) });
+      if (!response?.ok) { failed++; continue; }
+      const body = typeof response.text === 'function' ? await response.text() : '';
+      const matches = [...String(body).matchAll(/\/datasets\/([A-Za-z0-9_-]+)/g)];
+      if (!matches.length) failed++;
+      for (const match of matches) ids.add(match[1]);
+    } catch { failed++; }
+  }
+  return { ids: [...ids], failed };
+}
 export async function collectApify(id, fetcher = fetch, config = apifyConfiguration(), { waitMs = 180000, pollMs = 5000, pageLimit = 1000, resume = null } = {}) {
   const channel = config.channels[id];
   if (config.status === 'needs_setup') return { id, status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
   if (channel.inputError) return { id, status: 'error', fetched: null, message: `${channel.inputError} Belum ada permintaan dikirim; data tersimpan tetap dipertahankan.`, reviews: [] };
   const issues = [];
-  // Penjaga pra-jalan: field input yang tidak dikenal actor membuat actor berjalan dengan input
-  // kosong dan mengembalikan "tidak ada hasil" yang terdengar sah padahal pencariannya tidak pernah
-  // terjadi. Bila ini terdeteksi, actor tidak dijalankan sehingga tidak ada biaya yang timbul.
-  let schemaFields = null;
-  if (!resume?.runId) {
-    try { schemaFields = await apifyInputFields(channel.actor, config.token, fetcher); }
-    catch (error) { issues.push(`schema input actor tidak dapat dibaca: ${error.message}`); }
-    const unknown = apifyUnknownInputFields(channel.input, schemaFields);
-    if (unknown.length) return {
-      id, status: 'error', fetched: null, reviews: [],
-      coverage: { actor: channel.actor, unknownInputFields: unknown, inputChecked: true, sampleLimit: apifyResultCap(channel.input)?.value ?? null, sampleLimitField: apifyResultCap(channel.input)?.field ?? null },
-      message: `Input untuk ${channel.label} memakai field yang tidak dikenal actor ${channel.actor}: ${unknown.join(', ')}. Actor tidak dijalankan, sehingga tidak ada biaya yang timbul dan data tersimpan tetap dipertahankan. Field yang diterima actor: ${schemaFields.slice(0, 14).join(', ')}${schemaFields.length > 14 ? ` (+${schemaFields.length - 14} lainnya)` : ''}.`,
-    };
-  }
-  let run;
-  if (resume?.runId) {
-    // Lanjut membaca run yang sudah dimulai; actor berbayar tidak dijalankan dua kali.
-    run = { id: resume.runId, status: resume.status ?? 'RUNNING', defaultDatasetId: resume.datasetId ?? null };
-    if (run.status === 'SUCCEEDED') issues.push('run sebelumnya sudah selesai tetapi datasetnya belum terbaca pada panggilan ini');
-    else issues.push('melanjutkan run actor yang masih berjalan dari permintaan sebelumnya');
-  } else try {
-    run = await apifyJson(`acts/${encodeURIComponent(channel.actor)}/runs`, config.token, fetcher, { method: 'POST', body: JSON.stringify({ cleanInputs: true, ...channel.input }) });
-    if (typeof run?.id !== 'string') throw new Error('parse_error: Apify tidak mengembalikan identitas run.');
-  } catch (error) {
-    return { id, status: 'error', fetched: null, message: `Pengambilan ${channel.label} gagal: ${error.message} Belum ada data yang diubah.`, reviews: [] };
-  }
-  const finished = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT', 'TIMED_OUT'];
-  const deadline = Date.now() + waitMs;
-  let status = run.status ?? 'READY';
-  while (!finished.includes(status)) {
-    if (Date.now() >= deadline) { issues.push('batas waktu tunggu actor tercapai; hasil belum lengkap'); break; }
-    try { await wait(pollMs); status = (await apifyJson(`actor-runs/${encodeURIComponent(run.id)}`, config.token, fetcher)).status ?? status; }
-    catch (error) { issues.push(error.message); break; }
-  }
   const reviews = new Map();
-  let items = 0, expanded = 0, markers = 0, offIdentity = 0;
   const markerNotes = new Set();
-  const datasetId = run.defaultDatasetId;
-  if (status !== 'SUCCEEDED') issues.push(`actor berakhir dengan status ${status}; hasil mungkin tidak lengkap`);
-  if (typeof datasetId !== 'string') issues.push('Apify tidak mengembalikan identitas dataset untuk run ini');
-  else for (let offset = 0; ; offset += pageLimit) {
-    try {
-      const page = apifyItems(await apifyJson(`datasets/${encodeURIComponent(datasetId)}/items?clean=true&format=json&offset=${offset}&limit=${pageLimit}`, config.token, fetcher));
-      for (const item of page) {
-        items++;
-        // Actor menandai kueri tanpa hasil sebagai item khusus, bukan dataset kosong.
-        // Item itu dihitung sebagai bukti "terhubung tetapi tidak ada konten", bukan kehilangan data.
-        if (item && typeof item === 'object' && (item.noResults === true || typeof item.error === 'string')) {
-          markers++;
-          const note = typeof item.errorDescription === 'string' ? item.errorDescription : typeof item.error === 'string' ? item.error : null;
-          if (note) markerNotes.add(String(note).slice(0, 160));
+  const commentLinks = new Set();
+  const mainUrls = [];
+  const mainConversations = [];
+  const stats = { items: 0, nested: 0, markers: 0, offIdentity: 0, commentItems: 0, commentRecords: 0 };
+
+  const readDataset = async (datasetId, runId, actor, phase) => {
+    if (typeof datasetId !== 'string' || !datasetId) { issues.push(`${phase}: Apify tidak mengembalikan identitas dataset untuk run ini`); return; }
+    const comments = phase !== 'pencarian utama';
+    for (let offset = 0; ; offset += pageLimit) {
+      try {
+        const page = apifyItems(await apifyJson(`datasets/${encodeURIComponent(datasetId)}/items?clean=true&format=json&offset=${offset}&limit=${pageLimit}`, config.token, fetcher));
+        for (const item of page) {
+          if (comments) stats.commentItems++; else stats.items++;
+          if (typeof item?.commentsDatasetURL === 'string') commentLinks.add(item.commentsDatasetURL);
+          if (!comments) {
+            if (typeof item?.url === 'string') mainUrls.push(item.url);
+            if (item?.conversationId != null && item.conversationId !== '') mainConversations.push(String(item.conversationId));
+          }
+          // Actor menandai kueri tanpa hasil sebagai item khusus, bukan dataset kosong.
+          // Item itu dihitung sebagai bukti "terhubung tetapi tidak ada konten", bukan kehilangan data.
+          if (item && typeof item === 'object' && (item.noResults === true || typeof item.error === 'string')) {
+            stats.markers++;
+            const note = typeof item.errorDescription === 'string' ? item.errorDescription : typeof item.error === 'string' ? item.error : null;
+            if (note) markerNotes.add(String(note).slice(0, 160));
+          }
+          const before = reviews.size;
+          const parsed = apifyRecords(item, id, actor, runId, new Date().toISOString());
+          stats.offIdentity += parsed.offIdentity;
+          for (const record of parsed.records) if (!reviews.has(record.id)) { reviews.set(record.id, record); if (record.parentId) stats.nested++; }
+          if (comments) stats.commentRecords += reviews.size - before;
         }
-        const parsed = apifyRecords(item, id, channel.actor, run.id, new Date().toISOString());
-        offIdentity += parsed.offIdentity;
-        for (const record of parsed.records) { if (!reviews.has(record.id)) { reviews.set(record.id, record); if (record.parentId) expanded++; } }
+        if (page.length < pageLimit) break;
+      } catch (error) { issues.push(`${phase}: ${error.message}`); break; }
+    }
+  };
+
+  // Satu fase actor: jaga schema, jalankan (atau lanjutkan run yang sudah dimulai), tunggu, baca dataset.
+  const runActor = async ({ phase, actor, input, resumeRun }) => {
+    let fields = null;
+    if (!resumeRun?.runId) {
+      try { fields = await apifyInputFields(actor, config.token, fetcher); }
+      catch (error) { issues.push(`${phase}: schema input actor tidak dapat dibaca: ${error.message}`); }
+      // Penjaga pra-jalan: field yang tidak dikenal actor membuat actor berjalan dengan input
+      // kosong dan mengembalikan "tidak ada hasil" yang terdengar sah padahal pencariannya tidak
+      // pernah terjadi. Bila terdeteksi, actor tidak dijalankan sehingga tidak ada biaya timbul.
+      const unknown = apifyUnknownInputFields(input, fields);
+      if (unknown.length) return { unknown, fields, actor };
+    }
+    let run;
+    if (resumeRun?.runId) {
+      run = { id: resumeRun.runId, status: resumeRun.status ?? 'RUNNING', defaultDatasetId: resumeRun.datasetId ?? null };
+      issues.push(run.status === 'SUCCEEDED' ? `${phase}: run sebelumnya sudah selesai tetapi datasetnya belum terbaca pada panggilan ini` : `${phase}: melanjutkan run actor yang masih berjalan dari permintaan sebelumnya`);
+    } else {
+      try {
+        run = await apifyJson(`acts/${encodeURIComponent(actor)}/runs`, config.token, fetcher, { method: 'POST', body: JSON.stringify({ cleanInputs: true, ...input }) });
+        if (typeof run?.id !== 'string') throw new Error('parse_error: Apify tidak mengembalikan identitas run.');
+      } catch (error) { return { failure: error.message, actor, input }; }
+    }
+    const done = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT', 'TIMED_OUT'];
+    const deadline = Date.now() + waitMs;
+    let status = run.status ?? 'READY';
+    while (!done.includes(status)) {
+      if (Date.now() >= deadline) { issues.push(`${phase}: batas waktu tunggu actor tercapai; run ${run.id} dilanjutkan pada penarikan berikutnya`); break; }
+      try { await wait(pollMs); status = (await apifyJson(`actor-runs/${encodeURIComponent(run.id)}`, config.token, fetcher)).status ?? status; }
+      catch (error) { issues.push(`${phase}: ${error.message}`); break; }
+    }
+    const outcome = { runId: run.id, datasetId: run.defaultDatasetId ?? null, status, finished: done.includes(status), actor, fields, input };
+    if (!outcome.finished) return outcome;
+    if (status !== 'SUCCEEDED') issues.push(`${phase}: actor berakhir dengan status ${status}; hasil mungkin tidak lengkap`);
+    await readDataset(outcome.datasetId, outcome.runId, actor, phase);
+    return outcome;
+  };
+
+  const main = await runActor({
+    phase: 'pencarian utama', actor: channel.actor, input: channel.input,
+    resumeRun: resume?.runId ? { runId: resume.runId, datasetId: resume.datasetId, status: resume.status } : null,
+  });
+  if (main.unknown) return {
+    id, status: 'error', fetched: null, reviews: [],
+    coverage: { actor: channel.actor, unknownInputFields: main.unknown, inputChecked: true, sampleLimit: apifyResultCap(channel.input)?.value ?? null, sampleLimitField: apifyResultCap(channel.input)?.field ?? null },
+    message: `Input untuk ${channel.label} memakai field yang tidak dikenal actor ${channel.actor}: ${main.unknown.join(', ')}. Actor tidak dijalankan, sehingga tidak ada biaya yang timbul dan data tersimpan tetap dipertahankan. Field yang diterima actor: ${main.fields.slice(0, 14).join(', ')}${main.fields.length > 14 ? ` (+${main.fields.length - 14} lainnya)` : ''}.`,
+  };
+  if (main.failure) return { id, status: 'error', fetched: null, message: `Pengambilan ${channel.label} gagal: ${main.failure} Belum ada data yang diubah.`, reviews: [] };
+
+  // Dataset komentar tertaut (TikTok) dibaca dengan parser yang sama; tidak ada run baru,
+  // sehingga tidak ada biaya tambahan di luar hasil yang sudah ditagih actor.
+  const linked = await apifyLinkedDatasetIds([...commentLinks], config.token, fetcher);
+  for (const datasetId of linked.ids) await readDataset(datasetId, main.runId, channel.actor, 'komentar terkait');
+  if (linked.failed) issues.push(`${linked.failed} tautan dataset komentar tidak dapat diurai`);
+
+  const followSpec = apifyCommentRuns[id];
+  let follow = null;
+  if (followSpec) {
+    if (!main.finished) issues.push(`fase ${followSpec.label} dilewati karena run utama belum selesai; run ${main.runId} akan dilanjutkan lebih dulu pada penarikan berikutnya`);
+    else {
+      const input = followSpec.input({ urls: mainUrls, conversationIds: mainConversations });
+      if (!input) follow = { skipped: `tidak ada konten utama yang membawa tautan untuk diambil ${followSpec.label}nya` };
+      else {
+        follow = await runActor({
+          phase: `komentar ${followSpec.label}`, actor: channel.actor, input,
+          resumeRun: resume?.followUp?.runId ? resume.followUp : null,
+        });
+        if (follow.unknown) issues.push(`fase komentar ${followSpec.label} tidak dijalankan: field ${follow.unknown.join(', ')} tidak dikenal actor ${channel.actor}, sehingga tidak ada biaya yang timbul`);
+        if (follow.failure) issues.push(`fase ${followSpec.label} gagal: ${follow.failure}; hasil pencarian utama tetap tersimpan`);
       }
-      if (page.length < pageLimit) break;
-    } catch (error) { issues.push(error.message); break; }
+    }
   }
-  const emptyEvidence = markers ? ` Actor mengembalikan ${markers} penanda tidak ada hasil${markerNotes.size ? ` (${[...markerNotes].join('; ')})` : ''} untuk kueri ini, artinya kanal dapat dihubungi tetapi tidak ada konten publik yang cocok.` : '';
-  const identityEvidence = offIdentity ? ` ${offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas wondr merchant, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.` : '';
+  const followCap = follow?.input ? apifyResultCap(follow.input) : null;
+  const followTruncated = Boolean(followCap && follow?.datasetId && stats.commentItems >= followCap.value);
+
+  const emptyEvidence = stats.markers ? ` Actor mengembalikan ${stats.markers} penanda tidak ada hasil${markerNotes.size ? ` (${[...markerNotes].join('; ')})` : ''} untuk kueri ini, artinya kanal dapat dihubungi tetapi tidak ada konten publik yang cocok.` : '';
+  const identityEvidence = stats.offIdentity ? ` ${stats.offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas wondr merchant, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.` : '';
   // Batas hasil pada input actor dilaporkan apa adanya: jika jumlah item yang dikembalikan
   // mencapai batas itu, masih ada konten yang belum terbaca dan itu tidak boleh disebut lengkap.
   const cap = apifyResultCap(channel.input);
-  const truncated = Boolean(cap && items >= cap.value);
+  const truncated = Boolean(cap && stats.items >= cap.value);
   const capEvidence = cap
-    ? ` Hasil dibatasi input actor ${cap.field}=${cap.value}; ${items} item dataset dikembalikan.${truncated ? ` Jumlah item mencapai batas tersebut, sehingga masih ada konten yang belum terbaca — naikkan ${cap.field} melalui APIFY_INPUT_${id.toUpperCase()} untuk membaca sisanya.` : ' Item yang dikembalikan belum mencapai batas tersebut.'}`
+    ? ` Hasil dibatasi input actor ${cap.field}=${cap.value}; ${stats.items} item dataset dikembalikan.${truncated ? ` Jumlah item mencapai batas tersebut, sehingga masih ada konten yang belum terbaca — naikkan ${cap.field} melalui APIFY_INPUT_${id.toUpperCase()} untuk membaca sisanya.` : ' Item yang dikembalikan belum mencapai batas tersebut.'}`
     : ' Tidak ada batas jumlah hasil pada input actor ini; seluruh dataset run dibaca.';
-  const complete = !issues.length && !truncated;
+  // Kalimat komentar disusun dari yang benar-benar terjadi pada penarikan ini, bukan dari
+  // asumsi: dataset tertaut, run fase kedua, atau memang tidak ada komentar yang dikembalikan.
+  const commentParts = [];
+  if (stats.commentItems) commentParts.push(`${stats.commentItems} item dataset komentar dibaca${linked.ids.length ? ` dari ${linked.ids.length} dataset tertaut` : ''}`);
+  if (followSpec) {
+    if (follow?.runId) commentParts.push(`run ${channel.actor} ${follow.runId} ${follow.finished ? 'selesai' : 'belum selesai dan dilanjutkan pada penarikan berikutnya'}`);
+    else if (follow?.skipped) commentParts.push(`fase komentar dilewati (${follow.skipped})`);
+    if (followCap) commentParts.push(`batas actor ${followCap.field}=${followCap.value}${followTruncated ? ' (tercapai — masih ada balasan yang belum terbaca)' : ''}`);
+  }
+  const commentEvidence = commentParts.length
+    ? ` Fase komentar: ${commentParts.join(', ')}; ${stats.commentRecords} teks komentar baru tersimpan.`
+    : ` Tidak ada komentar yang dikembalikan actor pada penarikan ini${followSpec ? '' : `; actor pencarian ${channel.label} hanya mengembalikan hasil pencarian, bukan komentar pada tiap postingan`}.`;
+  const incomplete = issues.length > 0 || truncated || followTruncated || Boolean(follow && follow.finished === false);
+  const complete = !incomplete;
   // Dataset yang mencapai batas actor tetap bukti kanal menjawab (partial), bukan kegagalan,
   // dan bukan pula "tidak ada percakapan".
   return { id, status: complete ? 'success' : reviews.size || truncated ? 'partial' : 'error', fetched: reviews.size, reviews: [...reviews.values()],
-    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, emptyResultMarkers: markers, identityFiltered: offIdentity, sampleLimit: cap?.value ?? null, sampleLimitField: cap?.field ?? null, possiblyTruncated: truncated, inputChecked: Boolean(schemaFields), unknownInputFields: [], runFinished: status === 'SUCCEEDED' },
-    message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${run.id}); ${items} item dataset diperiksa dan ${expanded} di antaranya berasal dari komentar/ulasan bersarang.${emptyEvidence}${identityEvidence}${capEvidence} ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set([...(truncated && cap ? [`item dataset mencapai ${cap.field}=${cap.value}`] : []), ...issues.map(String)])].join(' ')}`} Teks disimpan apa adanya dari actor. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
+    coverage: { actor: channel.actor, runId: main.runId, datasetId: main.datasetId ?? null, itemsRead: stats.items, nestedRecords: stats.nested, emptyResultMarkers: stats.markers, identityFiltered: stats.offIdentity, sampleLimit: cap?.value ?? null, sampleLimitField: cap?.field ?? null, possiblyTruncated: truncated, inputChecked: Boolean(main.fields) || Boolean(resume?.runId), unknownInputFields: [], runFinished: main.finished === true,
+      commentItemsRead: stats.commentItems, commentRecords: stats.commentRecords, commentDatasets: linked.ids.length,
+      followUp: followSpec ? { actor: channel.actor, runId: follow?.runId ?? null, datasetId: follow?.datasetId ?? null, finished: follow?.finished === true, skipped: follow?.skipped ?? null, unknownInputFields: follow?.unknown ?? [], sampleLimit: followCap?.value ?? null, sampleLimitField: followCap?.field ?? null, possiblyTruncated: followTruncated } : null },
+    message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${main.runId}); ${stats.items} item dataset diperiksa dan ${stats.nested} di antaranya berasal dari komentar/ulasan bersarang.${emptyEvidence}${identityEvidence}${capEvidence}${commentEvidence} ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set([...(truncated && cap ? [`item dataset mencapai ${cap.field}=${cap.value}`] : []), ...(followTruncated && followCap ? [`komentar mencapai ${followCap.field}=${followCap.value}`] : []), ...issues.map(String)])].join(' ')}`} Teks disimpan apa adanya dari actor. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
 }
 // Google Places API (New) adalah jalur resmi untuk ulasan di Google Maps. Kunci hanya dikirim
 // sebagai header X-Goog-Api-Key; tidak pernah masuk URL, browser, atau pesan galat.
