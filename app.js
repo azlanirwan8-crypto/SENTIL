@@ -80,7 +80,7 @@ const paths = {
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.message}</svg>`; }
 let reviews = [...seedReviews];
 const state = { view:'overview', platform:'all', period:'all', from:'', to:'', trend:'week', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', page:1, size:10 };
-const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null };
+const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null };
 const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
 const isBusy = () => sync.loading || sync.busy || sync.running;
@@ -416,25 +416,78 @@ async function loadData() {
     sync.loading=false; sync.requesting=false; render(); scheduleRefresh();
   }
 }
+const pullStatusNames = { menunggu:'Menunggu giliran', diproses:'Sedang diambil…', selesai:'Selesai diperiksa', gagal:'Gagal', 'belum dikonfigurasi':'Perlu konfigurasi API', 'belum diuji':'Akses belum diuji', 'tidak diambil':'Tidak diambil', 'data tersimpan':'Data tersimpan' };
+const pullFinalStates = new Set(['selesai','gagal','belum dikonfigurasi','belum diuji','tidak diambil','data tersimpan']);
+const pullStateFor = source => ({ success:'selesai', partial:'selesai', error:'gagal', needs_setup:'belum dikonfigurasi', ready:'belum diuji', unsupported:'tidak diambil', snapshot:'data tersimpan' })[source?.status] || 'gagal';
+function pullQueue() {
+  // Hanya kanal yang memiliki konektor yang dikirim ke server. Kanal tanpa konektor tidak
+  // pernah diminta, sehingga tidak pernah muncul sebagai "nol" yang keliru.
+  return platforms.filter(p => sourceFor(p).status !== 'unsupported')
+    .map(p => ({ id: p.id, name: p.name, status: 'menunggu', fetched: null, message: '' }));
+}
+function renderPullDialog() {
+  const dialog = $('#pull-dialog');
+  if (!dialog || !sync.pull) return;
+  const { queue, finished } = sync.pull;
+  const checked = queue.filter(row => pullFinalStates.has(row.status)).length;
+  const note = row => row.message ? `<small>${esc(shortMessage(row.message))}</small>` : '';
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="pull-heading">Mengambil dan menganalisis</h2><p>Kanal diambil satu per satu. Status di bawah adalah hasil nyata dari kanal tersebut, bukan perkiraan.</p></div><button class="icon-button" data-close="pull-dialog" aria-label="Tutup progres">${icon('close')}</button></div><div class="dialog-body"><p class="pull-progress"><strong>${checked}</strong> dari ${queue.length} kanal diperiksa${finished?'; riwayat penarikan diperbarui.':'…'}</p><ol class="pull-list" aria-live="polite">${queue.map(row=>`<li class="pull-row is-${row.status}"><span class="pull-dot" aria-hidden="true"></span><div class="pull-info"><strong>${esc(row.name)}</strong>${note(row)}</div><span class="pull-state">${esc(pullStatusNames[row.status])}</span>${Number.isInteger(row.fetched)?`<span class="pull-count">${integer(row.fetched)} teks</span>`:''}</li>`).join('')}</ol></div><div class="dialog-footer"><small>Kanal yang menjawab tanpa hasil berarti terhubung tetapi tidak mengirim konten; itu bukan nol keluhan.</small></div>`;
+  if (!dialog.open) dialog.showModal();
+}
+function shortMessage(message) {
+  const text = String(message || '').trim();
+  if (!text) return '';
+  const first = text.split(/(?<=[.!?])\s/)[0] || text;
+  return first.length > 150 ? `${first.slice(0, 147)}…` : first;
+}
 async function analyze() {
   if (isBusy() || sync.requesting) return;
   clearTimeout(refreshTimer);
   sync.busy=true; sync.requesting=true;
   sync.attempt={startedAt:new Date().toISOString(),finishedAt:null,status:'running'};
-  render();
-  try {
-    applyPayload(await requestData('/api/analyze','POST'));
-    const run = sync.lastRun;
-    if (!run) notify('Pengambilan selesai. Periksa status sumber pada bagian Platform.');
-    else if (run.status === 'error') notify('Tarik Analisis gagal. Ulasan yang tersimpan tetap ditampilkan; periksa status sumber.');
-    else notify(`Tarik Analisis ${run.status==='partial'?'selesai sebagian':'berhasil'} · ${integer(numericCount(run.added) ?? 0)} ulasan baru · ${integer(numericCount(run.updated) ?? 0)} diperbarui · ${integer(numericCount(run.unchanged) ?? 0)} tidak berubah. ${run.coverage?.fetchedSources.length ?? 0} dari ${platforms.length} sumber berhasil dibaca; lihat Platform untuk kanal yang belum tersedia.`);
-  } catch (error) {
-    sync.running=false;
-    sync.attempt={...sync.attempt,status:'error',finishedAt:new Date().toISOString()};
-    notify(`Pengambilan gagal. ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'} Ulasan yang sudah tersimpan tetap ditampilkan.`);
-  } finally {
-    sync.busy=false; sync.requesting=false; render(); scheduleRefresh();
+  const queue = pullQueue();
+  sync.pull = { queue, finished:false };
+  render(); renderPullDialog();
+  let stopped = false;
+  if (!queue.length) {
+    // Status sumber tidak dapat dibaca (misalnya server sedang turun). Jalankan satu
+    // permintaan gabungan seperti biasa agar pengguna tetap mendapat hasil atau pesan galat.
+    try { applyPayload(await requestData('/api/analyze','POST')); }
+    catch (error) { stopped = true; notify(`Pengambilan gagal. ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'} Ulasan yang sudah tersimpan tetap ditampilkan.`); }
   }
+  for (const row of queue) {
+    row.status='diproses'; renderPullDialog();
+    try {
+      applyPayload(await requestData(`/api/analyze?platform=${encodeURIComponent(row.id)}`,'POST'));
+      const source = sync.sources.find(s => s.id === row.id);
+      row.status = pullStateFor(source);
+      row.fetched = Number.isInteger(source?.fetched) ? source.fetched : null;
+      row.message = source?.message || '';
+    } catch (error) {
+      row.status='gagal';
+      row.message = error instanceof Error ? error.message : 'Kesalahan tidak dikenal.';
+      // Kesalahan jaringan berarti server tidak terjangkau: melanjutkan hanya mengulang galat.
+      if (error instanceof TypeError) { stopped = true; break; }
+    }
+    renderPullDialog();
+  }
+  for (const row of queue) if (row.status === 'diproses') row.status = 'menunggu';
+  // Riwayat penarikan dicatat pada panggilan penutup terpisah, sehingga kegagalan satu
+  // kanal (termasuk kanal terakhir) tidak meninggalkan penarikan tanpa catatan.
+  if (queue.length && !stopped) {
+    try { applyPayload(await requestData('/api/analyze?finish=1','POST')); }
+    catch (error) { notify(`Riwayat penarikan tidak dapat dicatat. ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'}`); }
+  }
+  sync.pull.finished = true;
+  renderPullDialog();
+  // Modal ditutup sendiri setelah hasil terbaca, agar dasbor tidak terkunci oleh progresnya.
+  setTimeout(() => { const dialog = $('#pull-dialog'); if (dialog?.open && sync.pull?.finished) { dialog.close(); sync.pull = null; } }, 2500);
+  const run = sync.lastRun;
+  if (stopped) notify('Penarikan dihentikan karena server tidak dapat dihubungi. Hasil kanal yang sudah selesai tetap tersimpan.');
+  else if (!run) notify('Pengambilan selesai. Periksa status sumber pada bagian Platform.');
+  else if (run.status === 'error') notify('Tarik Analisis gagal. Ulasan yang tersimpan tetap ditampilkan; periksa status sumber.');
+  else notify(`Tarik Analisis ${run.status==='partial'?'selesai sebagian':'berhasil'} · ${integer(numericCount(run.added) ?? 0)} ulasan baru · ${integer(numericCount(run.updated) ?? 0)} diperbarui · ${integer(numericCount(run.unchanged) ?? 0)} tidak berubah. ${run.coverage?.fetchedSources.length ?? 0} dari ${platforms.length} sumber berhasil dibaca; lihat Platform untuk kanal yang belum tersedia.`);
+  sync.busy=false; sync.requesting=false; render(); scheduleRefresh();
 }
 document.addEventListener('click',event=>{
   const button=event.target.closest('button,a');
@@ -450,6 +503,7 @@ document.addEventListener('click',event=>{
   if (button.dataset.openPlatform) { clearReviewFilters(); state.platform=button.dataset.openPlatform; navigate('reviews'); return; }
   if (button.dataset.review) { openReview(button.dataset.review); return; }
   if (button.dataset.close==='detail-dialog') { $('#detail-dialog').close(); return; }
+  if (button.dataset.close==='pull-dialog') { $('#pull-dialog').close(); sync.pull=null; return; }
   if (button.dataset.complaint) {
     const group=complaintStats(analyticalReviews()).find(g=>g.id===button.dataset.complaint);
     if (!group) return;

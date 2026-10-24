@@ -2,7 +2,7 @@
 // Disk /tmp hanya bertahan selama instance hidup, jadi state dipegang di memori
 // dan ditulis ke DATA_PATH agar penarikan berikutnya tetap memakai riwayat yang sama.
 import { readFile, writeFile } from 'node:fs/promises';
-import { collectOnline, channelConfigurations } from './collectors.mjs';
+import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived } from './dashboard-core.mjs';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
@@ -43,20 +43,44 @@ export async function snapshot() {
 }
 
 export async function pull({ collector = collectOnline } = {}) {
+  return runStep((previous, options) => collector(options), { recordRun: true });
+}
+
+// Satu kanal per permintaan. Antarmuka memakainya untuk menampilkan progres nyata per
+// platform, dan function serverless selesai dalam waktu singkat tanpa menahan 3 menit.
+export async function pullPlatform(id, { collect = collectPlatform } = {}) {
+  return runStep(async (previous, options) => {
+    const result = await collect(id, options);
+    if (!result) throw new Error('unknown-platform');
+    return [result];
+  }, { recordRun: false });
+}
+
+// Menutup batch penarikan bertahap dan mencatat satu entri riwayat. Dipisahkan agar
+// kegagalan satu kanal terakhir tidak membuat seluruh penarikan tanpa catatan.
+export async function finishPull() {
+  return runStep(async () => [], { recordRun: true });
+}
+
+async function runStep(produce, { recordRun }) {
   if (running) throw new Error('busy');
   running = true;
   const startedAt = new Date().toISOString();
   try {
     const previous = await snapshot();
-    const resume = new Map(previous.sources
-      .filter(source => source.coverage?.runId && source.coverage.runFinished === false)
-      .map(source => [source.id, { runId: source.coverage.runId, datasetId: source.coverage.datasetId, status: 'RUNNING' }]));
-    const results = await collector({ apifyWaitMs: apifyWaitMs(), resume });
+    const results = await produce(previous, { resume: resumeMap(previous), apifyWaitMs: apifyWaitMs() });
     const finishedAt = new Date().toISOString();
-    cache = buildDataset({ previous, results, startedAt, finishedAt, channelConfig: channelConfigurations() });
+    cache = buildDataset({ previous, results, startedAt, finishedAt, channelConfig: channelConfigurations(), recordRun });
     await writeStored(cache);
     return { ...cache, running: false };
   } finally {
     running = false;
   }
+}
+
+function resumeMap(previous) {
+  // Run actor yang belum selesai dilanjutkan, bukan diulang, agar kuota berbayar tidak terbuang.
+  return new Map(previous.sources
+    .filter(source => source.coverage?.runId && source.coverage.runFinished === false)
+    .map(source => [source.id, { runId: source.coverage.runId, datasetId: source.coverage.datasetId, status: 'RUNNING' }]));
 }

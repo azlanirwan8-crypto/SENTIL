@@ -7,13 +7,13 @@ import { createDashboardServer } from './server.mjs';
 import { seedReviews } from './data.js';
 
 const profile = await mkdtemp(join(tmpdir(),'wondr-browser-test-'));
-let collectorMode='baseline', releasePull, pulls=0;
+let collectorMode='baseline', releasePull, pulls=0, waited=false;
 const synthetic={id:'qa-browser-only',platform:'play',author:'QA <img src=x onerror="window.__xss=true">',date:null,text:'Login gagal <script>window.__xss=true</script>',rating:null,sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb',provenance:'Synthetic isolated browser fixture'};
 const socialBase={platform:'youtube',author:'YouTube test fixture',date:'2026-10-23',publishedAt:'2026-10-23T12:30:00Z',retrievedAt:'2026-10-24T01:00:00Z',rating:null,sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',authorChannelId:'viewer',context:{videoId:'abcdefghijk',channelId:'owner',product:'wondr-merchant',title:'wondr merchant <script>window.__xss=true</script>',description:'Isolated fixture context, not customer sentiment'},provenance:'Synthetic API fixture; never live social data'};
 const socialFixtures=[{...socialBase,id:'yt-a',text:'wondr merchant login gagal'},{...socialBase,id:'yt-b',text:'wondr merchant login gagal'},{...socialBase,id:'yt-owner',authorChannelId:'owner',text:'wondr merchant bagus'},{...socialBase,id:'yt-uncertain',text:'Video bagus'}];
-const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:async()=>{
+async function mockResults(){
   pulls++;
-  if(collectorMode==='wait')await new Promise(resolve=>{releasePull=resolve;});
+  if(collectorMode==='wait'&&!waited)await new Promise(resolve=>{releasePull=resolve;waited=true;});
   if(collectorMode==='error')return ['play','appstore'].map(id=>({id,status:'error',fetched:0,message:'Koneksi uji gagal; histori dipertahankan.'}));
   return ['play','appstore'].map(id=>{
     const count=seedReviews.filter(r=>r.platform===id).length;
@@ -26,7 +26,11 @@ const server=await createDashboardServer({storagePath:join(profile,'test-data.js
         : `${count} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi dan feed ulasan pelanggan resmi, masing-masing 9 ulasan dikonfirmasi kedua jalur.`,
       reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]};
   }).concat(collectorMode==='social'?[{id:'youtube',status:'success',fetched:socialFixtures.length,message:'Isolated API fixture only',reviews:socialFixtures}]:collectorMode==='social-missing'?[{id:'youtube',status:'needs_setup',fetched:null,message:'YOUTUBE_API_KEY belum dikonfigurasi; data tersimpan dipertahankan.',reviews:[]}]:[]);
-}});
+}
+// Penarikan berjalan satu kanal per permintaan; keduanya di-mock agar pengujian tidak
+// pernah mengirim permintaan nyata ke Google, Apple, YouTube, atau Apify.
+const unemulatedResult=id=>({id,status:'needs_setup',fetched:null,message:id==='youtube'?'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY atau GOOGLE_API_KEY belum tersedia pada environment server. Belum ada komentar yang diambil.':'Kanal uji tanpa fixture; tidak ada permintaan nyata dikirim.',reviews:[]});
+const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:mockResults,collectOne:async id=>(await mockResults()).find(result=>result.id===id)??unemulatedResult(id)});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const baseUrl=`http://127.0.0.1:${server.address().port}`;
 const output = new URL('./test-artifacts/',import.meta.url);
@@ -170,6 +174,12 @@ try {
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.btn-primary')).borderRadius`),'4px');
   collectorMode='wait';await click('[data-action="analyze"]');
   assert.equal(await evaluate(`document.querySelector('[data-action="analyze"]').disabled`),true);
+  // Modal progres: satu baris per kanal yang punya konektor, kanal tanpa konektor tidak ikut.
+  assert.equal(await evaluate(`document.querySelector('#pull-dialog').open`),true,'modal progres muncul saat penarikan berjalan');
+  assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row').length`),8,'hanya kanal berkonektor yang diantrikan');
+  assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-diproses').length`),1,'satu kanal diproses pada satu waktu');
+  assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-row.is-diproses').textContent`),/Google Play/);
+  assert.equal(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-row')].some(row=>/Forum|Blog|Berita/.test(row.textContent))`),false,'kanal tanpa konektor tidak pernah dilaporkan sebagai nol');
   while(!releasePull)await new Promise(resolve=>setImmediate(resolve));
   await click('[data-view="reviews"]');
   assert.equal(await evaluate(`document.querySelectorAll('[data-action="analyze"]').length`),0);
@@ -180,6 +190,9 @@ try {
   const pullReady=()=>evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(!document.querySelector('[data-action="analyze"]').disabled)resolve(true);else if(Date.now()>end)reject(Error('Pull did not finish'));else requestAnimationFrame(check);}check();})`);
   await pullReady();
   assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis selesai sebagian · 0 ulasan baru · 0 diperbarui · 64 tidak berubah\. 2 dari 11 sumber berhasil dibaca/);
+  assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-selesai').length`),2,'kanal yang mengembalikan hasil ditandai selesai');
+  assert.match(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-row')].find(row=>/Google Play/.test(row.textContent)).textContent`),/55 ulasan tertulis unik/,'baris kanal memuat pesan nyata dari sumber');
+  await click('#pull-dialog [data-close="pull-dialog"]');
   await click('[data-view="reviews"]');assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
   assert.equal(await evaluate(`document.querySelectorAll('.data-note,.local-card,.snapshot-indicator').length`),0);
   const pullFromPlatform=async()=>{
@@ -187,6 +200,13 @@ try {
     await click('[data-view="platforms"]');
     await click('[data-action="analyze"]');
     await pullReady();
+    // Modal progres tetap menampilkan hasil tiap kanal, lalu ditutup sebelum pemeriksaan lain.
+    assert.equal(await evaluate(`document.querySelector('#pull-dialog').open`),true,'modal tetap terbuka sampai penarikan selesai');
+    assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-progress').textContent`),/dari 8 kanal diperiksa/);
+    assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row').length`),8,'satu baris per kanal berkonektor');
+    assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-diproses').length`),0,'tidak ada kanal yang masih berstatus diproses');
+    await click('#pull-dialog [data-close="pull-dialog"]');
+    assert.equal(await evaluate(`document.querySelector('#pull-dialog').open`),false,'modal dapat ditutup manual');
     if(view!=='platforms')await click(`[data-view="${view}"]`);
   };
   completed.push('Platform-only online pull, loading lock across navigation and preserved filters');

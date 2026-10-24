@@ -3116,6 +3116,86 @@ tbody tr:hover {
   }
 }
 
+.dialog-compact {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.pull-progress {
+  margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pull-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pull-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.pull-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.pull-info {
+  min-width: 0;
+}
+
+.pull-info strong {
+  display: block;
+  font-size: 13px;
+}
+
+.pull-info small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.pull-state {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pull-count {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pull-row.is-diproses .pull-dot {
+  background: var(--primary);
+  animation: pull-pulse 1.2s ease-in-out infinite;
+}
+
+.pull-row.is-selesai .pull-dot {
+  background: var(--success);
+}
+
+.pull-row.is-gagal .pull-dot {
+  background: var(--danger);
+}
+
+@keyframes pull-pulse {
+  0%, 100% { opacity: .35; }
+  50% { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

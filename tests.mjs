@@ -1414,6 +1414,68 @@ test('Serverless store starts from the same seed and marks credential channels a
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('Staged pulls update one channel at a time and record a single run on finish', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-staged-'));
+  try {
+    await useDataPath(dir, async () => {
+      const store = await freshStore('staged');
+      const first = await store.pullPlatform('play', { collect: async () => ({ id: 'play', status: 'success', fetched: 1, message: '1 ulasan dibaca', reviews: [storedReview] }) });
+      assert.equal(first.lastRun, null, 'tahap pertama belum menutup batch');
+      assert.equal(first.reviews.length, seedReviews.length + 1);
+      assert.equal(first.sources.find(s => s.id === 'play').status, 'success');
+      assert.equal(first.sources.find(s => s.id === 'appstore').status, 'snapshot', 'kanal yang belum mendapat giliran tidak diubah');
+      const second = await store.pullPlatform('youtube', { collect: async () => ({ id: 'youtube', status: 'needs_setup', fetched: null, message: 'Kunci belum dipasang', reviews: [] }) });
+      assert.equal(second.lastRun, null);
+      const third = await store.pullPlatform('x', { collect: async () => ({ id: 'x', status: 'success', fetched: 3, message: '3 teks dibaca dari X', reviews: [] }) });
+      assert.equal(third.sources.find(s => s.id === 'x').status, 'success');
+      const closed = await store.finishPull();
+      const xAfterClose = closed.sources.find(s => s.id === 'x');
+      assert.equal(xAfterClose.status, 'success', 'kanal yang sudah diperiksa tidak ditimpa status konfigurasi oleh panggilan penutup');
+      assert.equal(xAfterClose.fetched, 3);
+      assert.equal(closed.sources.find(s => s.id === 'youtube').status, 'needs_setup');
+      assert.equal(closed.lastRun.status, 'partial');
+      assert.deepEqual(closed.lastRun.coverage.fetchedSources.sort(), ['play', 'x']);
+      assert.equal(closed.lastRun.added, 1, 'penghitung batch diakumulasi dari seluruh tahap');
+      assert.equal(closed.runs.length, 1);
+      assert.equal(closed.batch, null, 'batch ditutup setelah riwayat dicatat');
+      assert.ok(Date.parse(closed.lastRun.startedAt) <= Date.parse(closed.lastRun.finishedAt));
+      await assert.rejects(store.pullPlatform('tidak-ada', { collect: async () => null }), /unknown-platform/);
+      assert.equal((await store.snapshot()).runs.length, 1, 'kanal tak dikenal tidak menambah riwayat');
+    });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Local server runs staged pulls and closes the batch on ?finish=1', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-staged-http-'));
+  let server;
+  try {
+    server = await createDashboardServer({
+      storagePath: join(dir, 'data.json'), env: {},
+      collector: async () => { throw new Error('jalur gabungan tidak boleh dipakai untuk penarikan bertahap'); },
+      collectOne: async id => id === 'play'
+        ? { id: 'play', status: 'success', fetched: 1, message: '1 ulasan uji terbaca', reviews: [{ ...storedReview, id: `staged-${Math.random().toString(36).slice(2)}` }] }
+        : null,
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const host = `127.0.0.1:${port}`;
+    const stagedResponse = await rawRequest(port, '/api/analyze?platform=play', { method: 'POST', host });
+    assert.equal(stagedResponse.status, 200);
+    const staged = JSON.parse(stagedResponse.body);
+    assert.equal(staged.lastRun, null, 'satu kanal belum menutup batch');
+    assert.equal(staged.sources.find(s => s.id === 'play').status, 'success');
+    const unknown = await rawRequest(port, '/api/analyze?platform=forum', { method: 'POST', host });
+    assert.equal(unknown.status, 400, 'kanal tanpa konektor ditolak sebelum ada permintaan');
+    const closed = JSON.parse((await rawRequest(port, '/api/analyze?finish=1', { method: 'POST', host })).body);
+    assert.equal(closed.lastRun.status, 'partial');
+    assert.deepEqual(closed.lastRun.coverage.fetchedSources, ['play']);
+    assert.equal(closed.batch, null);
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('Serverless pull stores results on disk and resumes an unfinished actor run', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'wondr-store-'));
   try {

@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
-import { collectOnline, channelConfigurations } from './collectors.mjs';
+import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived } from './dashboard-core.mjs';
 
@@ -41,7 +41,7 @@ const sameSecret = (given, expected) => {
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
 };
-export async function createDashboardServer({ storagePath, collector = collectOnline, env, config = deploymentConfig(env ?? process.env) } = {}) {
+export async function createDashboardServer({ storagePath, collector = collectOnline, collectOne = collectPlatform, env, config = deploymentConfig(env ?? process.env) } = {}) {
   const dataPath = storagePath ?? config.storagePath;
   let data = initialDataset();
   try {
@@ -57,10 +57,22 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   data.sources = overlayConfiguration(data.sources, channelConfig);
   let running = false;
   const snapshot = () => ({ ...data, running });
+  // rename() di Windows sering gagal sesaat (EBUSY/EPERM/EACCES) ketika antivirus atau
+  // indexer masih memegang berkas target, jadi penulisan diulang beberapa kali sebelum
+  // dilaporkan gagal.
+  const renameWithRetry = async (from, to) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try { await rename(from, to); return; }
+      catch (error) {
+        if (!['EBUSY', 'EPERM', 'EACCES'].includes(error.code) || attempt >= 3) throw error;
+        await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+      }
+    }
+  };
   const persist = async next => {
     const temporary = dataPath instanceof URL ? new URL(dataPath.href + '.tmp') : dataPath + '.tmp';
     await writeFile(temporary, JSON.stringify(next,null,2),'utf8');
-    await rename(temporary,dataPath);
+    await renameWithRetry(temporary,dataPath);
   };
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -87,10 +99,16 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       if (running) { json(409,{error:'Pengambilan data sedang berjalan. Tunggu hingga selesai.'}); return; }
       running = true;
       const startedAt = new Date().toISOString();
+      const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
+      const platform = params.get('platform');
+      // ?platform=x mengambil satu kanal; ?finish=1 menutup batch dan mencatat riwayat;
+      // tanpa keduanya seluruh kanal diambil sekaligus seperti sebelumnya.
+      const finish = params.get('finish') === '1';
       try {
-        const results = await collector();
+        const results = finish ? [] : platform ? [await collectOne(platform)] : await collector();
+        if (platform && !results[0]) { running = false; json(400,{error:'Kanal yang diminta tidak dikenal, sehingga tidak ada permintaan yang dikirim.'}); return; }
         const finishedAt = new Date().toISOString();
-        const next = buildDataset({ previous: data, results, startedAt, finishedAt, channelConfig });
+        const next = buildDataset({ previous: data, results, startedAt, finishedAt, channelConfig, recordRun: finish || !platform });
         await persist(next);
         data = next;
         running = false;

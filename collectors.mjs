@@ -578,14 +578,29 @@ export function channelConfigurations(env = process.env) {
   const apify = apifyConfiguration(env);
   return new Map([['youtube', youtubeConfiguration(env)], ['googlemaps', placesConfiguration(env)], ...Object.keys(apifyChannels).map(id => [id, apify])]);
 }
-export async function collectOnline({ apifyWaitMs = 180000, resume = new Map() } = {}) {
+// Peta id platform -> kolektornya. Dipakai oleh collectOnline (semua kanal sekaligus)
+// dan collectPlatform (satu kanal per permintaan, agar antarmuka dapat menampilkan
+// progres yang nyata dan agar function serverless tidak perlu menahan 3 menit).
+export function onlineCollectors({ apifyWaitMs = 180000, resume = new Map() } = {}) {
   const apify = apifyConfiguration();
   const youtube = youtubeConfiguration();
   const places = placesConfiguration();
-  const jobs = [['play', () => collectGoogle()], ['appstore', () => collectApple()], ['youtube', () => collectYouTube(fetch, youtube)], ['googlemaps', () => collectGooglePlaces(fetch, places)]];
-  for (const id of Object.keys(apifyChannels)) jobs.push([id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id) })]);
-  return Promise.all(jobs.map(async ([id, collect]) => {
-    try { return await collect(); }
-    catch (error) { return { id, status: 'error', fetched: 0, message: `Gagal membaca sumber data. ${error instanceof SyntaxError ? 'parse_error: struktur data sumber berubah.' : error.message} Data sebelumnya tetap dipertahankan.`, reviews: [] }; }
-  }));
+  const jobs = new Map([
+    ['play', () => collectGoogle()],
+    ['appstore', () => collectApple()],
+    ['youtube', () => collectYouTube(fetch, youtube)],
+    ['googlemaps', () => collectGooglePlaces(fetch, places)],
+  ]);
+  for (const id of Object.keys(apifyChannels)) jobs.set(id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id) }));
+  return jobs;
+}
+export async function collectPlatform(id, options = {}) {
+  const collect = onlineCollectors(options).get(id);
+  if (!collect) return null;
+  try { return await collect(); } catch (error) {
+    return { id, status: 'error', fetched: 0, message: `Gagal membaca sumber data. ${error instanceof SyntaxError ? 'parse_error: struktur data sumber berubah.' : error.message} Data sebelumnya tetap dipertahankan.`, reviews: [] };
+  }
+}
+export async function collectOnline(options = {}) {
+  return Promise.all([...onlineCollectors(options).keys()].map(id => collectPlatform(id, options)));
 }
