@@ -111,10 +111,16 @@ export function classifyReview(raw) {
   if (raw.platform === 'play' || raw.platform === 'appstore') return label;
   const text = raw.text.toLocaleLowerCase('id');
   const merchant = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])/.test(text);
+  // Akun resmi pemilik produk mengiklankan aplikasinya sendiri. Teks seperti itu
+  // disimpan sebagai konteks, tetapi tidak dihitung sebagai sentimen pelanggan.
+  const handle = String(raw.author ?? '').replace(/^@+/, '').trim().toLowerCase();
+  const officialAccount = /^(?:bni(?:[\W_]*46)?|official[\W_]*bni|wondr[\W_]*merchant)$/.test(handle);
   const promotion = /(?:^|[.!?:]|\b(?:ayo|yuk|buruan|segera)\b)\s*(?:download|unduh|install)\b|\bdapatkan\s+(?:cashback|bonus|promo)\b|\binfo\s+promo\b/.test(text);
   const question = /\b(?:apakah|kalau|jika|seandainya|bisakah)\b|\bbelum\s+(?:pernah\s+)?(?:mencoba|coba|pakai|menggunakan)\b/.test(text);
   let status = 'uncertain', reason = 'Komentar pada video terkait belum cukup untuk memastikan pengalaman terhadap aplikasi merchant.';
-  if (raw.authorChannelId && raw.authorChannelId === raw.context?.channelId) {
+  if (officialAccount) {
+    status = 'excluded'; reason = `Penulis "${raw.author}" adalah akun resmi BNI atau produk ini, sehingga isinya promosi pemilik, bukan pengalaman pelanggan independen.`;
+  } else if (raw.authorChannelId && raw.authorChannelId === raw.context?.channelId) {
     status = 'excluded'; reason = 'Balasan pemilik video disimpan sebagai konteks, bukan opini pelanggan independen.';
   } else if (promotion) {
     status = 'excluded'; reason = 'Ajakan promosi tidak diperlakukan sebagai pengalaman pelanggan.';

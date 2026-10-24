@@ -30,15 +30,29 @@ Data awal tersedia di dalam aplikasi. Setelah tombol **Tarik Analisis** digunaka
 Salin `.env.example` menjadi `.env` (atau `.env.local`) lalu isi nilainya. Kedua berkas sudah di-git-ignore dan tidak pernah disajikan lewat HTTP. Jangan menempelkan kunci ke kolom chat atau commit. Bila kunci Anda tersimpan di suatu lingkungan hosting, tarik sendiri ke folder ini, misalnya `vercel env pull .env.local`.
 
 - `GOOGLE_API_KEY` atau `YOUTUBE_API_KEY` — mengaktifkan konektor komentar YouTube Data API v3.
-- `APIFY_API_TOKEN` — mengaktifkan kanal X, Instagram, TikTok, Facebook, dan Google Reviews melalui actor Apify. Pemakaian actor memakan kuota berbayar pada akun Anda.
+- `GOOGLE_PLACES_API_KEY` — mengaktifkan kanal Google Reviews melalui Google Places API (New). Kunci dikirim sebagai header `X-Goog-Api-Key`, tidak pernah masuk URL.
+- `APIFY_API_TOKEN` — mengaktifkan kanal X, Instagram, TikTok, dan Facebook melalui actor Apify. Pemakaian actor memakan kuota berbayar pada akun Anda.
 
 Tanpa kredensial, kanal-kanal itu berstatus **perlu konfigurasi API** dan tidak ada permintaan yang dikirim — bukan nol keluhan dan bukan pula terhubung.
 
+Status **terhubung** berarti permintaan benar-benar dikirim dan dijawab. Apabila sumber mengembalikan penanda "tidak ada hasil" — misalnya actor X mengirim `{ "noResults": true }` atau Instagram mengirim `no_items` — dasbor menuliskan jumlah penanda itu apa adanya. Itu berbeda dari kegagalan, dan berbeda pula dari nol keluhan.
+
+## Menjalankan pada Vercel
+
+`vercel.json`, `middleware.js`, dan `api/*.js` menyiapkan aplikasi untuk Vercel Functions:
+
+- `/api/data`, `/api/status`, dan `/api/analyze` dilayani function Node; halaman statis tetap dari repo.
+- Function membaca environment deployment, jadi `APIFY_API_TOKEN`, `YOUTUBE_API_KEY`, dan `GOOGLE_PLACES_API_KEY` yang Anda pasang di Vercel benar-benar dipakai.
+- `api/analyze.js` diberi `maxDuration` 300 detik karena actor Apify dapat berjalan beberapa menit. Actor yang belum selesai saat function habis waktu tidak diulang: `coverage.runId` tersimpan dan penarikan berikutnya melanjutkan run yang sama.
+- `middleware.js` meminta kredensial Basic pada seluruh halaman bila `DASHBOARD_USER` dan `DASHBOARD_PASSWORD` diisi. Bila keduanya kosong, halaman tetap terbuka tetapi `/api/analyze` diblokir agar pengunjung lain tidak memakai kuota Apify Anda.
+
+Batas yang perlu diketahui: disk Vercel Function (`/tmp`, atau `DATA_PATH` yang Anda tentukan) hanya hidup selama instance function berjalan. Riwayat penarikan dapat kembali ke dataset awal ketika instance berganti. Untuk riwayat jangka panjang, pakai host Node berkelanjutan di bawah dan arahkan `DATA_PATH` ke disk permanen.
+
 ## Menjalankan pada host Node berkelanjutan
 
-Aplikasi ini memakai satu proses Node yang berjalan terus, jadi host-nya harus mendukung proses berkelanjutan (Render, Railway, Fly.io, atau VPS). Platform serverless dengan function berbatas waktu dan disk hanya-baca tidak cocok tanpa penataan ulang penyimpanan dan pembatas waktu.
+`server.mjs` menjalankan satu proses Node yang hidup terus, sehingga cocok untuk Render, Railway, Fly.io, atau VPS dan menyimpan riwayat pada `DATA_PATH`.
 
-Cara tercepat di Render: sambungkan repo ini ke akun Anda, lalu pilih service dari `render.yaml` yang sudah tersedia. Render akan meminta nilai `DASHBOARD_USER`, `DASHBOARD_PASSWORD`, `GOOGLE_API_KEY`, dan `APIFY_API_TOKEN` saat pembuatan — nilai itu tidak pernah tersimpan di repository. Setelah service dibuat, salin domain yang diberikan Render ke variabel `ALLOWED_HOSTS` lalu redeploy.
+Cara tercepat di Render: sambungkan repo ini ke akun Anda, lalu pilih service dari `render.yaml` yang sudah tersedia. Render akan meminta nilai `DASHBOARD_USER`, `DASHBOARD_PASSWORD`, `GOOGLE_API_KEY`, `GOOGLE_PLACES_API_KEY`, dan `APIFY_API_TOKEN` saat pembuatan — nilai itu tidak pernah tersimpan di repository. Setelah service dibuat, salin domain yang diberikan Render ke variabel `ALLOWED_HOSTS` lalu redeploy.
 
 | Variabel | Fungsi |
 | --- | --- |
@@ -48,6 +62,7 @@ Cara tercepat di Render: sambungkan repo ini ke akun Anda, lalu pilih service da
 | `PUBLIC_SCHEME` | `https` (bawaan saat mode publik) atau `http`. |
 | `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | Wajib pada mode publik. |
 | `DATA_PATH` | Lokasi berkas data, misalnya disk yang dipasang permanen. |
+| `APIFY_WAIT_MS` | Anggaran tunggu actor Apify per penarikan (milidetik). |
 
 Mode publik **menolak start** bila kredensial belum diisi. Alasannya: tombol Tarik Analisis memicu actor Apify berbayar, sehingga tanpa autentikasi siapa pun yang mengetahui alamat situs dapat menghabiskan kuota akun Anda. `/api/status` tetap terbuka tanpa kredensial karena host memakai endpoint itu untuk pemeriksaan kesehatan; isinya hanya status hidup dan tidak memuat data ulasan.
 
@@ -70,7 +85,27 @@ Data awal per 23 Oktober 2026 memuat 55 ulasan tertulis Google Play — gabungan
 
 Google Play hanya mempublikasikan rentang unduhan, saat ini **10K+**. Apple tidak mempublikasikan jumlah unduhan pada halaman publik, sehingga metrik tersebut dilaporkan **tidak tersedia**, bukan nol.
 
-Kanal YouTube, X, Instagram, TikTok, Facebook, dan Google Reviews memiliki konektor tetapi membutuhkan kredensial pada environment server; tanpa itu statusnya **perlu konfigurasi API** dan tidak ada satu baris pun yang diambil. Forum, blog, dan portal berita tidak memiliki konektor karena hasil pencarian dan berita bukan pengalaman pelanggan. Status **tidak diambil** tidak sama dengan nol keluhan.
+Kanal YouTube memakai YouTube Data API v3, kanal Google Reviews memakai Google Places API (New), sedangkan kanal X, Instagram, TikTok, dan Facebook memakai actor Apify. Semua kanal itu butuh kredensial pada environment server; tanpa itu statusnya **perlu konfigurasi API** dan tidak ada satu baris pun yang diambil. Forum, blog, dan portal berita tidak memiliki konektor karena hasil pencarian dan berita bukan pengalaman pelanggan. Status **tidak diambil** tidak sama dengan nol keluhan.
+
+Google Places API (New) tidak lagi menyertakan teks ulasan pada respons bagi pemanggil baru. Kanal ini melaporkan place yang benar-benar dikembalikan pencarian resmi dan jumlah teks ulasan yang tersedia; bila tidak ada place yang bernama produk, ulasan Google Maps tidak dikarang dan juga tidak dihitung.
+
+Hasil penarikan daring pada 24 Oktober 2026 dengan kredensial pada server, tercatat apa adanya dari respons sumber:
+
+| Kanal | Status | Teks tersimpan | Bukti yang dikembalikan sumber |
+| --- | --- | --- | --- |
+| Google Play | berhasil | 55 | 38 baris kumpulan bahasa Indonesia + 17 baris kumpulan bahasa Inggris, masing-masing 1 halaman, tidak ada halaman berikutnya |
+| App Store | berhasil | 9 | 9 ulasan pada halaman ulasan (1 halaman) dan 9 pada feed resmi (1 halaman); 9 dikonfirmasi kedua jalur |
+| YouTube | berhasil | 10 | 10 komentar unik dari 7 video yang metadatanya menyebut wondr merchant; seluruh halaman API diproses termasuk balasan |
+| TikTok | berhasil | 2 | 94 item dataset diperiksa; 91 teks tidak menyebut identitas produk sehingga tidak disimpan, 2 teks tersisa berasal dari akun resmi `bni46` |
+| X / Twitter | berhasil, tanpa hasil | 0 | 10 item dataset seluruhnya penanda `noResults` untuk kueri produk |
+| Instagram | berhasil, tanpa hasil | 0 | 1 item penanda `no_items` ("Empty or private data for provided input") |
+| Facebook | berhasil, tanpa hasil | 0 | 1 item penanda `no_items` ("Empty or private data for provided input") |
+| Google Reviews | berhasil, tanpa hasil | 0 | 2 kueri dijawab, 4 halaman, 59 place; 0 place bernama wondr merchant dan 0 teks ulasan disertakan API |
+| Forum, blog, berita | tidak diambil | 0 | Tidak ada konektor; hasil pencarian dan berita bukan pengalaman pelanggan |
+
+Dari 76 baris yang tersimpan, 64 ulasan toko membawa label (41 positif, 22 negatif, 1 netral; NSS 29,6875). Dua belas teks sosial disimpan sebagai bukti tetapi **tidak** dinilai sebagai sentimen pelanggan: dua-dua konten akun resmi BNI dan sepuluh komentar YouTube yang membahas BNI secara umum atau belum jelas targetnya. Angka dasar toko tidak berubah karena konten sosial tidak masuk penyebut NSS.
+
+Pencarian sosial bekerja longgar. Kueri `wondr merchant` pada TikTok mengembalikan 94 item yang sebagian besar adalah "Wandering Merchant" (game), "Wonder — Natalie Merchant", dan merek "Wondr" di negara lain; teks seperti itu dibuang pada tahap pengambilan **dan** jumlahnya dilaporkan, sehingga tidak ada penyaringan diam-diam.
 
 ## Metode
 
@@ -94,6 +129,8 @@ Kanal YouTube, X, Instagram, TikTok, Facebook, dan Google Reviews memiliki konek
 ## Struktur Proyek
 
 - `server.mjs` — server lokal, API, penyimpanan data, dan konfigurasi deployment.
+- `dashboard-core.mjs` — penyusun dataset yang sama untuk server lokal dan function serverless.
+- `dashboard-store.mjs`, `api/*.js`, `middleware.js`, `vercel.json` — lapisan Vercel Function dan gerbang masuknya.
 - `collectors.mjs` — pengambilan dan penguraian ulasan publik serta komentar kanal yang berkredensial.
 - `local-env.mjs` — pembacaan `.env` / `.env.local` tanpa pernah menampilkan nilainya.
 - `model.js` — perhitungan sentimen, kategori, filter, dan ekspor CSV.

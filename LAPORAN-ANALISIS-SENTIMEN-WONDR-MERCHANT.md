@@ -19,7 +19,7 @@ Rata-rata penilaian bintang dari 64 ulasan tertulis yang menyertakan bintang ada
 
 Tema keluhan yang paling sering muncul adalah **pendaftaran belum tuntas (8 ulasan)**, diikuti **notifikasi dan pembaruan laporan (6 ulasan)**, **akses dan performa aplikasi (5 ulasan)**, serta **migrasi kurang jelas (5 ulasan)**. Tema pujian yang paling sering muncul adalah **kemudahan penggunaan dan manfaat usaha (16 ulasan)**, diikuti **transaksi dan notifikasi yang membantu (8 ulasan)**.
 
-Sembilan kanal lain, yaitu X/Twitter, Instagram, TikTok, YouTube, Facebook, forum publik, blog dan ulasan web, portal berita, serta Google Reviews, **belum terhubung**. Kanal tersebut berstatus tidak diambil, bukan nol keluhan. Perbandingan lintas kanal yang dapat dipertanggungjawabkan saat ini hanya antara Google Play dan App Store.
+Enam kanal lain sudah memiliki konektor berkredensial dan **pernah dipanggil nyata** pada 24 Oktober 2026: YouTube, TikTok, X/Twitter, Instagram, Facebook, dan Google Reviews. Hasilnya: 10 komentar YouTube dan 2 teks TikTok tersimpan, sedangkan X, Instagram, Facebook, dan Google Reviews mengembalikan penanda "tidak ada hasil" atau place tanpa identitas produk. Forum publik, blog dan ulasan web, serta portal berita tetap **tidak diambil** karena tidak memiliki konektor. Seluruh teks sosial itu diperlakukan sebagai konteks, bukan sentimen pelanggan: dua teks TikTok berasal dari akun resmi BNI dan sepuluh komentar YouTube membahas BNI secara umum, sehingga tidak satu pun masuk perhitungan NSS. Perbandingan lintas kanal yang dapat dipertanggungjawabkan untuk sentimen tetap hanya antara Google Play dan App Store.
 
 **Catatan penting:** laporan ini disusun dari data publik dan bukan merupakan laporan resmi BNI. Seluruh angka, nama pengguna, tanggal, dan kutipan berasal dari data yang tersimpan di dasbor. Laporan ini tidak memuat data internal BNI, data transaksi, atau hasil survei langsung.
 
@@ -33,16 +33,16 @@ Sembilan kanal lain, yaitu X/Twitter, Instagram, TikTok, YouTube, Facebook, foru
 |---|---|---:|---:|---:|---|
 | Google Play | Tersedia | 55 | 74 | 4,0/5 | 10K+ |
 | Apple App Store | Tersedia | 9 | 17 | 4,8/5 | Tidak dipublikasikan |
-| X/Twitter | Belum terhubung | — | — | — | — |
-| Instagram | Belum terhubung | — | — | — | — |
-| TikTok | Belum terhubung | — | — | — | — |
-| YouTube | Belum terhubung | — | — | — | — |
-| Facebook | Belum terhubung | — | — | — | — |
+| X/Twitter | Terhubung, sumber mengembalikan "tidak ada hasil" | 0 dianalisis | — | — | — |
+| Instagram | Terhubung, sumber mengembalikan "tidak ada hasil" | 0 dianalisis | — | — | — |
+| TikTok | Terhubung | 0 dianalisis (2 teks akun resmi disimpan sebagai konteks) | — | — | — |
+| YouTube | Terhubung | 0 dianalisis (10 komentar tersimpan sebagai konteks) | — | — | — |
+| Facebook | Terhubung, sumber mengembalikan "tidak ada hasil" | 0 dianalisis | — | — | — |
 | Forum publik | Belum terhubung | — | — | — | — |
 | Blog dan ulasan web | Belum terhubung | — | — | — | — |
 | Portal berita | Belum terhubung | — | — | — | — |
-| Google Reviews | Belum terhubung | — | — | — | — |
-| **Total** | **2 kanal terhubung** | **64** | **91** | **—** | **—** |
+| Google Reviews | Terhubung, tidak ada place bernama produk | 0 dianalisis | — | — | — |
+| **Total** | **2 kanal dinilai sentimennya; 4 kanal sosial membaca sumber secara nyata** | **64** | **91** | **—** | **—** |
 
 Keterangan:
 
@@ -426,14 +426,31 @@ Ketidakhadiran penyebutan lokasi bukan bukti bahwa tidak ada masalah atau keluha
 
 ### 5.2 Media Sosial, Forum, dan Web
 
-Kanal X/Twitter, Instagram, TikTok, YouTube, Facebook, forum publik, blog dan ulasan web, portal berita, serta Google Reviews **belum terhubung**. Tidak ada data yang diambil dari kanal tersebut.
+Enam kanal sosial dan web sudah memiliki konektor berkredensial dan dipanggil secara nyata pada 24 Oktober 2026. Hasilnya tercatat apa adanya dari respons sumber:
+
+| Kanal | Jalan pengambilan | Hasil pembacaan sumber | Teks tersimpan | Dianalisis sentimen |
+|---|---|---|---:|---:|
+| YouTube | YouTube Data API v3 | 10 komentar unik dari 7 video yang metadatanya menyebut wondr merchant; seluruh halaman API dan balasan diproses | 10 | 0 |
+| TikTok | Apify `clockworks/tiktok-scraper` | 94 item dataset diperiksa; 91 teks tidak menyebut identitas produk dan dibuang dengan pencatatan jumlah; 2 teks berasal dari akun resmi `bni46` | 2 | 0 |
+| X/Twitter | Apify `apidojo/tweet-scraper` | 10 item dataset seluruhnya penanda `noResults` | 0 | 0 |
+| Instagram | Apify `apify/instagram-scraper` | 1 item penanda `no_items` ("Empty or private data for provided input") | 0 | 0 |
+| Facebook | Apify `apify/facebook-pages-scraper` | 1 item penanda `no_items` ("Empty or private data for provided input") | 0 | 0 |
+| Google Reviews | Google Places API (New) | 2 kueri dijawab, 4 halaman dibaca, 59 place dikembalikan; 0 place bernama wondr merchant dan API tidak menyertakan teks ulasan | 0 | 0 |
+
+Forum publik, blog dan ulasan web, serta portal berita tetap **tidak diambil** karena tidak memiliki konektor; status itu bukan nol keluhan.
+
+Alasan seluruh teks sosial tidak masuk perhitungan sentimen:
+
+- Dua teks TikTok adalah promosi dari akun resmi BNI, bukan pengalaman pelanggan independen.
+- Sepuluh komentar YouTube membahas BNI secara umum (rekening, kantor cabang, ATM, verifikasi KTP) dan tidak dapat dipastikan mengacu pada aplikasi merchant ini; target produk belum terpisahkan.
+- Pencarian sosial bekerja longgar. Kueri `wondr merchant` pada TikTok sebagian besar mengembalikan "Wandering Merchant" (game), "Wonder — Natalie Merchant", dan merek "Wondr" dari luar negeri. Teks semacam itu tidak disimpan sebagai konten produk, dan jumlah yang dibuang dilaporkan pada kartu kanal.
 
 Konsekuensinya:
 
-- Tidak dapat diklaim bahwa ada atau tidak ada keluhan di kanal tersebut.
-- Status **tidak diambil** tidak boleh dibaca sebagai nol keluhan.
+- Kanal yang mengembalikan penanda "tidak ada hasil" berarti terhubung dan menjawab, bukan berarti tidak ada keluhan di platform tersebut.
+- Status **tidak diambil** (forum, blog, berita) tidak boleh dibaca sebagai nol keluhan.
 - Konten promosi resmi, pemberitaan, dan unggahan merek tidak diperlakukan sebagai sentimen pelanggan.
-- Penilaian kanal sosial dan web memerlukan saluran pengambilan data yang sah, izin akses yang sesuai, dan periode pengamatan yang setara.
+- Penilaian kanal sosial memerlukan periode pengamatan yang setara dan pemisahan produk yang tegas sebelum dapat dibandingkan dengan toko aplikasi.
 
 Dengan cakupan saat ini, perbandingan yang dapat dipertanggungjawabkan hanya antara Google Play dan Apple App Store.
 
@@ -513,6 +530,7 @@ Tabel berikut memuat 20 ulasan terbaru dari 64 ulasan, dengan urutan yang sama s
 - Data publik tidak menyediakan informasi lokasi yang dapat diverifikasi.
 - Pelabelan otomatis dapat keliru pada negasi, sarkasme, atau ulasan dengan beberapa aspek. Pada data akhir ini seluruh ulasan telah diberi label manual; belum ada pemeriksaan oleh penilai kedua.
 - Keluhan dalam ulasan merupakan pernyataan pengguna, bukan insiden yang telah terverifikasi.
+- Kanal sosial sudah dapat dipanggil, tetapi isinya belum dapat diperlakukan sebagai sentimen pelanggan: teks yang tersisa berasal dari akun resmi produk atau membahas BNI secara umum. Forum, blog, dan portal berita belum memiliki konektor, sehingga statusnya tidak diambil — bukan nol keluhan.
 - Data internal yang diperlukan untuk menindaklanjuti: waktu persetujuan pendaftaran per pengajuan, catatan pengiriman notifikasi, status dan waktu pembaruan pencairan dana, tingkat keberhasilan transaksi QRIS, jumlah dan kategori tiket layanan, serta catatan perpindahan akun dari aplikasi lama.
 
 ---
@@ -523,7 +541,7 @@ Dari **64 ulasan tertulis publik** yang seluruhnya telah dianalisis, sentimen ce
 
 Risiko reputasi terkonsentrasi pada **proses pendaftaran (8 ulasan)**, **notifikasi dan pembaruan laporan (6 ulasan)**, **akses dan performa aplikasi (5 ulasan)**, serta **migrasi dari aplikasi lama (5 ulasan)**. Tema **transaksi dan penerimaan pembayaran (3 ulasan)** perlu penanganan segera karena menyangkut fungsi inti, meskipun jumlahnya kecil. Porsi ulasan negatif meningkat pada September–Oktober, sehingga pemantauan lanjutan diperlukan.
 
-Laporan ini tidak menyimpulkan adanya gangguan sistem. Kesimpulan tersebut memerlukan data operasional internal. Cakupan saat ini terbatas pada dua toko aplikasi; sembilan kanal lain belum terhubung dan tidak dihitung sebagai nol keluhan.
+Laporan ini tidak menyimpulkan adanya gangguan sistem. Kesimpulan tersebut memerlukan data operasional internal. Perhitungan sentimen masih hanya bertumpu pada dua toko aplikasi; enam kanal sosial dan web sudah benar-benar dipanggil pada 24 Oktober 2026, namun seluruh teks yang dikembalikan tidak sah dinilai sebagai pengalaman pelanggan (konten akun resmi atau pembahasan BNI umum), dan tiga kanal tanpa konektor berstatus tidak diambil — bukan nol keluhan.
 
 ---
 

@@ -1,0 +1,62 @@
+// Penyimpanan dataset untuk lingkungan serverless (Vercel Functions).
+// Disk /tmp hanya bertahan selama instance hidup, jadi state dipegang di memori
+// dan ditulis ke DATA_PATH agar penarikan berikutnya tetap memakai riwayat yang sama.
+import { readFile, writeFile } from 'node:fs/promises';
+import { collectOnline, channelConfigurations } from './collectors.mjs';
+import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived } from './dashboard-core.mjs';
+
+// Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
+// konfigurasi deployment, bukan nilai saat modul pertama kali diimpor.
+const storagePath = () => process.env.DATA_PATH?.trim() || '/tmp/online-data.json';
+// Actor Apify dapat berjalan beberapa menit. Batas tunggu dijaga di bawah maxDuration
+// function agar run yang belum selesai sempat dicatat dan dilanjutkan pada penarikan
+// berikutnya, bukan dimulai ulang dari nol.
+const apifyWaitMs = () => {
+  const configured = Number(process.env.APIFY_WAIT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : 120000;
+};
+
+let cache = null;
+let running = false;
+
+export const isRunning = () => running;
+
+async function readStored() {
+  try {
+    const saved = JSON.parse(await readFile(storagePath(), 'utf8'));
+    if (Array.isArray(saved.reviews) && Array.isArray(saved.sources) && Array.isArray(saved.runs)) return saved;
+  } catch { /* belum ada berkas di instance ini */ }
+  return null;
+}
+
+async function writeStored(dataset) {
+  try { await writeFile(storagePath(), JSON.stringify(dataset, null, 2), 'utf8'); }
+  catch { /* disk sementara tidak dapat ditulis: state memori tetap dipakai */ }
+}
+
+export async function snapshot() {
+  if (!cache) {
+    const stored = (await readStored()) ?? initialDataset();
+    cache = { ...stored, reviews: reclassifyDerived(stored.reviews), sources: overlayConfiguration(stored.sources, channelConfigurations()) };
+  }
+  return { ...cache, running };
+}
+
+export async function pull({ collector = collectOnline } = {}) {
+  if (running) throw new Error('busy');
+  running = true;
+  const startedAt = new Date().toISOString();
+  try {
+    const previous = await snapshot();
+    const resume = new Map(previous.sources
+      .filter(source => source.coverage?.runId && source.coverage.runFinished === false)
+      .map(source => [source.id, { runId: source.coverage.runId, datasetId: source.coverage.datasetId, status: 'RUNNING' }]));
+    const results = await collector({ apifyWaitMs: apifyWaitMs(), resume });
+    const finishedAt = new Date().toISOString();
+    cache = buildDataset({ previous, results, startedAt, finishedAt, channelConfig: channelConfigurations() });
+    await writeStored(cache);
+    return { ...cache, running: false };
+  } finally {
+    running = false;
+  }
+}

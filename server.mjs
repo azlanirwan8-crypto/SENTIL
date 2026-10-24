@@ -2,10 +2,9 @@ import http from 'node:http';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
-import { seedReviews, platforms, observationDate } from './data.js';
-import { upsertReviews } from './model.js';
-import { collectOnline, youtubeConfiguration, apifyConfiguration, apifyChannels } from './collectors.mjs';
+import { collectOnline, channelConfigurations } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
+import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived } from './dashboard-core.mjs';
 
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -20,7 +19,6 @@ const files = new Map([
   }),
   ['/assets/fonts/Poppins-OFL.txt', ['assets/fonts/Poppins-OFL.txt', 'text/plain; charset=utf-8']],
 ]);
-const connectedSources = new Set(['play','appstore']);
 // Konfigurasi deployment. Mode publik (bind 0.0.0.0 atau domain diizinkan) wajib
 // berkredensial: tombol Tarik Analisis memicu actor Apify berbayar pada akun pemilik.
 export function deploymentConfig(env = process.env) {
@@ -45,28 +43,18 @@ const sameSecret = (given, expected) => {
 };
 export async function createDashboardServer({ storagePath, collector = collectOnline, env, config = deploymentConfig(env ?? process.env) } = {}) {
   const dataPath = storagePath ?? config.storagePath;
-  let data = {
-    reviews: seedReviews, runs: [], lastRun: null,
-    sources: platforms.map(p => ({ id: p.id, status: connectedSources.has(p.id) ? 'snapshot' : 'unsupported', fetched: 0, message: connectedSources.has(p.id) ? 'Data awal dari halaman publik; belum diperbarui pada sesi ini.' : `Belum terhubung; tidak ada pengambilan data. ${p.note}`, ...(p.rating ? { rating: p.rating, ratingCount: p.ratingCount, ratingObservedAt: observationDate, installs: p.installs ?? null } : {}) })),
-  };
+  let data = initialDataset();
   try {
     const saved = JSON.parse(await readFile(dataPath,'utf8'));
     if (!Array.isArray(saved.reviews) || !Array.isArray(saved.sources) || !Array.isArray(saved.runs)) throw new Error('Format data tersimpan tidak valid. Berkas tidak diubah.');
     data = saved;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  data.reviews = reclassifyDerived(data.reviews);
   // Pengujian menyuntik env sendiri; tanpa env, berkas .env lokal dimuat lebih dulu.
   const environment = env ?? await loadLocalEnv().then(() => process.env);
-  const youtube = youtubeConfiguration(environment);
-  const apify = apifyConfiguration(environment);
+  const channelConfig = channelConfigurations(environment);
   // Status konfigurasi hanya menimpa tampilan; data tersimpan tidak diubah dan kunci tidak pernah dikirim ke browser.
-  const channelConfig = new Map([['youtube', youtube], ...Object.keys(apifyChannels).map(id => [id, apify])]);
-  const awaiting = new Set(['unsupported','needs_setup','ready']);
-  data.sources = data.sources.map(source => {
-    const channel = channelConfig.get(source.id);
-    if (channel && (channel.status === 'needs_setup' || awaiting.has(source.status))) return {...source,status:channel.status,message:channel.message,fetched:null};
-    if (source.status === 'unsupported') return {...source,message:platforms.find(platform=>platform.id===source.id)?.note || source.message};
-    return source;
-  });
+  data.sources = overlayConfiguration(data.sources, channelConfig);
   let running = false;
   const snapshot = () => ({ ...data, running });
   const persist = async next => {
@@ -102,22 +90,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       try {
         const results = await collector();
         const finishedAt = new Date().toISOString();
-        const incoming = results.flatMap(r => r.reviews || []);
-        const merged = upsertReviews(data.reviews,incoming,finishedAt);
-        const sources = platforms.map(p => {
-          const result = results.find(r => r.id === p.id);
-          const previous = data.sources.find(s => s.id === p.id) || { id: p.id };
-          if (!result) { const config = channelConfig.get(p.id); return config ? { ...previous, status: config.status, fetched: null, message: config.message } : { ...previous, status: 'unsupported', fetched: null, message: `Belum terhubung; tidak ada pengambilan data. ${p.note}` }; }
-          const { reviews, ...source } = result;
-          const success = source.status === 'success' || source.status === 'partial';
-          return { ...previous, ...source, checkedAt: finishedAt, ...(success ? { lastSuccessAt: finishedAt } : {}), ...(Number.isFinite(source.rating) ? { ratingObservedAt: finishedAt } : {}) };
-        });
-        const successes = results.filter(r => r.status === 'success' || r.status === 'partial').length;
-        const complete = sources.every(source => source.status === 'success');
-        const status = !successes ? 'error' : complete ? 'success' : 'partial';
-        const coverage = { fetchedSources: sources.filter(source => ['success','partial'].includes(source.status)).map(source => source.id), unavailableSources: sources.filter(source => !['success','partial'].includes(source.status)).map(source => source.id) };
-        const run = { startedAt, finishedAt, status, coverage, added: merged.added, updated: merged.updated, unchanged: merged.unchanged, sources: sources.map(s => ({ ...s })) };
-        const next = { reviews: merged.reviews, sources, lastRun: run, runs: [...data.runs,run] };
+        const next = buildDataset({ previous: data, results, startedAt, finishedAt, channelConfig });
         await persist(next);
         data = next;
         running = false;

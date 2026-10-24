@@ -318,15 +318,16 @@ export async function collectYouTube(fetcher = fetch, config = youtubeConfigurat
 }
 // Apify adalah layanan pengambilan data pihak ketiga yang sah. Token hanya dibaca dari environment
 // server dan dikirim sebagai header Authorization; tidak pernah masuk URL, browser, atau pesan galat.
+// Nama actor dan bentuk input di bawah sudah diperiksa terhadap API Apify: actor dan field yang
+// tidak dikenal akan mengembalikan galat validasi, bukan data kosong.
 export const apifyChannels = {
   x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: () => ({ query: '"wondr merchant" OR "wondr merchant by BNI"', maxItems: 100, queryType: 1 }) },
-  instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: () => ({ search: ['wondr merchant'], searchType: 'hashtags', maximumItemsPerQuery: 100 }) },
-  tiktok: { label: 'TikTok', actor: 'apify/tiktok-scraper', input: () => ({ searchCommands: [{ id: 'wondr-merchant', commands: [{ query: '"wondr merchant"', count: 100, offset: 0 }], hashtags: [], profiles: [] }] }) },
+  instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: () => ({ type: 'hashtag', keywords: ['wondrmerchant', 'wondrmerchantbni'], resultsLimit: 100 }) },
+  tiktok: { label: 'TikTok', actor: 'clockworks/tiktok-scraper', input: () => ({ searchQueries: ['"wondr merchant"'], resultsPerPage: 100 }) },
   facebook: { label: 'Facebook', actor: 'apify/facebook-pages-scraper', input: () => ({ searchTerms: ['wondr merchant bni'], maxResult: 20 }) },
-  googlemaps: { label: 'Google Reviews', actor: 'compass/crawler-google-places', input: () => ({ searchStringsTerms: ['"wondr merchant" BNI'], language: 'id', country: 'ID', maxCrawledPlacesPerSearchTerm: 10, reviewLimit: 100 }) },
 };
 const apifyTextFields = ['text', 'fullText', 'caption', 'content', 'body', 'reviewText', 'comment', 'shortText'];
-const apifyAuthorFields = ['author', 'username', 'owner', 'nickname', 'authorName', 'reviewerName', 'user', 'handle'];
+const apifyAuthorFields = ['author', 'username', 'owner', 'nickname', 'authorName', 'reviewerName', 'user', 'handle', 'authorMeta'];
 const apifyIdFields = ['id', '_id', 'uniqueId', 'tweetId', 'idInline', 'reviewId'];
 const apifyUrlFields = ['url', 'link', 'permalink', 'tweetUrl', 'webVideoUrl', 'mapsUrl', 'reviewUrl'];
 function pickField(item, fields) {
@@ -334,7 +335,7 @@ function pickField(item, fields) {
     const value = item?.[field];
     if (typeof value === 'string' && value.trim()) return value.trim();
     if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-    if (value && typeof value === 'object') for (const nested of ['label', 'name', 'text', 'fullName', 'full_name', 'username']) if (typeof value[nested] === 'string' && value[nested].trim()) return value[nested].trim();
+    if (value && typeof value === 'object') for (const nested of ['label', 'name', 'nickName', 'nickname', 'screenName', 'text', 'fullName', 'full_name', 'username']) if (typeof value[nested] === 'string' && value[nested].trim()) return value[nested].trim();
   }
   return null;
 }
@@ -356,18 +357,25 @@ function apifyItems(value) {
 }
 function apifyRecords(item, platform, actor, runId, retrievedAt) {
   const found = [];
+  let offIdentity = 0;
   const parentId = pickField(item, apifyIdFields);
   const postUrl = pickField(item, apifyUrlFields);
+  const postText = pickField(item, apifyTextFields) || '';
+  // Actor pencarian sosial mengembalikan hasil longgar (mis. "wandering merchant",
+  // "Natalie Merchant wonder"). Teks yang tidak menyebut identitas produk dibuang di
+  // sini, tetapi jumlahnya dilaporkan agar tidak ada yang hilang tanpa tercatat.
+  const postRelevant = merchantIdentity.test(postText);
   const collect = (source, parent) => {
     const text = pickField(source, apifyTextFields);
     if (!text) return;
+    if (!(postRelevant || merchantIdentity.test(text))) { offIdentity++; return; }
     const sourceId = pickField(source, apifyIdFields);
     // Item tanpa identitas sumber tetap disimpan sebagai teks nyata, tetapi ID lokal dibuat dari
     // hash isinya dan hal itu dicatat pada provenance agar tidak disangka ID dari platform.
     const id = sourceId ?? `${platform}-${createHash('sha256').update(`${parent ?? ''}|${text}`).digest('hex').slice(0, 32)}`;
     const rating = Number(source.rating ?? source.stars ?? source.score);
     const url = pickField(source, apifyUrlFields) ?? (parent ? postUrl : null);
-    const when = apifyDate(source.date ?? source.createdAt ?? source.timestamp ?? source.time ?? source.postedAt ?? source.publishedAt ?? source.creationDate ?? source.reviewDate);
+    const when = apifyDate(source.date ?? source.createdAt ?? source.createTimeISO ?? source.createTime ?? source.timestamp ?? source.time ?? source.postedAt ?? source.publishedAt ?? source.creationDate ?? source.reviewDate);
     found.push({
       id, platform, author: pickField(source, apifyAuthorFields) || 'N/A', text, rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,
       date: when?.slice(0, 10) ?? null, publishedAt: when,
@@ -378,7 +386,7 @@ function apifyRecords(item, platform, actor, runId, retrievedAt) {
   };
   collect(item, null);
   for (const key of ['comments', 'reviews']) if (Array.isArray(item[key])) for (const child of item[key]) if (child && typeof child === 'object') collect(child, parentId);
-  return found;
+  return { records: found, offIdentity };
 }
 export function apifyConfiguration(env = process.env) {
   const token = env.APIFY_API_TOKEN?.trim() || '';
@@ -410,13 +418,18 @@ async function apifyJson(path, token, fetcher, options = {}) {
   return payload?.data ?? payload;
 }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-export async function collectApify(id, fetcher = fetch, config = apifyConfiguration(), { waitMs = 180000, pollMs = 5000, pageLimit = 1000 } = {}) {
+export async function collectApify(id, fetcher = fetch, config = apifyConfiguration(), { waitMs = 180000, pollMs = 5000, pageLimit = 1000, resume = null } = {}) {
   const channel = config.channels[id];
   if (config.status === 'needs_setup') return { id, status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
   if (channel.inputError) return { id, status: 'error', fetched: null, message: `${channel.inputError} Belum ada permintaan dikirim; data tersimpan tetap dipertahankan.`, reviews: [] };
   const issues = [];
   let run;
-  try {
+  if (resume?.runId) {
+    // Lanjut membaca run yang sudah dimulai; actor berbayar tidak dijalankan dua kali.
+    run = { id: resume.runId, status: resume.status ?? 'RUNNING', defaultDatasetId: resume.datasetId ?? null };
+    if (run.status === 'SUCCEEDED') issues.push('run sebelumnya sudah selesai tetapi datasetnya belum terbaca pada panggilan ini');
+    else issues.push('melanjutkan run actor yang masih berjalan dari permintaan sebelumnya');
+  } else try {
     run = await apifyJson(`acts/${encodeURIComponent(channel.actor)}/runs`, config.token, fetcher, { method: 'POST', body: JSON.stringify({ cleanInputs: true, ...channel.input }) });
     if (typeof run?.id !== 'string') throw new Error('parse_error: Apify tidak mengembalikan identitas run.');
   } catch (error) {
@@ -431,27 +444,146 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
     catch (error) { issues.push(error.message); break; }
   }
   const reviews = new Map();
-  let items = 0, expanded = 0;
+  let items = 0, expanded = 0, markers = 0, offIdentity = 0;
+  const markerNotes = new Set();
   const datasetId = run.defaultDatasetId;
   if (status !== 'SUCCEEDED') issues.push(`actor berakhir dengan status ${status}; hasil mungkin tidak lengkap`);
   if (typeof datasetId !== 'string') issues.push('Apify tidak mengembalikan identitas dataset untuk run ini');
   else for (let offset = 0; ; offset += pageLimit) {
     try {
       const page = apifyItems(await apifyJson(`datasets/${encodeURIComponent(datasetId)}/items?clean=true&format=json&offset=${offset}&limit=${pageLimit}`, config.token, fetcher));
-      for (const item of page) { items++; for (const record of apifyRecords(item, id, channel.actor, run.id, new Date().toISOString())) { if (!reviews.has(record.id)) { reviews.set(record.id, record); if (record.parentId) expanded++; } } }
+      for (const item of page) {
+        items++;
+        // Actor menandai kueri tanpa hasil sebagai item khusus, bukan dataset kosong.
+        // Item itu dihitung sebagai bukti "terhubung tetapi tidak ada konten", bukan kehilangan data.
+        if (item && typeof item === 'object' && (item.noResults === true || typeof item.error === 'string')) {
+          markers++;
+          const note = typeof item.errorDescription === 'string' ? item.errorDescription : typeof item.error === 'string' ? item.error : null;
+          if (note) markerNotes.add(String(note).slice(0, 160));
+        }
+        const parsed = apifyRecords(item, id, channel.actor, run.id, new Date().toISOString());
+        offIdentity += parsed.offIdentity;
+        for (const record of parsed.records) { if (!reviews.has(record.id)) { reviews.set(record.id, record); if (record.parentId) expanded++; } }
+      }
       if (page.length < pageLimit) break;
     } catch (error) { issues.push(error.message); break; }
   }
+  const emptyEvidence = markers ? ` Actor mengembalikan ${markers} penanda tidak ada hasil${markerNotes.size ? ` (${[...markerNotes].join('; ')})` : ''} untuk kueri ini, artinya kanal dapat dihubungi tetapi tidak ada konten publik yang cocok.` : '';
+  const identityEvidence = offIdentity ? ` ${offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas wondr merchant, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.` : '';
   const complete = !issues.length;
   return { id, status: complete ? 'success' : reviews.size ? 'partial' : 'error', fetched: reviews.size, reviews: [...reviews.values()],
-    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, sampleLimit: null },
-    message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${run.id}); ${items} item dataset diperiksa dan ${expanded} di antaranya berasal dari komentar/ulasan bersarang. ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set(issues)].join(' ')}`} Teks disimpan apa adanya dari actor dan disaring ketat ke identitas wondr merchant; yang tidak jelas targetnya tetap dihitung sebagai teks tetapi tidak diberi sentimen pelanggan. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
+    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, emptyResultMarkers: markers, identityFiltered: offIdentity, sampleLimit: null, runFinished: status === 'SUCCEEDED' },
+    message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${run.id}); ${items} item dataset diperiksa dan ${expanded} di antaranya berasal dari komentar/ulasan bersarang.${emptyEvidence}${identityEvidence} ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set(issues)].join(' ')}`} Teks disimpan apa adanya dari actor. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
 }
-export async function collectOnline() {
+// Google Places API (New) adalah jalur resmi untuk ulasan di Google Maps. Kunci hanya dikirim
+// sebagai header X-Goog-Api-Key; tidak pernah masuk URL, browser, atau pesan galat.
+export function placesConfiguration(env = process.env) {
+  const apiKey = env.GOOGLE_PLACES_API_KEY?.trim() || '';
+  const queries = [...new Set((env.GOOGLE_PLACES_QUERIES || 'wondr merchant,wondr merchant by BNI').split(',').map(query => query.trim()).filter(Boolean))];
+  return {
+    apiKey, queries,
+    status: apiKey ? 'ready' : 'needs_setup',
+    message: apiKey
+      ? 'Kunci Google Places API tersedia pada server, tetapi akses belum diuji. Tarik Analisis akan mencari place wondr merchant melalui API resmi; status ini belum berarti ulasan teks dapat diambil.'
+      : 'Konektor Google Places tersedia, tetapi GOOGLE_PLACES_API_KEY belum tersedia pada environment server. Pasang kunci melalui environment server atau berkas .env lokal, bukan kolom browser atau chat. Belum ada data yang diambil.',
+  };
+}
+const placesMask = 'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.googleMapsUri,nextPageToken';
+async function placesRequest(path, fieldMask, apiKey, fetcher, options = {}) {
+  let response;
+  try {
+    response = await fetcher(`https://places.googleapis.com/v1/places${path}`, {
+      ...options,
+      headers: { 'content-type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': fieldMask },
+      redirect: 'error', signal: AbortSignal.timeout(25000),
+    });
+  } catch { throw new Error('network_error: Google Places tidak dapat dihubungi atau melewati 25 detik.'); }
+  let payload = null;
+  try { payload = JSON.parse(await response.text()); } catch { if (response.ok) throw new Error('parse_error: respons Google Places bukan JSON.'); }
+  if (!response.ok) {
+    const statusName = String(payload?.error?.status ?? '');
+    const reasons = { permissiondenied: 'kunci API tidak punya izin Places API', resourceexhausted: 'kuota Places API habis', apikeynotvalid: 'kunci API ditolak', apikeydisabled: 'Places API belum diaktifkan pada proyek', requestrejected: 'permintaan ditolak Google', invalidargument: 'field mask atau isi permintaan ditolak Google' };
+    throw new Error(`api_error: HTTP ${response.status}; ${Object.hasOwn(reasons, statusName.toLowerCase()) ? reasons[statusName.toLowerCase()] : 'permintaan ditolak Google'}.`);
+  }
+  return payload ?? {};
+}
+function placesReview(placeId, review, retrievedAt) {
+  const text = typeof review?.text?.text === 'string' ? review.text.text.trim() : '';
+  if (!text) return null;
+  const hash = createHash('sha256').update(`${placeId}|${text}`).digest('hex').slice(0, 32);
+  const published = typeof review?.publishTime === 'string' && Number.isFinite(Date.parse(review.publishTime)) ? review.publishTime : null;
+  const when = published ? (validDate(published.slice(0, 10)) ? published.slice(0, 10) : null) : null;
+  const rating = Number(review?.rating);
+  return {
+    id: `googlemaps-${hash}`, platform: 'googlemaps', author: review?.authorDisplayName || 'N/A', text,
+    rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,
+    date: when, publishedAt: published, sourceUrl: `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeId)}`,
+    retrievedAt, parentId: placeId,
+    context: { placeId, product: 'wondr-merchant' },
+    provenance: 'Google Places API (New); teks ulasan disimpan apa adanya. Identitas ulasan adalah hash lokal karena API tidak mengembalikan ID ulasan yang stabil.',
+  };
+}
+export async function collectGooglePlaces(fetcher = fetch, config = placesConfiguration()) {
+  if (config.status === 'needs_setup') return { id: 'googlemaps', status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
+  const places = new Map();
+  const reviews = new Map();
+  const issues = [];
+  let responded = 0, pagesRead = 0, reviewFieldsSeen = 0;
+  for (const query of config.queries) {
+    let pageToken;
+    const seenTokens = new Set();
+    let queryAnswered = false;
+    do {
+      try {
+        const payload = await placesRequest(':searchText', placesMask, config.apiKey, fetcher, { method: 'POST', body: JSON.stringify({ textQuery: query, languageCode: 'id', regionCode: 'ID', ...(pageToken ? { pageToken } : {}) }) });
+        pagesRead++;
+        if (!queryAnswered) { queryAnswered = true; responded++; }
+        check(payload.places === undefined || Array.isArray(payload.places), 'daftar place Google Places tidak valid');
+        for (const place of payload.places ?? []) {
+          check(typeof place?.id === 'string' && place.id.length > 0 && place.id.length <= 200, 'ID place Google tidak valid');
+          const name = typeof place.displayName?.text === 'string' ? place.displayName.text : '';
+          check(name.length <= 400, 'nama place Google tidak valid');
+          if (!places.has(place.id)) places.set(place.id, { id: place.id, name, address: place.formattedAddress ?? null, rating: Number(place.rating) || null, ratingCount: Number(place.userRatingCount) || null, queries: [] });
+          places.get(place.id).queries.push(query);
+        }
+        pageToken = payload.nextPageToken;
+        if (pageToken) { check(!seenTokens.has(pageToken), 'token halaman Google Places berulang; hasil belum lengkap'); seenTokens.add(pageToken); }
+      } catch (error) { issues.push(`kueri "${query}": ${error.message}`); break; }
+    } while (pageToken);
+  }
+  const matches = [...places.values()].filter(place => merchantIdentity.test(place.name));
+  for (const place of matches) {
+    try {
+      const detail = await placesRequest(`/${encodeURIComponent(place.id)}`, 'id,displayName,reviews,rating,userRatingCount', config.apiKey, fetcher);
+      reviewFieldsSeen += Array.isArray(detail.reviews) ? detail.reviews.length : 0;
+      for (const review of detail.reviews ?? []) {
+        const record = placesReview(place.id, review, new Date().toISOString());
+        if (record && !reviews.has(record.id)) reviews.set(record.id, record);
+      }
+    } catch (error) { issues.push(`ulasan place ${place.id}: ${error.message}`); }
+  }
+  const reachable = responded > 0;
+  const status = issues.length ? (reachable ? 'partial' : 'error') : 'success';
+  const nearest = [...places.values()].slice(0, 3).map(place => place.name).filter(Boolean).join('; ');
+  const message = `Google Places API (New) menjawab ${responded} dari ${config.queries.length} kueri identitas produk dan mengembalikan ${places.size} place berbeda; ${matches.length} di antaranya bernama wondr merchant. ${reviewFieldsSeen ? `${reviewFieldsSeen} teks ulasan dikembalikan API.` : 'API tidak menyertakan satu pun teks ulasan pada pemeriksaan ini.'} ${nearest ? `Contoh hasil terdekat: ${nearest}.` : 'Tidak ada place yang dikembalikan.'} Place yang bukan aplikasi ini tidak dihitung sebagai sentimen merchant. Tidak ada upaya mengambil ulasan yang tidak disediakan API.`;
+  return {
+    id: 'googlemaps', status, fetched: reviews.size, reviews: [...reviews.values()], rating: matches[0]?.rating ?? null, ratingCount: matches[0]?.ratingCount ?? null,
+    coverage: { queries: config.queries.length, answered: responded, pagesRead, placesFound: places.size, productMatches: matches.length, reviewFieldsSeen, sampleLimit: null, reviewTextServed: reviewFieldsSeen > 0 },
+    message: `${message} ${issues.length ? `Kendala: ${[...new Set(issues)].join(' ')}` : 'Seluruh kueri konfigurasi telah dikirim.'}`,
+  };
+}
+// Peta status kanal berkredensial untuk satu id platform; dipakai server lokal dan
+// function serverless agar tampilan "perlu konfigurasi" identik di kedua jalur.
+export function channelConfigurations(env = process.env) {
+  const apify = apifyConfiguration(env);
+  return new Map([['youtube', youtubeConfiguration(env)], ['googlemaps', placesConfiguration(env)], ...Object.keys(apifyChannels).map(id => [id, apify])]);
+}
+export async function collectOnline({ apifyWaitMs = 180000, resume = new Map() } = {}) {
   const apify = apifyConfiguration();
   const youtube = youtubeConfiguration();
-  const jobs = [['play', () => collectGoogle()], ['appstore', () => collectApple()], ['youtube', () => collectYouTube(fetch, youtube)]];
-  for (const id of Object.keys(apifyChannels)) jobs.push([id, () => collectApify(id, fetch, apify)]);
+  const places = placesConfiguration();
+  const jobs = [['play', () => collectGoogle()], ['appstore', () => collectApple()], ['youtube', () => collectYouTube(fetch, youtube)], ['googlemaps', () => collectGooglePlaces(fetch, places)]];
+  for (const id of Object.keys(apifyChannels)) jobs.push([id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id) })]);
   return Promise.all(jobs.map(async ([id, collect]) => {
     try { return await collect(); }
     catch (error) { return { id, status: 'error', fetched: 0, message: `Gagal membaca sumber data. ${error instanceof SyntaxError ? 'parse_error: struktur data sumber berubah.' : error.message} Data sebelumnya tetap dipertahankan.`, reviews: [] }; }

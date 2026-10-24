@@ -26,6 +26,8 @@ services:
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
       - key: APIFY_API_TOKEN
         sync: false
       # Plan gratis tidak punya disk permanen; path ini dipakai ulang saat start.

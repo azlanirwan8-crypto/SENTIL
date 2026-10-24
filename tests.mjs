@@ -7,7 +7,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
-import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels } from './collectors.mjs';
+import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
@@ -989,14 +989,16 @@ test('Apify records keep actor text, expand nested comments, and never place the
         { id: 'c-1', text: 'ID duplikat tidak boleh menambah baris' },
       ] },
     { id: 'post-2', caption: 'Ayo download wondr merchant sekarang ada cashback', time: 1792713600, permalink: 'https://x.com/brand/status/3', author: 'brandresmi' },
-    { id: 'post-3', text: 'aplikasi bank lain lambat', date: 'bukan tanggal', url: 'http://x.com/tidak-aman/4' },
+    { id: 'post-3', text: 'wondr merchant juga lambat di HP saya', date: 'bukan tanggal', url: 'http://x.com/tidak-aman/4' },
     { text: 'wondr merchant pencairan telat terus', author: 'tanpa_id' },
     { id: 'post-4' },
   ];
   const { calls, fetcher } = socialRoutes(items);
   const result = await collectApify('x', fetcher, apifyConfig(), { pollMs: 0 });
   assert.equal(result.status, 'success');
-  assert.equal(result.fetched, 5, 'item tanpa teks dibuang, ID duplikat digabung');
+  assert.equal(result.fetched, 5, 'item tanpa teks dibuang dan ID duplikat digabung');
+  assert.equal(result.coverage.identityFiltered, 0, 'semua teks di sini menyebut identitas produk');
+  assert.doesNotMatch(result.message, /teks lain dikembalikan actor/);
   assert.ok(calls.every(call => call.options?.headers?.authorization === `Bearer ${apifyToken}`), 'setiap permintaan memakai header Authorization');
   assert.ok(!calls.some(call => call.url.includes(apifyToken)), 'token tidak boleh muncul di URL');
   assert.ok(!result.message.includes(apifyToken), 'pesan tidak boleh memuat token');
@@ -1024,6 +1026,63 @@ test('Apify records keep actor text, expand nested comments, and never place the
   assert.ok(!byId.has('post-4'));
   assert.match(byId.get('post-1').provenance, /apidojo\/tweet-scraper/);
   assert.match(byId.get('post-1').provenance, /run run-1/);
+});
+
+test('TikTok actor fields are read from the shapes the actor actually returns', async () => {
+  const items = [{
+    id: '7677293170949967124',
+    text: 'wondr merchant settlement lama sekali',
+    createTime: 1787509120,
+    createTimeISO: '2026-08-23T18:18:40.000Z',
+    authorMeta: { id: '7628449130579428373', name: 'goldie_sketchie', nickName: 'Goldie_Sketchie' },
+    webVideoUrl: 'https://www.tiktok.com/@goldie_sketchie/video/7677293170949967124',
+    commentCount: 12,
+  }];
+  const { fetcher } = socialRoutes(items);
+  const result = await collectApify('tiktok', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.status, 'success');
+  const record = result.reviews[0];
+  assert.equal(record.id, '7677293170949967124', 'ID video actor dipakai apa adanya');
+  assert.equal(record.author, 'goldie_sketchie', 'penulis diambil dari authorMeta.name, bukan dibiarkan N/A');
+  assert.equal(record.date, '2026-08-23', 'createTimeISO dipakai sebagai waktu nyata item');
+  assert.equal(record.sourceUrl, 'https://www.tiktok.com/@goldie_sketchie/video/7677293170949967124');
+  assert.equal(record.rating, null, 'video tidak memiliki penilaian bintang, jadi tidak dibuat-buat');
+  assert.equal(result.coverage.emptyResultMarkers, 0);
+});
+
+test('Loose social search results that name another product are filtered and counted', async () => {
+  const items = [
+    { id: 'v-1', text: 'Natalie Merchant - Wonder #nataliemerchant #90smusic', createTimeISO: '2026-04-12T10:00:00Z', authorMeta: { name: 'mojo11960' }, webVideoUrl: 'https://www.tiktok.com/@mojo11960/video/1' },
+    { id: 'v-2', text: 'Wandering Merchant #palworld #twitch', createTimeISO: '2026-08-13T10:00:00Z', authorMeta: { name: 'luzerluna' }, webVideoUrl: 'https://www.tiktok.com/@luzerluna/video/2' },
+    { id: 'v-3', text: 'wondr merchant notifikasi telat, QRIS juga lambat', createTimeISO: '2026-10-20T10:00:00Z', authorMeta: { name: 'pedagang_a' }, webVideoUrl: 'https://www.tiktok.com/@pedagang_a/video/3' },
+  ];
+  const { fetcher } = socialRoutes(items);
+  const result = await collectApify('tiktok', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.status, 'success');
+  assert.equal(result.fetched, 1, 'hanya teks yang menyebut identitas produk yang disimpan');
+  assert.equal(result.coverage.itemsRead, 3);
+  assert.equal(result.coverage.identityFiltered, 2);
+  assert.equal(result.reviews[0].id, 'v-3');
+});
+
+test('Actor markers that mean "query returned nothing" are reported as evidence, not as lost data', async () => {
+  const items = [{ noResults: true }, { error: 'no_items', errorDescription: 'Empty or private data for provided input' }];
+  const { fetcher } = socialRoutes(items);
+  const result = await collectApify('instagram', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.status, 'success', 'kanal terhubung tetapi tidak ada konten: bukan kegagalan');
+  assert.equal(result.fetched, 0);
+  assert.equal(result.coverage.emptyResultMarkers, 2);
+  assert.match(result.message, /2 penanda tidak ada hasil/);
+  assert.match(result.message, /Empty or private data for provided input/);
+});
+
+test('TikTok and Instagram actor names and inputs match the actors that exist on Apify', () => {
+  const config = apifyConfiguration({ APIFY_API_TOKEN: apifyToken });
+  assert.equal(config.channels.tiktok.actor, 'clockworks/tiktok-scraper', 'apify/tiktok-scraper tidak ada di Apify (HTTP 404)');
+  assert.equal(config.channels.instagram.actor, 'apify/instagram-scraper');
+  assert.deepEqual(config.channels.instagram.input, { type: 'hashtag', keywords: ['wondrmerchant', 'wondrmerchantbni'], resultsLimit: 100 });
+  assert.deepEqual(config.channels.tiktok.input, { searchQueries: ['"wondr merchant"'], resultsPerPage: 100 }, 'kueri diberi tanda kutip agar hasil benar-benar menyebut produk');
+  assert.equal(Object.hasOwn(config.channels, 'googlemaps'), false, 'Google Reviews memakai Places API resmi, bukan actor pihak ketiga');
 });
 
 test('Apify dataset is read through every page instead of stopping at the first', async () => {
@@ -1116,11 +1175,88 @@ test('Google Reviews links are accepted only from the Google Maps host', () => {
   assert.equal(validSource('https://www.google.com/maps/place/wondr+merchant/', 'googlemaps'), true);
   assert.equal(validSource('https://maps.app.goo.gl/abc', 'googlemaps'), false, 'pendek bukan host Google Maps yang diizinkan');
   assert.equal(validSource('http://google.com/maps/place/x', 'googlemaps'), false, 'non-HTTPS ditolak');
-  const { fetcher } = socialRoutes([{ id: 'r-1', text: 'wondr merchant QRIS lambat di tempat saya', url: 'https://www.google.com/maps/place/tempat', author: 'pelanggan', date: '2026-10-18T01:02:03Z' }]);
-  return collectApify('googlemaps', fetcher, apifyConfig(), { pollMs: 0 }).then(result => {
-    assert.equal(result.reviews[0].sourceUrl, 'https://www.google.com/maps/place/tempat');
-    assert.equal(result.reviews[0].platform, 'googlemaps');
+});
+
+test('Google Places connector sends no request until a server key exists', async () => {
+  const calls = [];
+  const fetcher = (url, options) => { calls.push([url, options]); return Promise.reject(new Error('tidak boleh ada permintaan')); };
+  const result = await collectGooglePlaces(fetcher, placesConfiguration({}));
+  assert.equal(result.status, 'needs_setup');
+  assert.equal(result.fetched, null);
+  assert.equal(calls.length, 0, 'tanpa kunci, tidak ada permintaan dan tidak ada angka karangan');
+  assert.doesNotMatch(result.message, /undefined/);
+});
+
+test('Google Places reads every page, keeps only product places, and reports missing review text honestly', async () => {
+  const reply = value => ({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(value)) });
+  const pages = [
+    { places: [{ id: 'placeProduk', displayName: { text: 'Wondr Merchant by BNI' }, formattedAddress: 'Jakarta', rating: 4.5, userRatingCount: 30 }], nextPageToken: 'halaman-2' },
+    { places: [{ id: 'placeKantor', displayName: { text: 'BNI Depok 1' }, formattedAddress: 'Depok' }] },
+  ];
+  const calls = [];
+  const fetcher = async (url, options = {}) => {
+    calls.push({ url, headers: options.headers ?? {}, body: options.body ? JSON.parse(options.body) : null });
+    if (url.endsWith(':searchText')) {
+      const index = Math.min(calls.filter(call => call.url.endsWith(':searchText')).length - 1, pages.length - 1);
+      return reply(pages[index]);
+    }
+    if (url.includes('/places/placeProduk')) return reply({ id: 'placeProduk', rating: 4.5, userRatingCount: 30 });
+    return reply({});
+  };
+  const config = placesConfiguration({ GOOGLE_PLACES_API_KEY: 'kunci-places-tes', GOOGLE_PLACES_QUERIES: 'wondr merchant' });
+  const result = await collectGooglePlaces(fetcher, config);
+  assert.equal(calls.filter(call => call.url.endsWith(':searchText')).length, 2, 'token halaman berikutnya diikuti sampai habis');
+  assert.equal(calls.some(call => call.url.includes('kunci-places-tes')), false, 'kunci tidak masuk URL');
+  assert.equal(calls.every(call => call.headers['X-Goog-Api-Key'] === 'kunci-places-tes'), true);
+  assert.equal(result.fetched, 0, 'API tidak mengembalikan teks ulasan, maka tidak ada ulasan yang dibuat-buat');
+  assert.equal(result.coverage.placesFound, 2);
+  assert.equal(result.coverage.productMatches, 1, 'hanya place bernama produk yang diperiksa ulasannya');
+  assert.equal(result.coverage.reviewTextServed, false);
+  assert.equal(result.rating, 4.5);
+  assert.match(result.message, /tidak menyertakan satu pun teks ulasan/);
+  assert.match(result.message, /BNI Depok 1|Wondr Merchant by BNI/);
+});
+
+test('Google Places accepts real review text when the API provides it', async () => {
+  const fetcher = async () => ({
+    ok: true, status: 200,
+    text: () => Promise.resolve(JSON.stringify({
+      places: [{ id: 'placeProduk', displayName: { text: 'Wondr Merchant by BNI' } }],
+      reviews: [{ rating: 2, authorDisplayName: 'Pegawai', text: { text: 'Settlement terlambat' }, publishTime: '2026-10-01T03:04:05Z' }],
+    })),
   });
+  const result = await collectGooglePlaces(fetcher, placesConfiguration({ GOOGLE_PLACES_API_KEY: 'kunci-tes' }));
+  assert.equal(result.fetched, 1);
+  assert.equal(result.reviews[0].text, 'Settlement terlambat', 'teks disimpan apa adanya');
+  assert.equal(result.reviews[0].date, '2026-10-01');
+  assert.equal(result.reviews[0].platform, 'googlemaps');
+  assert.match(result.reviews[0].sourceUrl, /^https:\/\/www\.google\.com\/maps\/place\//);
+  assert.match(result.reviews[0].provenance, /hash lokal/);
+});
+
+test('Brand-owned social accounts are kept as context but never counted as customer sentiment', () => {
+  const promo = classifyReview({ platform: 'tiktok', author: 'bni46', text: 'Baru ngerintis bisnis? Di wondr merchant, kamu bisa ajuin settlement maksimal 5x sehari. Customer udah bayar? Dana bisa lebih cepat diterima.' });
+  assert.equal(promo.relevance.status, 'excluded', 'konten akun resmi BNI bukan pengalaman pelanggan');
+  assert.equal(promo.sentiment, 'unclassified');
+  assert.match(promo.relevance.reason, /akun resmi/);
+  const withAt = classifyReview({ platform: 'tiktok', author: '@BNI46', text: 'wondr merchant kini lebih cepat' });
+  assert.equal(withAt.relevance.status, 'excluded', 'penulisan @ dan huruf besar tidak mengubah identitas akun');
+  const customer = classifyReview({ platform: 'tiktok', author: 'pedagang_sate', text: 'wondr merchant saya gagal login lagi' });
+  assert.equal(customer.relevance.status, 'relevant', 'akun pelanggan biasa tetap dinilai');
+  const similar = classifyReview({ platform: 'x', author: 'bnimerchantfans', text: 'wondr merchant bagus untuk QRIS' });
+  assert.equal(similar.relevance.status, 'relevant', 'handle yang hanya berawalan bni tidak dianggap akun resmi');
+});
+
+test('Reclassifying derived labels refreshes automatic rows without touching manual labels', async () => {
+  const { reclassifyDerived } = await import('./dashboard-core.mjs');
+  const storedPromo = { id: 'tiktok-lama', platform: 'tiktok', author: 'bni46', text: 'Di wondr merchant, kamu bisa ajuin settlement 5x sehari', sentiment: 'positive', tags: ['settlement'], labeling: 'rules-v1', rationale: 'lama', relevance: { status: 'relevant', reason: 'lama', method: 'merchant-context-v1' } };
+  const manual = { id: 'play-manual', platform: 'play', author: 'pemilik usaha', text: 'aplikasi ini lambat sekali', sentiment: 'negative', tags: ['performance'], labeling: 'manual', rationale: 'label manual data awal' };
+  const [refreshed, untouched] = reclassifyDerived([storedPromo, manual]);
+  assert.equal(refreshed.sentiment, 'unclassified', 'baris berlabel otomatis dihitung ulang dengan aturan sekarang');
+  assert.equal(refreshed.relevance.status, 'excluded');
+  assert.equal(refreshed.text, storedPromo.text, 'teks asli tidak diubah saat pelabelan ulang');
+  assert.equal(untouched.sentiment, 'negative', 'label manual pada dataset awal tidak ditimpa classifier');
+  assert.equal(untouched.rationale, 'label manual data awal');
 });
 
 test('Server reports every credential-backed channel as needing setup, never as connected', async () => {  const dir = await mkdtemp(join(tmpdir(), 'wondr-apify-'));
@@ -1245,3 +1381,143 @@ test('Local mode still serves loopback without credentials', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// ---------- Lapisan serverless (Vercel Functions) ----------
+const freshStore = tag => import(`./dashboard-store.mjs?case=${tag}`);
+function mockResponse() {
+  const res = { status: null, headers: {}, body: '' };
+  res.writeHead = (status, headers = {}) => { res.status = status; Object.assign(res.headers, headers); };
+  res.end = (value = '') => { res.body = String(value); };
+  return res;
+}
+const useDataPath = async (dir, run) => {
+  const previous = process.env.DATA_PATH;
+  process.env.DATA_PATH = join(dir, 'online-data.json');
+  try { return await run(); } finally {
+    if (previous === undefined) delete process.env.DATA_PATH; else process.env.DATA_PATH = previous;
+  }
+};
+const storedReview = { id: 'serverless-new-1', platform: 'play', author: 'Uji Serverless', date: '2026-10-24', text: 'Pencairan terlambat', rating: 2, sourceUrl: 'https://play.google.com/store/apps/details?id=id.bni.wfb' };
+
+test('Serverless store starts from the same seed and marks credential channels as needing setup', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-store-'));
+  try {
+    await useDataPath(dir, async () => {
+      const store = await freshStore('seed');
+      const data = await store.snapshot();
+      assert.equal(data.reviews.length, seedReviews.length, 'tanpa berkas, function memakai dataset awal yang sama dengan server lokal');
+      assert.equal(data.running, false);
+      assert.equal(data.sources.find(source => source.id === 'x').status, 'needs_setup');
+      assert.equal(data.sources.find(source => source.id === 'googlemaps').status, 'needs_setup');
+      assert.equal(data.sources.find(source => source.id === 'play').status, 'snapshot');
+    });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Serverless pull stores results on disk and resumes an unfinished actor run', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-store-'));
+  try {
+    await useDataPath(dir, async () => {
+      const first = await freshStore('pull-1');
+      const result = await first.pull({ collector: async () => [
+        { id: 'play', status: 'success', fetched: 1, message: '1 ulasan dibaca', reviews: [storedReview], coverage: { sampleLimit: null } },
+        { id: 'x', status: 'partial', fetched: 3, message: 'Actor masih berjalan', reviews: [], coverage: { actor: 'apidojo/tweet-scraper', runId: 'runBelumSelesai', datasetId: 'dsBelumSelesai', runFinished: false } },
+      ] });
+      assert.equal(result.reviews.length, seedReviews.length + 1);
+      assert.equal(result.lastRun.status, 'partial');
+      assert.deepEqual(result.lastRun.coverage.fetchedSources.sort(), ['play', 'x']);
+      assert.ok(Number.isFinite(Date.parse(result.lastRun.startedAt)), 'waktu mulai diambil saat penarikan dimulai');
+      assert.match(await readFile(join(dir, 'online-data.json'), 'utf8'), /Uji Serverless/);
+
+      const second = await freshStore('pull-2');
+      let resumed = null;
+      const again = await second.pull({ collector: async options => { resumed = options.resume; return [{ id: 'play', status: 'success', fetched: 0, message: 'Tidak ada ulasan baru', reviews: [] }]; } });
+      assert.equal(again.reviews.length, seedReviews.length + 1, 'ulasan dari instance sebelumnya tetap ada');
+      assert.deepEqual(resumed.get('x'), { runId: 'runBelumSelesai', datasetId: 'dsBelumSelesai', status: 'RUNNING' }, 'run actor berbayar dilanjutkan, tidak dijalankan ulang');
+      assert.equal(resumed.has('play'), false);
+    });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Serverless pull refuses a concurrent request and releases the lock after failure', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-store-'));
+  try {
+    await useDataPath(dir, async () => {
+      const store = await freshStore('busy');
+      let release;
+      const gate = new Promise(resolve => { release = resolve; });
+      const running = store.pull({ collector: async () => { await gate; return []; } });
+      assert.equal(store.isRunning(), true);
+      await assert.rejects(store.pull({ collector: async () => [] }), /busy/);
+      release();
+      await running;
+      assert.equal(store.isRunning(), false);
+
+      const failed = await freshStore('fail');
+      await assert.rejects(failed.pull({ collector: async () => { throw new Error('jaringan putus'); } }), /jaringan putus/);
+      assert.equal(failed.isRunning(), false, 'gagal tidak mengunci function selamanya');
+      assert.equal((await failed.snapshot()).reviews.length, seedReviews.length, 'kegagalan tidak menghapus dataset yang ada');
+    });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+async function runMiddleware(url, options = {}) {
+  const previousUser = process.env.DASHBOARD_USER, previousPassword = process.env.DASHBOARD_PASSWORD;
+  try { return await (await import('./middleware.js')).middleware(new Request(url, options)); } finally {
+    if (previousUser === undefined) delete process.env.DASHBOARD_USER; else process.env.DASHBOARD_USER = previousUser;
+    if (previousPassword === undefined) delete process.env.DASHBOARD_PASSWORD; else process.env.DASHBOARD_PASSWORD = previousPassword;
+  }
+}
+
+test('Middleware blocks paid pulls until dashboard credentials are configured', async () => {
+  delete process.env.DASHBOARD_USER;
+  delete process.env.DASHBOARD_PASSWORD;
+  const blocked = await runMiddleware('https://situs.example.com/api/analyze', { method: 'POST' });
+  assert.equal(blocked.status, 401);
+  assert.match(await blocked.text(), /DASHBOARD_USER/);
+  assert.equal(await runMiddleware('https://situs.example.com/api/data'), undefined, 'halaman tetap dapat dibaca tanpa kredensial');
+});
+
+test('Middleware requires Basic credentials on every path once they are configured', async () => {
+  process.env.DASHBOARD_USER = 'pemilik';
+  process.env.DASHBOARD_PASSWORD = 'sandi-panjang';
+  const anonymous = await runMiddleware('https://situs.example.com/');
+  assert.equal(anonymous.status, 401, 'tanpa header, browser diminta masuk');
+  assert.match(anonymous.headers.get('www-authenticate'), /Basic realm/);
+  assert.equal(await runMiddleware('https://situs.example.com/', { headers: { authorization: basic('pemilik', 'sandi-panjang') } }), undefined);
+  assert.equal((await runMiddleware('https://situs.example.com/', { headers: { authorization: basic('pemilik', 'sandi-salah') } })).status, 401);
+  assert.equal((await runMiddleware('https://situs.example.com/', { headers: { authorization: basic('orang-lain', 'sandi-panjang') } })).status, 401);
+  assert.equal((await runMiddleware('https://situs.example.com/styles.css', { headers: { authorization: basic('pemilik', 'salah-sandi') } })).status, 401);
+  assert.equal(await runMiddleware('https://situs.example.com/api/status', { headers: { authorization: basic('pemilik', 'sandi-panjang') } }), undefined, 'pemeriksaan kesehatan host tetap terbuka');
+});
+
+test('Serverless API functions refuse other methods, other origins, and unknown hosts', async () => {
+  // Function Node Vercel menerima header sebagai objek biasa, jadi mock mengikuti bentuk itu.
+  const mockRequest = (method, url, headers = {}) => ({ method, url, headers });
+  const analyze = await import('./api/analyze.js');
+  const getRes = mockResponse();
+  await analyze.default(mockRequest('GET', '/api/analyze', { host: 'situs.example.com' }), getRes);
+  assert.equal(getRes.status, 405);
+  assert.equal(getRes.headers.allow, 'POST');
+  const crossRes = mockResponse();
+  await analyze.default(mockRequest('POST', '/api/analyze', { host: 'situs.example.com', origin: 'https://situs-lain.example' }), crossRes);
+  assert.equal(crossRes.status, 403);
+  assert.match(crossRes.body, /lintas situs/i);
+  const noHostRes = mockResponse();
+  await analyze.default(mockRequest('POST', '/api/analyze', { origin: 'https://situs.example.com' }), noHostRes);
+  assert.equal(noHostRes.status, 403, 'tanpa host yang dapat dipastikan, penarikan berbayar tidak dijalankan');
+  assert.equal(analyze.rejectsSameSiteCheck({ 'x-forwarded-host': 'situs.example.com', 'x-forwarded-proto': 'https', origin: 'https://situs.example.com' }), false, 'host hasil proxy dianggap sama sendiri');
+  assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', origin: 'http://situs.example.com' }), false, 'skema http pada host yang sama diterima');
+  assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', 'sec-fetch-site': 'cross-site' }), true);
+  assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com' }), false, 'permintaan tanpa header Origin tetap dilayani selama host dikenal');
+  const data = await import('./api/data.js');
+  const postRes = mockResponse();
+  await data.default(mockRequest('POST', '/api/data'), postRes);
+  assert.equal(postRes.status, 405);
+  assert.equal(postRes.headers.allow, 'GET, HEAD');
+  const statusRes = mockResponse();
+  await (await import('./api/status.js')).default(mockRequest('GET', '/api/status'), statusRes);
+  assert.deepEqual(JSON.parse(statusRes.body), { status: 'ok', mode: 'online-pull', running: false });
+  assert.equal(statusRes.headers['content-type'], 'application/json; charset=utf-8');
+});
+
