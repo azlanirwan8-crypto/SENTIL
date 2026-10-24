@@ -1463,7 +1463,7 @@ test('Serverless pull refuses a concurrent request and releases the lock after f
 
 async function runMiddleware(url, options = {}) {
   const previousUser = process.env.DASHBOARD_USER, previousPassword = process.env.DASHBOARD_PASSWORD;
-  try { return await (await import('./middleware.js')).middleware(new Request(url, options)); } finally {
+  try { return await (await import('./middleware.edge.js')).middleware(new Request(url, options)); } finally {
     if (previousUser === undefined) delete process.env.DASHBOARD_USER; else process.env.DASHBOARD_USER = previousUser;
     if (previousPassword === undefined) delete process.env.DASHBOARD_PASSWORD; else process.env.DASHBOARD_PASSWORD = previousPassword;
   }
@@ -1479,7 +1479,7 @@ test('Middleware blocks paid pulls until dashboard credentials are configured', 
 });
 
 test('Middleware decodes Basic credentials using web APIs only', async () => {
-  const source = await readFile(new URL('./middleware.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./middleware.edge.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /Buffer\.from\(/, 'Buffer tidak tersedia di Edge Runtime dan pernah membuat situs gagal 500');
   assert.equal(/^\s*import\s.+from\s+['"]node:/m.test(source), false, 'middleware tidak boleh mengimpor modul Node');
   assert.doesNotMatch(source, /crypto\.subtle/, 'perbandingan dilakukan tanpa API asinkron yang bisa gagal di Edge');
@@ -1490,7 +1490,7 @@ test('Middleware decodes Basic credentials using web APIs only', async () => {
 });
 
 test('A failing gateway keeps the site open but shuts the paid route closed', async () => {
-  const { middleware } = await import('./middleware.js');
+  const { middleware } = await import('./middleware.edge.js');
   const broken = { url: 'https://situs.example.com/api/analyze', headers: { get: () => { throw new Error('runtime asing'); } } };
   const blocked = middleware(broken);
   assert.equal(blocked.status, 401, 'jalur berbayar tetap tertutup bila gerbangnya sendiri error');

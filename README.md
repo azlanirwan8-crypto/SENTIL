@@ -39,12 +39,13 @@ Status **terhubung** berarti permintaan benar-benar dikirim dan dijawab. Apabila
 
 ## Menjalankan pada Vercel
 
-`vercel.json`, `middleware.js`, dan `api/*.js` menyiapkan aplikasi untuk Vercel Functions:
+`vercel.json` dan `api/*.js` menyiapkan aplikasi untuk Vercel Functions:
 
 - `/api/data`, `/api/status`, dan `/api/analyze` dilayani function Node; halaman statis tetap dari repo.
 - Function membaca environment deployment, jadi `APIFY_API_TOKEN`, `YOUTUBE_API_KEY`, dan `GOOGLE_PLACES_API_KEY` yang Anda pasang di Vercel benar-benar dipakai.
-- `api/analyze.js` diberi `maxDuration` 300 detik karena actor Apify dapat berjalan beberapa menit. Actor yang belum selesai saat function habis waktu tidak diulang: `coverage.runId` tersimpan dan penarikan berikutnya melanjutkan run yang sama.
-- `middleware.js` meminta kredensial Basic pada seluruh halaman bila `DASHBOARD_USER` dan `DASHBOARD_PASSWORD` diisi. Bila keduanya kosong, halaman tetap terbuka tetapi `/api/analyze` diblokir agar pengunjung lain tidak memakai kuota Apify Anda. `api/analyze.js` memeriksa kredensial yang sama sekali lagi di dalam function (penjagaan kedua) sehingga endpoint berbayar tidak pernah terbuka walaupun middleware dilewati.
+- Actor Apify dapat berjalan beberapa menit. Actor yang belum selesai saat function habis waktu tidak diulang: `coverage.runId` tersimpan dan penarikan berikutnya melanjutkan run yang sama. Naikkan batas waktu function melalui **Settings → Functions** bila penarikan sering terpotong; `vercel.json` sengaja tidak memasang `maxDuration` supaya build tidak gagal pada plan dengan batas lebih rendah.
+- `/api/analyze` memeriksa `DASHBOARD_USER` dan `DASHBOARD_PASSWORD` di dalam function ([serverless-auth.mjs](serverless-auth.mjs)). Bila keduanya belum diisi, penarikan data ditolak — sengaja, supaya pengunjung lain tidak memakai kuota Apify Anda. Isinya hanya status, tanpa kunci API.
+- `middleware.edge.js` opsional: meminta login sebelum halaman terbuka. Namanya sengaja bukan `middleware.js` karena middleware Vercel berjalan di Edge Runtime (tanpa `Buffer`/`node:crypto`) dan pernah membuat seluruh situs gagal `500 MIDDLEWARE_INVOCATION_FAILED`. Untuk mengaktifkannya, salin berkas itu menjadi `middleware.js`.
 - Middleware berjalan pada Edge Runtime Vercel: hanya API Web yang boleh dipakai (`atob`, `TextDecoder`, `Response`). `Buffer` dan `node:crypto` tidak tersedia di sana — pernah menyebabkan seluruh situs gagal dengan `500 MIDDLEWARE_INVOCATION_FAILED`.
 
 Batas yang perlu diketahui: disk Vercel Function (`/tmp`, atau `DATA_PATH` yang Anda tentukan) hanya hidup selama instance function berjalan. Riwayat penarikan dapat kembali ke dataset awal ketika instance berganti. Untuk riwayat jangka panjang, pakai host Node berkelanjutan di bawah dan arahkan `DATA_PATH` ke disk permanen.
@@ -131,7 +132,7 @@ Pencarian sosial bekerja longgar. Kueri `wondr merchant` pada TikTok mengembalik
 
 - `server.mjs` — server lokal, API, penyimpanan data, dan konfigurasi deployment.
 - `dashboard-core.mjs` — penyusun dataset yang sama untuk server lokal dan function serverless.
-- `dashboard-store.mjs`, `api/*.js`, `middleware.js`, `vercel.json` — lapisan Vercel Function dan gerbang masuknya.
+- `dashboard-store.mjs`, `serverless-auth.mjs`, `api/*.js`, `vercel.json` — lapisan Vercel Function dan penjaga endpoint berbayar; `middleware.edge.js` opsional untuk login tingkat halaman.
 - `collectors.mjs` — pengambilan dan penguraian ulasan publik serta komentar kanal yang berkredensial.
 - `local-env.mjs` — pembacaan `.env` / `.env.local` tanpa pernah menampilkan nilainya.
 - `model.js` — perhitungan sentimen, kategori, filter, dan ekspor CSV.

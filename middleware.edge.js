@@ -1,6 +1,9 @@
-// Gerbang masuk saat dasbor dijalankan sebagai situs publik (Vercel).
+// Gerbang masuk opsional untuk hosting Vercel. Berkas ini tidak aktif selama namanya masih
+// middleware.edge.js — Vercel hanya memproses berkas bernama tepat `middleware.js` di akar
+// proyek. Ganti namanya bila ingin browser meminta login sebelum halaman terbuka; tanpa itu
+// pun penarikan data tetap tertutup karena api/analyze.js memeriksa kredensial di dalam function.
 // Middleware Vercel berjalan di Edge Runtime: hanya API Web yang boleh dipakai di sini
-// (atob, Response, URL). Buffer, node:crypto, dan fs tidak tersedia dan pernah membuat
+// (atob, TextDecoder, Response, URL). Buffer, node:crypto, dan fs tidak tersedia dan pernah membuat
 // seluruh situs gagal dengan 500 MIDDLEWARE_INVOCATION_FAILED.
 const ANALYZE = '/api/analyze';
 const HEALTH = '/api/status';
