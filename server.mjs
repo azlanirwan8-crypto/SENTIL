@@ -3,7 +3,7 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { seedReviews, platforms, observationDate } from './data.js';
 import { upsertReviews } from './model.js';
-import { collectOnline } from './collectors.mjs';
+import { collectOnline, youtubeConfiguration } from './collectors.mjs';
 
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -12,6 +12,11 @@ const files = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/data.js', ['data.js', 'text/javascript; charset=utf-8']],
   ['/model.js', ['model.js', 'text/javascript; charset=utf-8']],
+  ...[400,500,600,700].map(weight => {
+    const file = `assets/fonts/poppins-latin-${weight}-normal.woff2`;
+    return [`/${file}`, [file, 'font/woff2']];
+  }),
+  ['/assets/fonts/Poppins-OFL.txt', ['assets/fonts/Poppins-OFL.txt', 'text/plain; charset=utf-8']],
 ]);
 const connectedSources = new Set(['play','appstore']);
 export async function createDashboardServer({ storagePath = new URL('./online-data.json', import.meta.url), collector = collectOnline } = {}) {
@@ -24,6 +29,12 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
     if (!Array.isArray(saved.reviews) || !Array.isArray(saved.sources) || !Array.isArray(saved.runs)) throw new Error('Format data tersimpan tidak valid. Berkas tidak diubah.');
     data = saved;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const youtube = youtubeConfiguration();
+  data.sources = data.sources.map(source => {
+    if (source.id === 'youtube' && (youtube.status === 'needs_setup' || ['unsupported','needs_setup','ready'].includes(source.status))) return {...source,status:youtube.status,message:youtube.message,fetched:null};
+    if (source.status === 'unsupported') return {...source,message:platforms.find(platform=>platform.id===source.id)?.note || source.message};
+    return source;
+  });
   let running = false;
   const snapshot = () => ({ ...data, running });
   const persist = async next => {
@@ -50,19 +61,20 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
         const results = await collector();
         const finishedAt = new Date().toISOString();
         const incoming = results.flatMap(r => r.reviews || []);
-        const merged = upsertReviews(data.reviews,incoming,finishedAt.slice(0,10));
+        const merged = upsertReviews(data.reviews,incoming,finishedAt);
         const sources = platforms.map(p => {
           const result = results.find(r => r.id === p.id);
           const previous = data.sources.find(s => s.id === p.id) || { id: p.id };
-          if (!result) return { ...previous, status: 'unsupported', fetched: 0, message: `Belum terhubung; tidak ada pengambilan data. ${p.note}` };
+          if (!result) return { ...previous, status: p.id === 'youtube' ? youtube.status : 'unsupported', fetched: null, message: p.id === 'youtube' ? youtube.message : `Belum terhubung; tidak ada pengambilan data. ${p.note}` };
           const { reviews, ...source } = result;
           const success = source.status === 'success' || source.status === 'partial';
           return { ...previous, ...source, checkedAt: finishedAt, ...(success ? { lastSuccessAt: finishedAt } : {}), ...(Number.isFinite(source.rating) ? { ratingObservedAt: finishedAt } : {}) };
         });
         const successes = results.filter(r => r.status === 'success' || r.status === 'partial').length;
-        const complete = results.length > 0 && results.every(r => r.status === 'success');
+        const complete = sources.every(source => source.status === 'success');
         const status = !successes ? 'error' : complete ? 'success' : 'partial';
-        const run = { startedAt, finishedAt, status, added: merged.added, updated: merged.updated, unchanged: merged.unchanged, sources: sources.map(s => ({ ...s })) };
+        const coverage = { fetchedSources: sources.filter(source => ['success','partial'].includes(source.status)).map(source => source.id), unavailableSources: sources.filter(source => !['success','partial'].includes(source.status)).map(source => source.id) };
+        const run = { startedAt, finishedAt, status, coverage, added: merged.added, updated: merged.updated, unchanged: merged.unchanged, sources: sources.map(s => ({ ...s })) };
         const next = { reviews: merged.reviews, sources, lastRun: run, runs: [...data.runs,run] };
         await persist(next);
         data = next;

@@ -9,6 +9,8 @@ import { seedReviews } from './data.js';
 const profile = await mkdtemp(join(tmpdir(),'wondr-browser-test-'));
 let collectorMode='baseline', releasePull, pulls=0;
 const synthetic={id:'qa-browser-only',platform:'play',author:'QA <img src=x onerror="window.__xss=true">',date:null,text:'Login gagal <script>window.__xss=true</script>',rating:null,sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb',provenance:'Synthetic isolated browser fixture'};
+const socialBase={platform:'youtube',author:'YouTube test fixture',date:'2026-10-23',publishedAt:'2026-10-23T12:30:00Z',retrievedAt:'2026-10-24T01:00:00Z',rating:null,sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',authorChannelId:'viewer',context:{videoId:'abcdefghijk',channelId:'owner',product:'wondr-merchant',title:'wondr merchant <script>window.__xss=true</script>',description:'Isolated fixture context, not customer sentiment'},provenance:'Synthetic API fixture; never live social data'};
+const socialFixtures=[{...socialBase,id:'yt-a',text:'wondr merchant login gagal'},{...socialBase,id:'yt-b',text:'wondr merchant login gagal'},{...socialBase,id:'yt-owner',authorChannelId:'owner',text:'wondr merchant bagus'},{...socialBase,id:'yt-uncertain',text:'Video bagus'}];
 const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),collector:async()=>{
   pulls++;
   if(collectorMode==='wait')await new Promise(resolve=>{releasePull=resolve;});
@@ -16,11 +18,14 @@ const server=await createDashboardServer({storagePath:join(profile,'test-data.js
   return ['play','appstore'].map(id=>{
     const count=seedReviews.filter(r=>r.platform===id).length;
     return {id,status:'success',fetched:count,rating:id==='play'?4:4.8,ratingCount:id==='play'?74:17,installs:id==='play'?'10K+':null,
+      coverage:id==='play'
+        ? {pools:[{hl:'id',gl:'ID',label:'kumpulan bahasa Indonesia',pagesRead:1,rows:38,added:38,complete:true,error:null},{hl:'en',gl:'US',label:'kumpulan bahasa Inggris',pagesRead:1,rows:17,added:17,complete:true,error:null}],pagesRead:2,rows:55,sampleLimit:null}
+        : {shelfPages:1,feedPages:1,shelfReviews:9,feedReviews:9,sharedReviews:9,feedOnly:0,sampleLimit:null},
       message:id==='play'
-        ? `${count} ulasan tertulis unik dibaca dari Google Play sebagai gabungan 38 ulasan kumpulan bahasa Indonesia dan 17 ulasan kumpulan bahasa Inggris. Seluruh halaman pada kedua kumpulan berhasil dibaca. Halaman toko menampilkan 74 penilaian; 19 penilaian tidak menyertakan teks sehingga nama dan isinya tidak tersedia untuk dianalisis.`
-        : `${count} ulasan tertulis dibaca dari halaman publik App Store Indonesia. Tidak ada halaman lanjutan pada tampilan publik. Halaman toko menampilkan 17 penilaian; 8 tidak menyertakan teks.`,
+        ? `${count} ulasan tertulis unik dibaca dari Google Play sebagai gabungan 38 ulasan kumpulan bahasa Indonesia dan 17 ulasan kumpulan bahasa Inggris. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. Halaman toko menampilkan 74 penilaian, sedangkan daftar ulasan publik menampilkan 55 ulasan berteks.`
+        : `${count} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi dan feed ulasan pelanggan resmi, masing-masing 9 ulasan dikonfirmasi kedua jalur.`,
       reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]};
-  });
+  }).concat(collectorMode==='social'?[{id:'youtube',status:'success',fetched:socialFixtures.length,message:'Isolated API fixture only',reviews:socialFixtures}]:collectorMode==='social-missing'?[{id:'youtube',status:'needs_setup',fetched:null,message:'YOUTUBE_API_KEY belum dikonfigurasi; data tersimpan dipertahankan.',reviews:[]}]:[]);
 }});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const baseUrl=`http://127.0.0.1:${server.address().port}`;
@@ -64,6 +69,7 @@ try {
   const screenshot=async(name,full=true)=>{
     await evaluate('document.fonts.ready');
     await evaluate('new Promise(resolve=>setTimeout(resolve,900))');
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+6000;function check(){if(!document.querySelector('.toast.visible')&&Number(getComputedStyle(document.querySelector('#toast')).opacity)===0)resolve(true);else if(Date.now()>end)reject(Error('Toast did not disappear'));else requestAnimationFrame(check);}check();})`);
     const layout=await send('Page.getLayoutMetrics');
     const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:full,...(full?{clip:{x:0,y:0,width:layout.cssLayoutViewport.clientWidth,height:Math.min(layout.cssContentSize.height,2200),scale:1}}:{})});
     await writeFile(new URL(name,output),Buffer.from(shot.data,'base64'));
@@ -72,22 +78,56 @@ try {
   await send('Page.navigate',{url:baseUrl});await ready();
   assert.deepEqual(await metricValues(),['64','64,1%','34,4%','+29,7']);
   assert.equal(await evaluate(`Boolean(document.querySelector('.brand,.workspace-chip'))`),false);
+  const navigationLabels=['Dashboard','Analisis sentimen','Review','Platform'];
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.querySelector('span').textContent)`),navigationLabels);
+  assert.equal(await evaluate(`document.querySelectorAll('[data-view="methodology"],.profile,.profile-avatar,.avatar-light,.sidebar-bottom,.nav-label,.sidebar-separator').length`),0);
+  assert.doesNotMatch(await evaluate(`document.querySelector('#sidebar').textContent+document.querySelector('#topbar').textContent`),/Ringkasan|Ulasan & percakapan|Cakupan platform|Metode & data|Analis Data|Ruang kerja|Data & transparansi/i);
+  assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT');
+  await evaluate(`Promise.all([400,500,600,700].map(weight=>document.fonts.load(weight+' 13px Poppins')))`);
+  for (const [view,label] of [['overview','Dashboard'],['sentiment','Analisis sentimen'],['reviews','Review'],['platforms','Platform']]) {
+    await click(`[data-view="${view}"]`);
+    assert.equal(await evaluate(`document.querySelector('.nav-item[aria-current="page"]').getAttribute('aria-label')`),label);
+    assert.equal(await evaluate(`document.querySelector('.breadcrumb strong').textContent`),label);
+    assert.doesNotMatch(await evaluate(`document.querySelector('#main').textContent`),/Metode & data/);
+    if(view!=='overview')assert.equal(await evaluate(`document.querySelector('h1').textContent`),label);
+  }
+  await click('[data-view="overview"]');
+  completed.push('Renamed navigation, matching page labels and removed methodology menu, workspace and profile');
   assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
   assert.doesNotMatch(await evaluate(`document.querySelector('.page-footer').textContent`),/wondr pulse/i);
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).width`),'230px');
+  await evaluate('document.fonts.ready');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).width`),'250px');
+  assert.equal(await evaluate(`getComputedStyle(document.body).backgroundColor`),'rgb(243, 243, 249)');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).backgroundColor`),'rgb(64, 81, 137)');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).borderRadius`),'4px');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.range-button')).borderRadius`),'4px');
+  assert.match(await evaluate(`getComputedStyle(document.body).fontFamily`),/^Poppins/);
+  assert.equal(await evaluate(`[400,500,600,700].every(weight=>document.fonts.check(weight+' 13px Poppins'))`),true);
+  assert.equal(await evaluate(`performance.getEntriesByType('resource').filter(e=>e.name.includes('.woff2')).length`),4);
+  assert.equal(await evaluate(`performance.getEntriesByType('resource').every(e=>new URL(e.name).origin===location.origin)`),true);
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth`),true);
-  await screenshot('dashboard-desktop.png');completed.push('Desktop layout and baseline metrics');
+  await screenshot('dashboard-desktop.png');completed.push('Velzon Default visual tokens, locally loaded Poppins and baseline metrics');
   await click('[data-platform="play"]');assert.deepEqual(await metricValues(),['55','58,2%','40,0%','+18,2']);
   await click('[data-platform="appstore"]');assert.deepEqual(await metricValues(),['9','100,0%','0,0%','+100,0']);
-  await click('[data-platform="tiktok"]');assert.deepEqual(await metricValues(),['0','—','—','—']);
+  await click('[data-platform="tiktok"]');assert.deepEqual(await metricValues(),['—','—','—','—']);
   completed.push('Store filters and unavailable social empty states');
   await click('[data-platform="all"]');
   await evaluate(`document.querySelector('#period').value='2026-10';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));`);
   assert.equal((await metricValues())[0],'18');
   await evaluate(`document.querySelector('#period').value='custom';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#date-from').value='2026-10-23';document.querySelector('#date-to').value='2026-08-01';`);
   await click('[data-action="apply-dates"]');assert.match(await evaluate(`document.querySelector('#date-error').textContent`),/tanggal awal/);
+  await evaluate(`document.querySelector('#date-from').value='2026-10-01';document.querySelector('#date-to').value='2026-10-22';`);
+  await click('[data-action="apply-dates"]');assert.equal((await metricValues())[0],'18');
+  for(const view of ['overview','sentiment','reviews','platforms']) {
+    await click(`[data-view="${view}"]`);
+    assert.deepEqual(await evaluate(`[document.querySelector('#period').value,document.querySelector('#date-from').value,document.querySelector('#date-to').value]`),['custom','2026-10-01','2026-10-22']);
+    assert.equal(await evaluate(`document.querySelectorAll('.heading-actions #period').length`),1);
+    assert.equal(await evaluate(`document.querySelectorAll('[data-action="analyze"]').length`),view==='platforms'?1:0);
+    assert.equal(await evaluate(`document.querySelector('.custom-dates').nextElementSibling.classList.contains('filters')`),true);
+    if(view==='platforms')assert.equal(await evaluate(`[...document.querySelectorAll('.coverage-stats > div:first-child strong')].reduce((sum,e)=>sum+(Number(e.textContent)||0),0)`),18);
+  }
   await evaluate(`document.querySelector('#period').value='all';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));`);
-  completed.push('Monthly filter and invalid custom date range');
+  completed.push('Header date filter persists across menus, validates custom ranges, and limits pulling to Platform');
   await click('[data-view="sentiment"]');assert.equal(await evaluate(`document.querySelectorAll('.recommendation').length`),6);
   await screenshot('sentiment-analysis.png');
   await click('[data-driver="Pendaftaran belum tuntas"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
@@ -96,11 +136,20 @@ try {
   await click('[data-close="detail-dialog"]');await click('[data-action="clear-group"]');await click('[data-sentiment="all"]');
   assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/64 ulasan/);
   await click('[data-page="next"]');assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/11–20/);
+  await evaluate(`document.querySelector('#page-size').value='all';document.querySelector('#page-size').dispatchEvent(new Event('change',{bubbles:true}));`);
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),64,'opsi Semua harus menampilkan seluruh baris tersimpan');
+  assert.match(await evaluate(`document.querySelector('.table-footer').textContent`),/Menampilkan 1–64 dari 64 ulasan/);
+  assert.equal(await evaluate(`document.querySelector('[data-page="next"]').disabled`),true);
+  await evaluate(`document.querySelector('#page-size').value='25';document.querySelector('#page-size').dispatchEvent(new Event('change',{bubbles:true}));`);
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),25);
+  assert.equal(await evaluate(`document.querySelector('.table-footer span').textContent.trim()`),'Menampilkan 1–25 dari 64 ulasan');
+  await evaluate(`document.querySelector('#page-size').value='10';document.querySelector('#page-size').dispatchEvent(new Event('change',{bubbles:true}));`);
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),10);
   await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`new Promise(resolve=>{const check=()=>document.querySelectorAll('tbody tr').length===1?resolve(true):requestAnimationFrame(check);check();})`);
   assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
   assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/64 ulasan tertulis unik/);
-  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/Play Store: 55 ulasan tertulis dari 74 penilaian/);
+  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/Play Store: 55 ulasan tertulis · 74 penilaian halaman toko/);
   for (const author of seedReviews.map(r=>r.author)) {
     await evaluate(`document.querySelector('#review-search').value=${JSON.stringify(author)};document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
     const found=await evaluate(`new Promise(resolve=>{const end=Date.now()+2500;function check(){const body=document.querySelector('tbody');if(body&&body.textContent.includes(${JSON.stringify(author)}))resolve(true);else if(Date.now()>end)resolve(false);else requestAnimationFrame(check);}check();})`);
@@ -115,29 +164,57 @@ try {
   const csv=await evaluate('window.__downloadText');assert.match(csv,/Bos AteQ/);assert.doesNotMatch(csv,/Tanamo/);
   completed.push('CSV export respects current search and filters');
   assert.equal(await evaluate(`document.querySelectorAll('[data-action="import"],input[type="file"],#import-dialog').length`),0);
+  assert.equal(await evaluate(`document.querySelectorAll('.heading-actions button').length`),0);
+  await click('[data-view="platforms"]');
   assert.equal(await evaluate(`document.querySelectorAll('.heading-actions button').length`),1);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.btn-primary')).borderRadius`),'4px');
   collectorMode='wait';await click('[data-action="analyze"]');
   assert.equal(await evaluate(`document.querySelector('[data-action="analyze"]').disabled`),true);
   while(!releasePull)await new Promise(resolve=>setImmediate(resolve));
+  await click('[data-view="reviews"]');
+  assert.equal(await evaluate(`document.querySelectorAll('[data-action="analyze"]').length`),0);
+  assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
+  await click('[data-view="platforms"]');
+  assert.equal(await evaluate(`document.querySelector('[data-action="analyze"]').disabled`),true);
   assert.equal(pulls,1);releasePull();
   const pullReady=()=>evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(!document.querySelector('[data-action="analyze"]').disabled)resolve(true);else if(Date.now()>end)reject(Error('Pull did not finish'));else requestAnimationFrame(check);}check();})`);
-  await pullReady();assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
-  assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis berhasil · 0 ulasan baru · 0 diperbarui · 64 tidak berubah/);
+  await pullReady();
+  assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis selesai sebagian · 0 ulasan baru · 0 diperbarui · 64 tidak berubah\. 2 dari 11 sumber berhasil dibaca/);
+  await click('[data-view="reviews"]');assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
   assert.equal(await evaluate(`document.querySelectorAll('.data-note,.local-card,.snapshot-indicator').length`),0);
-  completed.push('Single online pull action, loading lock and preserved filters');
+  const pullFromPlatform=async()=>{
+    const view=await evaluate(`document.querySelector('.nav-item[aria-current="page"]').dataset.view`);
+    await click('[data-view="platforms"]');
+    await click('[data-action="analyze"]');
+    await pullReady();
+    if(view!=='platforms')await click(`[data-view="${view}"]`);
+  };
+  completed.push('Platform-only online pull, loading lock across navigation and preserved filters');
   await click('[data-view="overview"]');
   const complaintRows=await evaluate(`[...document.querySelectorAll('[data-complaint]')].map(b=>({id:b.dataset.complaint,text:b.textContent}))`);
   assert.equal(complaintRows[0].id,'onboarding');assert.match(complaintRows[0].text,/8 ulasan/);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
   assert.equal(await evaluate(`document.querySelector('.complaint-bar').getBoundingClientRect().width>0`),true);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sample-rating')).display`),'grid');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.complaint-scale span')].map(e=>Number(e.textContent))`),[0,2,4,6,8]);
+  assert.equal(await evaluate(`Math.abs(document.querySelector('.complaint-scale').getBoundingClientRect().left-document.querySelector('.complaint-track').getBoundingClientRect().left)<1`),true);
+  assert.equal(await evaluate(`Math.abs(parseFloat(document.querySelector('[data-complaint="migration"] .complaint-bar').style.width)-62.5)<0.01`),true);
+  assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.is-general .complaint-bar')).backgroundColor`),await evaluate(`getComputedStyle(document.querySelector('.complaint-bar')).backgroundColor`));
+  await click('[data-complaint="general"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),3);
+  await click('[data-view="overview"]');
   await click('[data-complaint="onboarding"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
   await click('[data-view="overview"]');await click('[data-platform="appstore"]');
   assert.equal(await evaluate(`document.querySelectorAll('[data-complaint]').length`),0);
-  await click('[data-platform="all"]');completed.push('Ranked complaint chart, exact drilldown and no-complaint filter');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.rating-row')].filter(e=>e.querySelector('strong').textContent==='0').map(e=>e.querySelector('.rating-track span').getBoundingClientRect().width)`),[0,0,0,0]);
+  await click('[data-platform="all"]');completed.push('Ranked complaint chart, aligned count axis, exact drilldown and zero-value bars');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
+  await click('[data-view="overview"]');
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.complaint-bar')).animationName`),'none');
-  const noClip=selector=>evaluate(`[...document.querySelectorAll('${selector}')].filter(e=>e.scrollWidth>e.clientWidth+1).map(e=>e.textContent.trim().slice(0,40))`);
+  assert.equal(await evaluate(`new Set([...document.querySelectorAll('.chart-body .legend-swatch')].map(e=>getComputedStyle(e).backgroundColor)).size`),4);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.feature-bar .unclassified')).backgroundColor`),'rgb(41, 156, 219)');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.chart-body .legend-swatch')].map(e=>getComputedStyle(e).backgroundColor)`),['rgb(10, 179, 156)','rgb(240, 101, 72)','rgb(135, 138, 153)','rgb(41, 156, 219)']);
+  const noClip=selector=>evaluate(`[...document.querySelectorAll('${selector}')].filter(e=>e.getClientRects().length&&e.scrollWidth>e.clientWidth+1).map(e=>e.textContent.trim().slice(0,40))`);
   assert.deepEqual(await noClip('.metric-label,.card h2,.complaint-label,.driver h3,.platform-tab,.badge,.priority-count'),[],'teks terpotong di ringkasan');
   await screenshot('dashboard-desktop.png');
   await click('[data-view="platforms"]');assert.equal(await evaluate(`document.querySelectorAll('.coverage-card').length`),11);
@@ -146,18 +223,128 @@ try {
   assert.deepEqual(await noClip('.coverage-card h3,.source-facts dt,.source-facts dd,.coverage-state,.source-message'),[],'teks terpotong di cakupan platform');
   await click('[data-platform="instagram"]');assert.equal(await evaluate(`document.querySelectorAll('.coverage-card').length`),1);
   assert.match(await evaluate(`document.querySelector('.coverage-card h3').textContent`),/Instagram/);
-  await click('[data-platform="all"]');await screenshot('platform-coverage.png');await click('[data-view="overview"]');
+  await click('[data-platform="youtube"]');
+  assert.match(await evaluate(`document.querySelector('.coverage-state').textContent`),/Perlu konfigurasi API/);
+  assert.match(await evaluate(`document.querySelector('.source-message').textContent`),/YOUTUBE_API_KEY/);
+  assert.equal(await evaluate(`document.querySelector('.coverage-card').classList.contains('is-unavailable')`),true);
+  assert.match(await evaluate(`document.querySelector('.coverage-intro').textContent`),/bukan analisis media sosial/);
+  await click('[data-view="overview"]');assert.deepEqual(await metricValues(),['—','—','—','—']);
+  assert.match(await evaluate(`document.querySelector('.classification-note').textContent`),/Tidak tersedia bukan berarti nol keluhan/);
+  await click('[data-view="platforms"]');await click('[data-platform="all"]');await screenshot('platform-coverage.png');
+  const storeLayout=await evaluate(`[...document.querySelectorAll('[data-source-card="play"],[data-source-card="appstore"]')].map(card=>({
+    metrics:[...card.querySelectorAll('.coverage-stats strong')].map(e=>e.textContent),
+    metricsTop:card.querySelector('.coverage-stats').getBoundingClientRect().top,
+    titleRight:card.querySelector('.coverage-title').getBoundingClientRect().right,
+    statusLeft:card.querySelector('.coverage-state').getBoundingClientRect().left,
+    ratingSections:card.querySelectorAll('.coverage-rating-panel > .coverage-rating').length,
+    ratings:card.querySelector('.coverage-rating-panel').textContent,
+    scoreColor:getComputedStyle(card.querySelector('.coverage-score')).color,
+    totalColor:getComputedStyle(card.querySelector('.coverage-stats strong')).color,
+    factsSeparated:[...card.querySelectorAll('.source-facts > div')].every(row=>row.querySelector('dt').getBoundingClientRect().right<=row.querySelector('dd').getBoundingClientRect().left)
+  }))`);
+  assert.deepEqual(storeLayout.map(card=>card.metrics),[['55','+18,2'],['9','+100,0']]);
+  assert.ok(Math.abs(storeLayout[0].metricsTop-storeLayout[1].metricsTop)<1,'Store metrics must align across cards');
+  for(const card of storeLayout){assert.ok(card.statusLeft>=card.titleRight);assert.equal(card.ratingSections,2);assert.notEqual(card.scoreColor,card.totalColor);assert.equal(card.factsSeparated,true);}
+  assert.match(storeLayout[0].ratings,/3,64 \/ 5.*dari 55 ulasan/s);
+  assert.match(storeLayout[0].ratings,/4,0 \/ 5.*74 penilaian halaman toko/s);
+  assert.equal(await evaluate(`document.querySelectorAll('.is-unavailable .coverage-rating-panel').length`),0);
+  await evaluate(`document.querySelector('[data-source-card="play"] .coverage-scope summary').focus()`);
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+  assert.equal(await evaluate(`document.querySelector('[data-source-card="play"] .coverage-scope').open`),true);
+  assert.equal(await evaluate(`document.querySelector('[data-source-card="play"] .source-message').checkVisibility()`),true);
+  assert.match(await evaluate(`document.querySelector('[data-source-card="play"] .source-message').textContent`),/tidak berarti seluruh percakapan di internet/);
+  assert.match(await evaluate(`[...document.querySelectorAll('[data-source-card="play"] .source-facts dd')].map(e=>e.textContent).join(' | ')`),/2 halaman, 55 baris, tanpa batas sampel/);
+  assert.match(await evaluate(`[...document.querySelectorAll('[data-source-card="appstore"] .source-facts dd')].map(e=>e.textContent).join(' | ')`),/halaman ulasan 1 halaman, feed resmi 1 halaman, 9 ulasan dikonfirmasi dua jalur/);
+  await click('[data-source-card="play"] .coverage-scope summary');
+  await click('[data-view="overview"]');
+  completed.push('Compact Platform cards align headers and metrics, separate ratings, and retain keyboard-accessible source scope');
+  completed.push('Unconfigured social access is unavailable, not zero complaints or complete collection');
+  for (const width of [1920,1440,1280,1024,768,390,320]) {
+    await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<760});
+    for (const view of ['overview','sentiment','reviews','platforms']) {
+      await click(`[data-view="${view}"]`);
+      assert.equal(await evaluate(`document.activeElement.tagName`),'H1');
+      assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,`${view} overflows at ${width}px`);
+      assert.equal(await evaluate(`new Set([...document.querySelectorAll('.platform-tab')].map(e=>Math.round(e.getBoundingClientRect().top))).size`),1,`${view}: platform rows at ${width}px`);
+      assert.equal(await evaluate(`document.querySelectorAll('.platform-tab').length`),12);
+      assert.deepEqual(await noClip('.metric-label,.card h2,.complaint-label,.complaint-value,.driver h3,.source-facts dt,.source-facts dd,.platform-tab,.badge,.priority-count,.distribution-item'),[],`${view}: clipped text at ${width}px`);
+      if(width<=480&&(view==='overview'||view==='sentiment'))assert.equal(await evaluate(`(() => {const values=[...document.querySelectorAll('.metric-value')].map(e=>e.offsetTop);return Math.abs(values[0]-values[1])<1&&Math.abs(values[2]-values[3])<1;})()`),true,`${view}: metric alignment at ${width}px`);
+      assert.equal(await evaluate(`document.querySelectorAll('#period').length`),1);
+      assert.equal(await evaluate(`document.querySelectorAll('.heading-actions #period').length`),1);
+      assert.equal(await evaluate(`document.querySelectorAll('[data-action="analyze"]').length`),view==='platforms'?1:0,`${view}: pull action visibility at ${width}px`);
+      assert.deepEqual(await noClip('.heading-actions,.range-button,.heading-actions .btn'),[],`${view}: heading controls clipped at ${width}px`);
+      assert.equal(await evaluate(`document.querySelector('.range-button').getBoundingClientRect().bottom<=document.querySelector('.platform-filter').getBoundingClientRect().top`),true,`${view}: period belongs above platform tabs at ${width}px`);
+      if(view==='platforms') {
+        const aligned=await evaluate(`(() => {const period=document.querySelector('.range-button').getBoundingClientRect(),pull=document.querySelector('[data-action="analyze"]').getBoundingClientRect();return {beside:pull.left>=period.right-1&&Math.abs(pull.top-period.top)<1,below:pull.top>=period.bottom};})()`);
+        assert.equal(width>480?aligned.beside:aligned.beside||aligned.below,true,`Date and pull action alignment at ${width}px`);
+      }
+      const selected=await evaluate(`(() => { const last=document.querySelector('.platform-tabs .platform-tab:last-child');const id=last.dataset.platform;last.focus({preventScroll:true});last.click();return id; })()`);
+      assert.equal(await evaluate(`document.activeElement.dataset.platform`),selected);
+      assert.equal(await evaluate(`(() => {const selected=document.querySelector('.platform-tab.active').getBoundingClientRect(),tabs=document.querySelector('.platform-tabs').getBoundingClientRect();return selected.left>=tabs.left-1&&selected.right<=tabs.right+1;})()`),true,`${view}: selected platform hidden at ${width}px`);
+      await click('[data-platform="all"]');
+      if(view==='overview')assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-value small')).display`)==='none',false);
+      if(view==='reviews') {
+        assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/kelengkapan seluruh ulasan di internet belum dapat dipastikan/);
+        assert.doesNotMatch(await evaluate(`document.querySelector('.scope-note').textContent`),/Seluruh teks publik yang dapat diakses telah dimuat/);
+        assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.unfilled-stars')).color`),await evaluate(`getComputedStyle(document.querySelector('.stars')).color`));
+        if(width===1440)await screenshot('reviews-desktop.png');
+      }
+      if(view==='platforms') {
+        assert.equal(await evaluate(`[...document.querySelectorAll('.coverage-state')].every(e=>getComputedStyle(e.querySelector('.dot')).backgroundColor===getComputedStyle(e).color)`),true);
+        assert.deepEqual(await noClip('.coverage-header,.coverage-title h3,.coverage-state,.coverage-rating-value,.coverage-rating h4,.coverage-stats small,.coverage-stats strong'),[],`Platform card clipping at ${width}px`);
+        assert.equal(await evaluate(`[...document.querySelectorAll('.coverage-header')].every(header=>{const title=header.querySelector('.coverage-title').getBoundingClientRect(),status=header.querySelector('.coverage-state').getBoundingClientRect();return status.left>=title.right-1||status.top>=title.bottom-1;})`),true,`Platform header overlap at ${width}px`);
+        if(width<=390)assert.equal(await evaluate(`[...document.querySelectorAll('.is-unavailable .coverage-header')].every(header=>header.querySelector('.coverage-state').getBoundingClientRect().top>=header.querySelector('.coverage-title').getBoundingClientRect().bottom)`),true,`Long source status must sit below mobile title at ${width}px`);
+      }
+    }
+  }
+  await click('[data-view="overview"]');
+  await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await click('[data-view="overview"]');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-bar')).animationName`),'none');
+  assert.equal(await evaluate(`document.querySelector('[data-scroll-platforms="prev"]').disabled`),true);
+  await click('[data-scroll-platforms="next"]');
+  assert.equal(await evaluate(`document.querySelector('.platform-tabs').scrollLeft>0`),true);
+  await click('[data-scroll-platforms="prev"]');
+  assert.equal(await evaluate(`document.querySelector('.platform-tabs').scrollLeft`),0);
+  assert.equal(await evaluate(`document.querySelector('.chart-body').tabIndex`),0);
+  await evaluate(`document.querySelector('.chart-body').focus()`);
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
+  assert.equal(await evaluate(`new Promise(resolve=>{const end=Date.now()+2000;function check(){if(document.querySelector('.chart-body').scrollLeft>0)resolve(true);else if(Date.now()>end)resolve(false);else requestAnimationFrame(check);}check();})`),true);
+  await evaluate(`document.querySelector('[data-platform="all"]').focus()`);
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+  assert.equal(await evaluate(`document.activeElement.dataset.platform`),'play');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+  assert.equal(await evaluate(`document.querySelector('.platform-tab.active').dataset.platform`),'play');
+  assert.equal(await evaluate(`document.activeElement.dataset.platform`),'play');
+  await click('[data-platform="all"]');
+  await send('Emulation.setEmulatedMedia',{features:[]});
+  completed.push('All four menus at seven widths, single-row platform controls, keyboard operation, semantic colors and reduced motion');
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await send('Page.reload');await ready();
   await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.getAttribute('aria-label'))`),navigationLabels);
+  assert.equal(await evaluate(`document.querySelectorAll('[data-view="methodology"],.profile,.profile-avatar,.avatar-light,.sidebar-bottom').length`),0);
+  await click('[data-view="reviews"]');
+  assert.equal(await evaluate(`document.querySelector('h1').textContent`),'Review');
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),10);
+  await click('[data-view="platforms"]');
+  assert.equal(await evaluate(`document.querySelector('h1').textContent`),'Platform');
+  assert.equal(await evaluate(`document.querySelectorAll('.coverage-card').length`),11);
+  await screenshot('platform-mobile.png');
+  await click('[data-view="overview"]');
+  assert.equal(await evaluate(`document.querySelector('.breadcrumb strong').textContent`),'Dashboard');
   assert.equal(await evaluate(`document.documentElement.scrollWidth`),390);
   assert.equal(await evaluate(`window.innerWidth`),390);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
   assert.equal(await evaluate(`document.querySelector('.complaint-bar').getBoundingClientRect().width>0`),true);
   await screenshot('dashboard-mobile.png');completed.push('Platform coverage and mobile layout without page overflow');
-  collectorMode='new';await click('[data-action="analyze"]');await pullReady();
+  collectorMode='new';await pullFromPlatform();
   assert.equal((await metricValues())[0],'65');
-  await click('[data-action="analyze"]');await pullReady();assert.equal((await metricValues())[0],'65');
+  await pullFromPlatform();assert.equal((await metricValues())[0],'65');
   await send('Page.reload');await ready();
   await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.metric-value').textContent==='65')resolve(true);else if(Date.now()>end)reject(Error('Stored data not loaded'));else requestAnimationFrame(check);}check();})`);
   await click('[data-view="reviews"]');
@@ -167,12 +354,42 @@ try {
   assert.equal(await evaluate('Boolean(window.__xss)'),false);assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog script,#detail-dialog img').length`),0);
   assert.match(await evaluate(`document.querySelector('.detail-author').textContent`),/N\/A/);
   await click('[data-close="detail-dialog"]');await click('[data-view="overview"]');
-  collectorMode='error';await click('[data-action="analyze"]');await pullReady();
+  collectorMode='error';await pullFromPlatform();
   assert.equal((await metricValues())[0],'65');assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis gagal/);
   await click('[data-view="platforms"]');assert.match(await evaluate(`document.querySelector('.coverage-grid').textContent`),/Koneksi uji gagal/);
-  completed.push('Online batch deduplication, server persistence, missing metadata, XSS escaping and failed refresh history');
+  assert.equal(await evaluate(`document.querySelector('[data-source-card="play"] .source-message').checkVisibility()`),true,'Failed source status must not be collapsed');
+  await click('[data-view="reviews"]');assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/Gagal/);
+  assert.doesNotMatch(await evaluate(`document.querySelector('.scope-note').textContent`),/Seluruh teks publik yang dapat diakses telah dimuat/);
+  completed.push('Online batch deduplication, server persistence, missing metadata, XSS escaping and persistent failed-refresh status');
+  collectorMode='social';await pullFromPlatform();
+  await click('[data-view="overview"]');await click('[data-platform="youtube"]');
+  assert.deepEqual(await metricValues(),['4','0,0%','100,0%','-100,0']);
+  assert.match(await evaluate(`document.querySelector('.classification-note').textContent`),/1 teks di luar penilaian pelanggan/);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
+  await click('[data-view="platforms"]');
+  assert.match(await evaluate(`document.querySelector('.coverage-card').textContent`),/1 teks di luar penilaian pelanggan; 1 komentar belum jelas relevansinya/);
+  await click('[data-open-platform="youtube"]');
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),4);
+  await click('[data-review="youtube|yt-a"]');
+  assert.equal(await evaluate(`document.querySelector('.detail-text').textContent`),'wondr merchant login gagal');
+  assert.match(await evaluate(`document.querySelector('.dialog-body').textContent`),/Konteks video, bukan sentimen/);
+  assert.match(await evaluate(`document.querySelector('.dialog-body').textContent`),/2026-10-23T12:30:00Z/);
+  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog script').length`),0);
+  assert.equal(await evaluate('Boolean(window.__xss)'),false);
+  await click('[data-close="detail-dialog"]');
+  await click('[data-review="youtube|yt-owner"]');
+  assert.match(await evaluate(`document.querySelector('.dialog-body').textContent`),/Di luar penilaian pelanggan/);
+  await click('[data-close="detail-dialog"]');
+  collectorMode='social-missing';await pullFromPlatform();
+  await click('[data-view="platforms"]');
+  assert.match(await evaluate(`document.querySelector('.coverage-state').textContent`),/Perlu konfigurasi API/);
+  assert.equal(await evaluate(`document.querySelector('.coverage-card').classList.contains('is-unavailable')`),false);
+  assert.equal(await evaluate(`document.querySelector('.coverage-stats strong').textContent`),'4');
+  await click('[data-view="overview"]');assert.deepEqual(await metricValues(),['4','0,0%','100,0%','-100,0']);
+  await click('[data-platform="play"]');assert.equal((await metricValues())[0],'56');
+  completed.push('Social fixtures preserve all IDs and context, exclude owner promotion from sentiment, and survive missing API access');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','sentiment-analysis.png','platform-coverage.png','dashboard-mobile.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','sentiment-analysis.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();

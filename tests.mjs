@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { seedReviews } from './data.js';
-import { summary, filterReviews, timeline, upsertReviews, classifyText, complaintStats, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
+import { seedReviews, platforms } from './data.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
 import { createDashboardServer } from './server.mjs';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get } from 'node:http';
-import { parseGoogleListing, parseGoogleReviews, parseApplePage, parsePlayInstalls, collectGoogle } from './collectors.mjs';
+import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube } from './collectors.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
 test('baseline totals include both stores and preserve neutral denominator', () => {
@@ -41,6 +41,16 @@ test('driver counts deduplicate multiple tags within a group',()=>{
 test('weekly and monthly chart bins preserve all review totals',()=>{
   for(const mode of ['week','month']){const bins=timeline(seedReviews,mode);assert.equal(bins.reduce((s,b)=>s+b.positive+b.negative+b.neutral,0),64);}
   assert.deepEqual(timeline([]),[]);
+});
+test('displayed timeline mode matches automatic aggregation beyond one year',()=>{
+  const rows=[{date:'2024-01-01',sentiment:'positive'},{date:'2026-10-23',sentiment:'negative'},{date:null,sentiment:'neutral'}];
+  assert.equal(timelineMode(rows,'week'),'month');
+  assert.equal(timelineMode(seedReviews,'week'),'week');
+  assert.equal(timelineMode(seedReviews,'month'),'month');
+  assert.equal(timelineMode([],'week'),'week');
+  const bins=timeline(rows,'week');
+  assert.ok(bins.every(bin=>bin.date.endsWith('-01')));
+  assert.equal(bins.reduce((sum,bin)=>sum+bin.positive+bin.negative+bin.neutral,0),2);
 });
 test('online text classification is explicit and never falls back to stars',()=>{
   assert.equal(classifyText(sample.text).sentiment,'negative');
@@ -133,6 +143,27 @@ test('online API preserves history across partial success, failure and restart',
     assert.equal(blocked,403);
   }finally{if(server.listening)await close();await rm(dir,{recursive:true,force:true});}
 });
+test('local Poppins fonts retain their license and use the explicit asset allowlist',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'wondr-font-test-'));
+  const server=await createDashboardServer({storagePath:join(dir,'data.json')});
+  try{
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const url=`http://127.0.0.1:${server.address().port}`;
+    for(const weight of [400,500,600,700]){
+      const response=await fetch(`${url}/assets/fonts/poppins-latin-${weight}-normal.woff2`);
+      assert.equal(response.status,200);
+      assert.equal(response.headers.get('content-type'),'font/woff2');
+      assert.equal(Buffer.from(await response.arrayBuffer()).subarray(0,4).toString(),'wOF2');
+    }
+    const license=await fetch(url+'/assets/fonts/Poppins-OFL.txt');
+    assert.equal(license.status,200);
+    assert.match(await license.text(),/SIL OPEN FONT LICENSE Version 1.1/);
+    const head=await fetch(url+'/assets/fonts/poppins-latin-400-normal.woff2',{method:'HEAD'});
+    assert.equal(head.status,200);assert.equal(await head.text(),'');
+    assert.equal((await fetch(url+'/assets/fonts/unlisted.woff2')).status,404);
+    assert.equal((await fetch(url+'/online-data.json')).status,404);
+  }finally{await new Promise(resolve=>server.close(resolve));await rm(dir,{recursive:true,force:true});}
+});
 const rpcFixture = (reviews,cursor=null) => `)]}'\n\n${JSON.stringify([['wrb.fr','oCPfdb',JSON.stringify([reviews,cursor?[null,cursor]:null])]])}\n`;
 const googleRow=['unit-test-only',['Fixture'],2,null,'Login gagal',[1792713600,0]];
 const googleRowB=['pool-shared',['Fixture'],5,null,'Aplikasi bagus',[1792713600,0]];
@@ -184,5 +215,729 @@ test('Google collector reads both review pools and merges them without double co
   assert.equal(result.fetched,3);
   assert.deepEqual(result.reviews.map(r=>r.id).sort(),['pool-en-only','pool-shared','unit-test-only']);
   assert.match(result.message,/2 ulasan kumpulan bahasa Indonesia dan 1 ulasan kumpulan bahasa Inggris/);
-  assert.match(result.message,/70 penilaian tidak menyertakan teks/);
+  assert.match(result.message,/73 penilaian, sedangkan 3 muncul sebagai ulasan berteks|73 penilaian, sedangkan daftar ulasan publik menampilkan 3 ulasan berteks/);
+  assert.doesNotMatch(result.message,/tidak menyertakan teks sehingga nama dan isinya tidak tersedia/);
+  assert.equal(result.coverage.sampleLimit,null);
+  assert.deepEqual(result.coverage.pools.map(p=>[p.hl,p.pagesRead,p.rows]),[['id',1,2],['en',1,2]]);
+});
+const googleCursorToken = body => JSON.parse(JSON.parse(new URLSearchParams(body).get('f.req'))[0][0][1])[1][2][2] ?? null;
+test('Google pagination continues past the former ten-page cap without a sample limit',async()=>{
+  const pages=[];
+  const result=await collectGoogle(async(url,options)=>{
+    if(String(url).startsWith('https://play.google.com/store/apps/details'))return new Response(listingFixture);
+    const hl=new URL(url).searchParams.get('hl');
+    const token=googleCursorToken(options.body);
+    pages.push(`${hl}:${token ?? 'first'}`);
+    if(hl!=='id')return new Response(rpcFixture([]));
+    const index=token===null?0:Number(token.slice(5));
+    const row=[`row-id-${index}`,['Fixture'],5,null,'Aplikasi bagus',[1792713600,0]];
+    return index<13?new Response(rpcFixture([row],`page-${index+1}`)):new Response(rpcFixture([row]));
+  });
+  assert.equal(pages.filter(entry=>entry.startsWith('id:')).length,14,'halaman kumpulan Indonesia harus dibaca seluruhnya');
+  assert.equal(result.coverage.pools.find(p=>p.hl==='id').pagesRead,14);
+  assert.equal(result.coverage.pagesRead,15);
+  assert.equal(result.fetched,14);
+  assert.equal(result.status,'success');
+  assert.match(result.message,/kolektor tidak memiliki batas jumlah sampel/);
+});
+test('A failing first review pool still lets the second pool be read',async()=>{
+  const requested=[];
+  const result=await collectGoogle(async url=>{
+    if(String(url).startsWith('https://play.google.com/store/apps/details'))return new Response(listingFixture);
+    const hl=new URL(url).searchParams.get('hl');
+    requested.push(hl);
+    if(hl==='id')throw new Error('fixture disconnect');
+    return new Response(rpcFixture([googleRowB,googleRowC]));
+  });
+  assert.deepEqual(requested,['id','en'],'kumpulan kedua tidak boleh dibatalkan oleh kegagalan kumpulan pertama');
+  assert.equal(result.status,'partial');
+  assert.equal(result.fetched,2);
+  assert.match(result.message,/kumpulan bahasa Indonesia: network_error/);
+  assert.match(result.message,/2 ulasan kumpulan bahasa Inggris/);
+});
+const appleReviewFixture={$kind:'Review',id:'14696447164',reviewerName:'okerbk',title:'Fresh & helpful',contents:'Suka bgt sama appsnya',rating:5,date:'2026-10-22T09:02:33.000Z'};
+const appleEntryFixture={id:{label:'14696447164'},author:{name:{label:'okerbk'}},title:{label:'Fresh & helpful'},content:{label:'Suka bgt sama appsnya'},'im:rating':{label:'5'},updated:{label:'2026-10-22T02:02:33-07:00'}};
+const appleFeedOnlyFixture={id:{label:'14000000001'},author:{name:{label:'pengguna-lain'}},title:{label:'Lain'},content:{label:'Pencairan lambat'},'im:rating':{label:'2'},updated:{label:'2026-09-01T01:02:03-07:00'}};
+const applePage=(rows,next=null)=>`<script id="serialized-server-data" type="application/json">${JSON.stringify({data:[{intent:{id:'6741567238',storefront:'id'},data:{shelfMapping:{allProductReviews:{items:rows,url:next},productRatings:{items:[{productId:'6741567238',ratingAverage:4.8,totalNumberOfRatings:17}]}}}}]})}</script>`;
+const appleFeed=entries=>JSON.stringify({feed:{id:{label:'https://itunes.apple.com/id/rss/customerreviews'},entry:entries}});
+test('Apple collector reads the public review page and the official customer-review feed together',async()=>{
+  const requested=[];
+  const result=await collectApple(async url=>{
+    requested.push(String(url));
+    if(url.startsWith('https://apps.apple.com'))return new Response(applePage([{review:appleReviewFixture}]));
+    if(url.includes('page=1/'))return new Response(appleFeed([appleEntryFixture,appleFeedOnlyFixture]));
+    if(url.includes('page=2/'))return new Response(appleFeed([]));
+    throw new Error('unexpected '+url);
+  });
+  assert.equal(result.status,'success');
+  assert.equal(result.fetched,2);
+  assert.equal(result.coverage.shelfReviews,1);
+  assert.equal(result.coverage.feedReviews,2);
+  assert.equal(result.coverage.sharedReviews,1);
+  assert.equal(result.coverage.feedOnly,1);
+  assert.equal(result.coverage.sampleLimit,null);
+  assert.deepEqual(result.reviews.map(r=>r.id).sort(),['apple-14000000001','apple-14696447164']);
+  const feedOnly=result.reviews.find(r=>r.id==='apple-14000000001');
+  assert.match(feedOnly.provenance,/hanya dikembalikan feed ulasan pelanggan publik Apple/);
+  assert.equal(feedOnly.rating,2);
+  assert.equal(feedOnly.date,'2026-09-01');
+  assert.equal(result.reviews.find(r=>r.id==='apple-14696447164').publishedAt,'2026-10-22T09:02:33.000Z','jalur halaman tidak boleh ditimpa bentuk waktu jalur lain');
+  assert.match(result.message,/dua jalur publik sekaligus/);
+  assert.match(result.message,/17 penilaian, sedangkan 2 muncul sebagai ulasan berteks/);
+  assert.ok(requested.some(url=>url.includes('itunes.apple.com/id/rss/customerreviews')));
+});
+test('Apple page failure keeps feed results and reports the run as partial',async()=>{
+  const result=await collectApple(async url=>{
+    if(url.startsWith('https://apps.apple.com'))throw new Error('fixture disconnect');
+    if(url.includes('page=1/'))return new Response(appleFeed([appleFeedOnlyFixture]));
+    if(url.includes('page=2/'))return new Response(appleFeed([]));
+    throw new Error('unexpected '+url);
+  });
+  assert.equal(result.status,'partial');
+  assert.equal(result.fetched,1);
+  assert.match(result.message,/halaman ulasan: network_error/);
+});
+test('Apple continuation is followed only while it stays on this app public page',async()=>{
+  const requested=[];
+  const result=await collectApple(async url=>{
+    requested.push(String(url));
+    if(url.startsWith('https://apps.apple.com')){
+      if(url.includes('page=two'))return new Response(applePage([{review:{...appleReviewFixture,id:'14696447165',contents:'Halaman kedua'}}]));
+      return new Response(applePage([{review:appleReviewFixture}],'https://example.com/id/app/other/id6741567238?see-all=reviews'));
+    }
+    if(url.includes('page=1/'))return new Response(appleFeed([appleEntryFixture]));
+    if(url.includes('page=2/'))return new Response(appleFeed([]));
+    throw new Error('unexpected '+url);
+  });
+  assert.equal(result.status,'partial','tautan lanjutan yang ditolak tidak boleh dianggap selesai');
+  assert.equal(requested.filter(url=>url.startsWith('https://apps.apple.com')).length,1,'host asing tidak boleh diambil');
+  assert.ok(!requested.some(url=>url.includes('example.com')));
+  assert.match(result.message,/continuation_error/);
+  assert.equal(result.coverage.shelfReviews,1);
+});
+test('Apple continuation link is followed when it stays on the same public app page',async()=>{
+  const result=await collectApple(async url=>{
+    if(url.startsWith('https://apps.apple.com')){
+      if(url.includes('page=two'))return new Response(applePage([{review:{...appleReviewFixture,id:'14696447165',contents:'Pencairan lambat'}}]));
+      return new Response(applePage([{review:appleReviewFixture}],'/id/app/wondr-merchant-by-bni/id6741567238?see-all=reviews&page=two'));
+    }
+    if(url.includes('page=1/'))return new Response(appleFeed([appleEntryFixture]));
+    if(url.includes('page=2/'))return new Response(appleFeed([]));
+    throw new Error('unexpected '+url);
+  });
+  assert.equal(result.status,'success');
+  assert.equal(result.coverage.shelfPages,2);
+  assert.equal(result.fetched,2);
+  assert.deepEqual(result.reviews.map(r=>r.id).sort(),['apple-14696447164','apple-14696447165']);
+});
+test('Apple feed parser rejects a changed structure instead of reporting zero reviews',()=>{
+  assert.throws(()=>parseAppleRss('bukan json'),/parse_error/);
+  assert.throws(()=>parseAppleRss(JSON.stringify({feed:{entry:[{id:{label:'1'},content:{label:5}}]}})),/parse_error/);
+  assert.deepEqual(parseAppleRss(appleFeed([])).reviews,[]);
+  assert.equal(parseAppleRss(appleFeed([appleEntryFixture])).reviews[0].id,'apple-14696447164');
+});
+
+// Synthetic API fixtures stay in memory or temporary storage; no collector may use live fetch.
+const youtubeTestKey = 'test-only';
+const youtubeId = n => `fixture${String(n).padStart(4,'0')}`;
+const youtubeTime = '2026-10-23T08:30:52.123Z';
+const youtubeVideo = (id = youtubeId(1), snippet = {}) => ({
+  id, snippet: { title:'wondr merchant by BNI', description:'Unit-test video metadata', channelId:'fixture-owner', ...snippet },
+});
+const youtubeComment = (id, text = 'Wondr merchant saya gagal login.', snippet = {}) => ({
+  id, snippet: { textDisplay:text, textOriginal:'Different original text; do not substitute', authorDisplayName:'Fixture viewer', authorChannelId:{value:'fixture-viewer'}, publishedAt:youtubeTime, updatedAt:youtubeTime, likeCount:123, ...snippet },
+});
+const youtubeThread = (comment, { videoId = youtubeId(1), replies = 0, preview = [] } = {}) => ({
+  id:`thread-${comment.id}`, snippet:{videoId,totalReplyCount:replies,topLevelComment:comment}, replies:{comments:preview},
+});
+const youtubeSearchItem = id => ({id:{videoId:id},snippet:{title:'Unverified search title',description:'Not authoritative metadata'}});
+const youtubeStep = (resource, params, items, nextPageToken) => ({
+  resource, params, payload:{items,...(nextPageToken === undefined ? {} : {nextPageToken})},
+});
+const youtubeDefaults = {
+  search:{part:'snippet',type:'video',q:'"wondr merchant"',maxResults:'50',order:'date'},
+  videos:{part:'snippet'},
+  commentThreads:{part:'snippet',maxResults:'100',textFormat:'plainText',order:'time'},
+  comments:{part:'snippet',maxResults:'100',textFormat:'plainText'},
+};
+function youtubeMock(steps) {
+  const calls = [], violations = [];
+  return {
+    fetcher:async (input, options) => {
+      const step = steps[calls.length];
+      calls.push(String(input));
+      try {
+        assert.ok(step, `Unexpected mock request: ${new URL(input).pathname}`);
+        const url = new URL(input);
+        assert.equal(url.origin,'https://www.googleapis.com');
+        assert.equal(url.pathname,`/youtube/v3/${step.resource}`);
+        assert.deepEqual(Object.fromEntries(url.searchParams),{...youtubeDefaults[step.resource],...step.params});
+        assert.equal(url.searchParams.has('key'),false);
+        assert.equal(url.href.includes(youtubeTestKey),false);
+        assert.deepEqual([...new Headers(options.headers)],[['x-goog-api-key',youtubeTestKey]]);
+        assert.equal(options.redirect,'error');
+        assert.ok(options.signal instanceof AbortSignal);
+      } catch (error) { violations.push(error); throw error; }
+      if (step.error) throw step.error;
+      return new Response(step.raw ?? JSON.stringify(step.payload),{status:step.status ?? 200});
+    },
+    done:() => {
+      // Fetch assertions must survive the collector's intentional error handling.
+      if (violations.length) throw violations[0];
+      assert.equal(calls.length,steps.length,'Every scripted API page must be requested');
+    },
+  };
+}
+async function runYouTube(steps, videoIds = [youtubeId(1)]) {
+  const mock = youtubeMock(steps);
+  const config = youtubeConfiguration({YOUTUBE_API_KEY:youtubeTestKey,YOUTUBE_VIDEO_IDS:videoIds.join(',')});
+  const result = await collectYouTube(mock.fetcher,config);
+  mock.done();
+  assert.equal(JSON.stringify(result).includes(youtubeTestKey),false,'API secrets must not reach collector output');
+  return result;
+}
+const youtubeRecord = (id, text, extra = {}) => ({
+  id, platform:'youtube', author:'Fixture viewer', date:'2026-10-23', publishedAt:youtubeTime, updatedAt:youtubeTime,
+  text, rating:null, sourceUrl:`https://www.youtube.com/watch?v=${youtubeId(1)}&lc=${encodeURIComponent(id)}`,
+  parentId:null, authorChannelId:'fixture-viewer', context:{videoId:youtubeId(1),title:'wondr merchant by BNI',description:'Fixture only',channelId:'fixture-owner',product:'wondr-merchant'},
+  provenance:'Unit-test fixture only', ...extra,
+});
+const assertTimestamp = value => assert.match(value,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+test('YouTube configuration validates IDs and never fetches without usable configuration',async t => {
+  const ready = youtubeConfiguration({YOUTUBE_API_KEY:` ${youtubeTestKey} `,YOUTUBE_VIDEO_IDS:`${youtubeId(1)}, ${youtubeId(2)}\n${youtubeId(1)}`});
+  assert.equal(ready.status,'ready');
+  assert.equal(ready.apiKey,youtubeTestKey);
+  assert.deepEqual(ready.videoIds,[youtubeId(1),youtubeId(2)]);
+  assert.equal(ready.message.includes(youtubeTestKey),false);
+  const search = youtubeConfiguration({YOUTUBE_API_KEY:youtubeTestKey});
+  assert.equal(search.status,'ready');assert.deepEqual(search.videoIds,[]);
+  for (const [name,env] of [
+    ['missing key',{}], ['blank key',{YOUTUBE_API_KEY:'  '}],
+    ['missing key with IDs',{YOUTUBE_VIDEO_IDS:youtubeId(1)}],
+    ['short ID',{YOUTUBE_API_KEY:youtubeTestKey,YOUTUBE_VIDEO_IDS:'short'}],
+    ['video URL instead of ID',{YOUTUBE_API_KEY:youtubeTestKey,YOUTUBE_VIDEO_IDS:`https://youtube.com/watch?v=${youtubeId(1)}`}],
+    ['mixed valid and invalid IDs',{YOUTUBE_API_KEY:youtubeTestKey,YOUTUBE_VIDEO_IDS:`${youtubeId(1)},invalid!`}],
+  ]) await t.test(name,async () => {
+    let requests = 0;
+    const config = youtubeConfiguration(env);
+    const result = await collectYouTube(async () => { requests++; throw new Error('No request permitted'); },config);
+    assert.equal(config.status,'needs_setup');assert.equal(requests,0);
+    assert.deepEqual(result,{id:'youtube',status:'needs_setup',fetched:null,message:config.message,reviews:[]});
+    assert.equal(JSON.stringify(result).includes(youtubeTestKey),false);
+  });
+});
+
+test('YouTube traverses every search page, twelve comment pages and actual paginated replies',async () => {
+  const [first,second] = [youtubeId(1),youtubeId(2)];
+  const steps = [
+    youtubeStep('search',{},[youtubeSearchItem(first)],'search-2'),
+    youtubeStep('search',{pageToken:'search-2'},[youtubeSearchItem(first),youtubeSearchItem(second)],'search-3'),
+    youtubeStep('search',{pageToken:'search-3'},[]),
+    youtubeStep('videos',{id:`${first},${second}`},[youtubeVideo(first),youtubeVideo(second)]),
+  ];
+  const expected = [];
+  for (let page = 0; page < 12; page++) {
+    const comment = youtubeComment(`top-${page}`);
+    expected.push(comment.id);
+    steps.push(youtubeStep('commentThreads',{videoId:first,...(page ? {pageToken:`thread-${page}`} : {})},[
+      youtubeThread(comment,{replies:page === 0 ? 3 : 0,preview:page === 0 ? [youtubeComment('preview-only','Stale truncated preview')] : []}),
+    ],page < 11 ? `thread-${page+1}` : undefined));
+    if (page === 0) {
+      const replies = ['reply-a','reply-b','reply-c'].map(id => youtubeComment(id,`Actual ${id}`,{parentId:comment.id}));
+      expected.push(...replies.map(reply => reply.id));
+      steps.push(youtubeStep('comments',{parentId:comment.id},replies.slice(0,1),'replies-2'));
+      steps.push(youtubeStep('comments',{parentId:comment.id,pageToken:'replies-2'},replies));
+    }
+  }
+  for (let page = 0; page < 2; page++) {
+    const comment = youtubeComment(`second-${page}`);
+    expected.push(comment.id);
+    steps.push(youtubeStep('commentThreads',{videoId:second,...(page ? {pageToken:'second-page'} : {})},[youtubeThread(comment,{videoId:second})],page ? undefined : 'second-page'));
+  }
+  const result = await runYouTube(steps,[]);
+  assert.equal(result.status,'success');assert.equal(result.fetched,17);
+  assert.deepEqual(result.reviews.map(r => r.id).sort(),expected.sort());
+  assert.equal(result.reviews.some(r => r.id === 'preview-only'),false);
+  for (const reply of result.reviews.filter(r => r.parentId)) {
+    assert.equal(reply.parentId,'top-0');assert.equal(reply.text,`Actual ${reply.id}`);
+  }
+  assert.deepEqual(result.scope,{mode:'search',query:'"wondr merchant"',discoveredVideos:2,relevantVideos:2,completedVideos:2,pagesRead:steps.length,paginationComplete:true});
+  assert.deepEqual(result.issues,[]);
+  assert.match(result.message,/bukan seluruh percakapan YouTube/);
+});
+
+test('YouTube resolves all discovered video metadata in batches beyond fifty IDs',async () => {
+  const ids = Array.from({length:51},(_,i) => youtubeId(i+1));
+  const steps = [
+    youtubeStep('search',{},ids.slice(0,50).map(youtubeSearchItem),'next'),
+    youtubeStep('search',{pageToken:'next'},[youtubeSearchItem(ids[0]),youtubeSearchItem(ids[50])]),
+  ];
+  for (const batch of [ids.slice(0,50),ids.slice(50)]) {
+    steps.push(youtubeStep('videos',{id:batch.join(',')},batch.map(id => youtubeVideo(id))));
+    for (const id of batch) steps.push(youtubeStep('commentThreads',{videoId:id},[]));
+  }
+  const result = await runYouTube(steps,[]);
+  assert.equal(result.status,'success');assert.equal(result.fetched,0);
+  assert.equal(result.scope.discoveredVideos,51);assert.equal(result.scope.relevantVideos,51);
+  assert.equal(result.scope.completedVideos,51);assert.equal(result.scope.pagesRead,55);
+  assert.equal(result.scope.paginationComplete,true);
+});
+
+test('YouTube preserves exact display text, missing metadata, timestamps and provenance without invented metrics',async () => {
+  const rawText = '  wondr merchant\r\n\tbagus <b>literal</b> &amp; e\u0301\u00a0  ';
+  const comments = [
+    youtubeComment('raw /?&',rawText,{authorDisplayName:'  Original name  ',publishedAt:'2026-10-22T23:45:06.789-05:00',updatedAt:youtubeTime}),
+    youtubeComment('missing-metadata','apa ini',{authorDisplayName:undefined,authorChannelId:undefined,publishedAt:undefined,updatedAt:undefined}),
+    youtubeComment('blank-author','apa ini',{authorDisplayName:''}),
+    youtubeComment('whitespace',' \n\t '),youtubeComment('empty-text',''),
+  ];
+  const before = Date.now();
+  const result = await runYouTube([
+    youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]),
+    youtubeStep('commentThreads',{videoId:youtubeId(1)},comments.map(comment => youtubeThread(comment))),
+  ]);
+  const after = Date.now();
+  assert.equal(result.status,'success');assert.equal(result.fetched,comments.length);
+  for (let i = 0; i < comments.length; i++) {
+    const record = result.reviews[i], original = comments[i].snippet;
+    assert.equal(record.id,comments[i].id);assert.equal(record.text,original.textDisplay);
+    assert.equal(record.author,original.authorDisplayName || 'N/A');
+    assert.equal(record.rating,null);assert.equal(record.date,original.publishedAt?.slice(0,10) ?? null);
+    assert.equal(record.publishedAt,original.publishedAt ?? null);assert.equal(record.updatedAt,original.updatedAt ?? null);
+    assert.equal(record.authorChannelId,original.authorChannelId?.value ?? null);assert.equal(record.parentId,null);
+    assertTimestamp(record.retrievedAt);assert.ok(Date.parse(record.retrievedAt) >= before && Date.parse(record.retrievedAt) <= after);
+    assert.equal(validSource(record.sourceUrl,'youtube'),true);
+    const source = new URL(record.sourceUrl);
+    assert.equal(source.searchParams.get('v'),youtubeId(1));assert.equal(source.searchParams.get('lc'),record.id);
+    assert.deepEqual(record.context,{videoId:youtubeId(1),...youtubeVideo().snippet,product:'wondr-merchant'});
+    assert.match(record.provenance,/YouTube Data API v3/);assert.match(record.provenance,/textDisplay.*textFormat=plainText.*tanpa perubahan/);
+    assert.equal(record.likeCount,undefined);assert.equal(record.sentiment,undefined);
+  }
+  for (const field of ['rating','ratingCount','installs','views']) assert.equal(result[field],undefined);
+  assert.equal(ratingSummary(result.reviews).average,null);
+  const retained = upsertReviews([],result.reviews,youtubeTime).reviews;
+  assert.equal(retained.length,5);assert.equal(retained[1].date,null);
+  assert.deepEqual(retained.slice(-2).map(r => [r.text,r.sentiment]),[[' \n\t ','unclassified'],['','unclassified']]);
+});
+
+test('YouTube deduplicates repeated IDs but retains different IDs with identical author, date and text',async () => {
+  const first = youtubeComment('same-id'), second = {...first,id:'different-id'};
+  const result = await runYouTube([
+    youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]),
+    youtubeStep('commentThreads',{videoId:youtubeId(1)},[youtubeThread(first)],'next'),
+    youtubeStep('commentThreads',{videoId:youtubeId(1),pageToken:'next'},[youtubeThread(first),youtubeThread(second)]),
+  ]);
+  assert.equal(result.status,'success');assert.equal(result.fetched,2);
+  assert.deepEqual(result.reviews.map(r => r.id),['same-id','different-id']);
+  const stored = upsertReviews([],[...result.reviews,...result.reviews],youtubeTime);
+  assert.equal(stored.added,2);assert.equal(stored.unchanged,2);assert.equal(stored.reviews.length,2);
+});
+
+test('YouTube relevance is established from video metadata rather than search snippets or comment keywords',async t => {
+  for (const [name,snippet,relevant] of [
+    ['merchant title',{title:'Panduan WONDR  MERCHANT by BNI'},true],
+    ['merchant description',{title:'Tutorial',description:'Pengalaman wondr merchant'},true],
+    ['exact Android ID',{title:'Tutorial',description:'https://play.google.com/store/apps/details?id=id.bni.wfb'},true],
+    ['exact Apple ID',{title:'Tutorial',description:'https://apps.apple.com/id/app/app/id6741567238'},true],
+    ['consumer app',{title:'wondr by BNI mobile banking'},false],
+    ['similar merchant name',{title:'wondr merchants'},false],
+    ['unrelated merchant',{title:'Tutorial merchant QRIS'},false],
+  ]) await t.test(name,async () => {
+    const search = {...youtubeSearchItem(youtubeId(1)),snippet:{title:relevant ? 'Unrelated search snippet' : 'wondr merchant'}};
+    const steps = [youtubeStep('search',{},[search]),youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo(youtubeId(1),snippet)])];
+    if (relevant) steps.push(youtubeStep('commentThreads',{videoId:youtubeId(1)},[youtubeThread(youtubeComment('metadata-comment'))]));
+    const result = await runYouTube(steps,[]);
+    assert.equal(result.status,'success');assert.equal(result.scope.discoveredVideos,1);
+    assert.equal(result.scope.relevantVideos,Number(relevant));assert.equal(result.fetched,Number(relevant));
+    assert.equal(result.scope.completedVideos,Number(relevant));
+  });
+});
+
+test('YouTube does not accept a longer numeric identifier as the exact merchant Apple app identity',async () => {
+  const result = await runYouTube([
+    youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo(youtubeId(1),{title:'Unrelated app',description:'https://apps.apple.com/id/app/unrelated/id167415672389'})]),
+  ]);
+  assert.equal(result.status,'success');assert.equal(result.fetched,0);
+  assert.equal(result.scope.relevantVideos,0);assert.deepEqual(result.reviews,[]);
+});
+
+const youtubeFailures = [
+  {name:'network disconnect',message:/network_error/,change:step => ({...step,error:new Error(`Network failed with ${youtubeTestKey}`)})},
+  {name:'quota exhausted',message:/api_error.*kuota/,change:step => ({...step,status:403,payload:{error:{message:`Do not expose ${youtubeTestKey}`,errors:[{reason:'quotaExceeded'}]}}})},
+  {name:'malformed JSON',message:/parse_error/,change:step => ({...step,raw:'<html>not JSON</html>'})},
+  {name:'invalid items',message:/parse_error/,change:step => ({...step,payload:{items:{not:'an array'}}})},
+  {name:'invalid continuation token',message:/parse_error/,change:step => ({...step,payload:{items:[],nextPageToken:123}})},
+  {name:'repeated continuation token',message:/berulang/,repeated:true,change:step => step},
+];
+for (const stage of ['search','commentThreads','comments']) {
+  test(`YouTube ${stage} failures preserve earlier pages as partial instead of successful zero evidence`,async t => {
+    for (const failure of youtubeFailures) await t.test(failure.name,async () => {
+      const parent = youtubeComment('before-failure');
+      const firstThread = youtubeThread(parent,{replies:stage === 'comments' ? 2 : 0});
+      const steps = [];
+      if (stage === 'search') {
+        steps.push(youtubeStep('search',{},[youtubeSearchItem(youtubeId(1))],'again'));
+        steps.push(failure.change(youtubeStep('search',{pageToken:'again'},[youtubeSearchItem(youtubeId(1))],'again')));
+      }
+      steps.push(youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]));
+      steps.push(youtubeStep('commentThreads',{videoId:youtubeId(1)},[firstThread],stage === 'commentThreads' ? 'again' : undefined));
+      const expected = [parent.id];
+      if (stage === 'commentThreads') {
+        steps.push(failure.change(youtubeStep('commentThreads',{videoId:youtubeId(1),pageToken:'again'},[youtubeThread(youtubeComment('on-repeated-page'))],'again')));
+        if (failure.repeated) expected.push('on-repeated-page');
+      }
+      if (stage === 'comments') {
+        steps.push(youtubeStep('comments',{parentId:parent.id},[youtubeComment('reply-before','Actual reply',{parentId:parent.id})],'again'));
+        steps.push(failure.change(youtubeStep('comments',{parentId:parent.id,pageToken:'again'},[youtubeComment('reply-after','Another reply',{parentId:parent.id})],'again')));
+        expected.push('reply-before');if (failure.repeated) expected.push('reply-after');
+      }
+      const result = await runYouTube(steps,stage === 'search' ? [] : [youtubeId(1)]);
+      assert.equal(result.status,'partial');assert.equal(result.scope.paginationComplete,false);
+      assert.equal(result.fetched,expected.length);assert.deepEqual(result.reviews.map(r => r.id),expected);
+      assert.equal(result.reviews[0].text,parent.snippet.textDisplay);
+      assert.ok(result.issues.some(issue => issue.stage === ({search:'search',commentThreads:'comments',comments:'replies'}[stage])));
+      assert.match(result.message,failure.message);
+      assert.equal(result.scope.completedVideos,stage === 'search' ? 1 : 0);
+    });
+  });
+}
+
+test('YouTube metadata failure in a later batch preserves previously collected comments',async () => {
+  const ids = Array.from({length:51},(_,i) => youtubeId(i+1));
+  const videos = ids.slice(0,50).map((id,i) => youtubeVideo(id,i ? {title:'Unrelated video'} : {}));
+  const result = await runYouTube([
+    youtubeStep('videos',{id:ids.slice(0,50).join(',')},videos),
+    youtubeStep('commentThreads',{videoId:ids[0]},[youtubeThread(youtubeComment('before-metadata-error'))]),
+    {...youtubeStep('videos',{id:ids[50]},[]),error:new Error('Fixture metadata failure')},
+  ],ids);
+  assert.equal(result.status,'partial');assert.equal(result.fetched,1);
+  assert.equal(result.reviews[0].id,'before-metadata-error');assert.equal(result.scope.paginationComplete,false);
+  assert.equal(result.issues[0].stage,'videos');assert.match(result.issues[0].message,/network_error/);
+});
+
+test('YouTube disabled comments do not erase earlier evidence or prevent later videos being read',async () => {
+  const ids = [youtubeId(1),youtubeId(2),youtubeId(3)];
+  const result = await runYouTube([
+    youtubeStep('videos',{id:ids.join(',')},ids.map(id => youtubeVideo(id))),
+    youtubeStep('commentThreads',{videoId:ids[0]},[youtubeThread(youtubeComment('before-disabled'))]),
+    {...youtubeStep('commentThreads',{videoId:ids[1]},[]),status:403,payload:{error:{errors:[{reason:'commentsDisabled'}]}}},
+    youtubeStep('commentThreads',{videoId:ids[2]},[youtubeThread(youtubeComment('after-disabled'),{videoId:ids[2]})]),
+  ],ids);
+  assert.equal(result.status,'partial');assert.equal(result.fetched,2);
+  assert.deepEqual(result.reviews.map(r => r.id),['before-disabled','after-disabled']);
+  assert.equal(result.scope.completedVideos,2);assert.equal(result.scope.paginationComplete,false);
+  assert.equal(result.issues[0].videoId,ids[1]);assert.match(result.message,/dinonaktifkan.*bukan nol keluhan/);
+});
+
+test('YouTube distinguishes successful empty results, unavailable videos, disabled comments and initial errors',async t => {
+  const metadata = () => youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]);
+  for (const [name,steps,ids,status,completed] of [
+    ['empty search',[youtubeStep('search',{},[])],[],'success',0],
+    ['readable empty comments',[metadata(),youtubeStep('commentThreads',{videoId:youtubeId(1)},[])],[youtubeId(1)],'success',1],
+    ['unavailable video',[youtubeStep('videos',{id:youtubeId(1)},[])],[youtubeId(1)],'partial',0],
+    ['disabled comments',[metadata(),{...youtubeStep('commentThreads',{videoId:youtubeId(1)},[]),status:403,payload:{error:{errors:[{reason:'commentsDisabled'}]}}}],[youtubeId(1)],'partial',0],
+    ['initial disconnect',[{...youtubeStep('search',{},[]),error:new Error('Fixture only')}],[],'error',0],
+    ['initial invalid payload',[{...metadata(),raw:'not JSON'}],[youtubeId(1)],'error',0],
+  ]) await t.test(name,async () => {
+    const result = await runYouTube(steps,ids);
+    assert.equal(result.status,status);assert.equal(result.fetched,0);assert.deepEqual(result.reviews,[]);
+    assert.equal(result.scope.completedVideos,completed);assert.equal(result.scope.paginationComplete,status === 'success');
+    assert.equal(result.issues.length > 0,status !== 'success');
+  });
+});
+
+test('YouTube short reply results remain partial and never substitute the truncated thread preview',async () => {
+  const parent = youtubeComment('parent');
+  const result = await runYouTube([
+    youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]),
+    youtubeStep('commentThreads',{videoId:youtubeId(1)},[youtubeThread(parent,{replies:3,preview:[youtubeComment('preview-only')]})]),
+    youtubeStep('comments',{parentId:parent.id},[youtubeComment('real-reply','Exact reply',{parentId:parent.id})]),
+  ]);
+  assert.equal(result.status,'partial');assert.equal(result.fetched,2);
+  assert.deepEqual(result.reviews.map(r => r.id),['parent','real-reply']);
+  assert.equal(result.scope.completedVideos,0);assert.equal(result.scope.paginationComplete,false);
+  assert.equal(result.issues[0].stage,'replies');assert.equal(result.issues[0].parentId,parent.id);
+  assert.match(result.message,/balasan terbaca lebih sedikit/);
+});
+
+test('YouTube malformed records preserve valid earlier records within the same page',async t => {
+  for (const [name,invalid] of [
+    ['missing textDisplay',youtubeThread(youtubeComment('bad','ignored',{textDisplay:undefined}))],
+    ['invalid author',youtubeThread(youtubeComment('bad','ignored',{authorDisplayName:42}))],
+    ['invalid timestamp',youtubeThread(youtubeComment('bad','ignored',{publishedAt:'2026-02-30T12:00:00Z'}))],
+    ['missing ID',youtubeThread(youtubeComment(''))],
+    ['wrong video',youtubeThread(youtubeComment('bad'),{videoId:youtubeId(2)})],
+  ]) await t.test(name,async () => {
+    const result = await runYouTube([
+      youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]),
+      youtubeStep('commentThreads',{videoId:youtubeId(1)},[youtubeThread(youtubeComment('valid-first')),invalid]),
+    ]);
+    assert.equal(result.status,'partial');assert.equal(result.fetched,1);
+    assert.deepEqual(result.reviews.map(r => r.id),['valid-first']);assert.equal(result.scope.paginationComplete,false);
+    assert.match(result.message,/parse_error/);
+  });
+  await t.test('reply with wrong parent',async () => {
+    const result = await runYouTube([
+      youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]),
+      youtubeStep('commentThreads',{videoId:youtubeId(1)},[youtubeThread(youtubeComment('parent'),{replies:2})]),
+      youtubeStep('comments',{parentId:'parent'},[youtubeComment('valid-reply','First',{parentId:'parent'}),youtubeComment('wrong-parent','Second',{parentId:'someone-else'})]),
+    ]);
+    assert.equal(result.status,'partial');assert.equal(result.fetched,2);
+    assert.deepEqual(result.reviews.map(r => r.id),['parent','valid-reply']);assert.equal(result.issues[0].stage,'replies');
+  });
+});
+
+test('YouTube redacts hostile API error messages and reasons instead of echoing credentials',async t => {
+  for (const reason of ['keyInvalid','quotaExceeded',youtubeTestKey]) await t.test(reason,async () => {
+    const result = await runYouTube([
+      youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]),
+      youtubeStep('commentThreads',{videoId:youtubeId(1)},[youtubeThread(youtubeComment('keep-me'))],'next'),
+      {...youtubeStep('commentThreads',{videoId:youtubeId(1),pageToken:'next'},[]),status:403,payload:{
+        error:{message:`HOSTILE_ERROR https://example.invalid/?key=${youtubeTestKey}`,errors:[{reason,message:`HOSTILE_ERROR ${youtubeTestKey}`}],details:[{apiKey:youtubeTestKey}]},
+      }},
+    ]);
+    assert.equal(result.status,'partial');assert.equal(result.fetched,1);
+    assert.equal(JSON.stringify(result).includes('HOSTILE_ERROR'),false);
+    assert.match(result.message,/api_error: HTTP 403/);
+  });
+});
+
+test('YouTube relevance excludes video owners, direct promotions and consumer app comments',async t => {
+  for (const [name,raw] of [
+    ['owner top-level comment',youtubeRecord('owner-top','Wondr merchant bagus dan lancar.',{authorChannelId:'fixture-owner'})],
+    ['owner reply',youtubeRecord('owner-reply','Wondr merchant login gagal.',{parentId:'customer',authorChannelId:'fixture-owner'})],
+    ['promotional invitation',youtubeRecord('promo','  Yuk download wondr merchant, bagus dan lengkap!')],
+    ['install invitation',youtubeRecord('install','Install wondr merchant, bagus untuk usaha!')],
+    ['consumer product',youtubeRecord('consumer','wondr by BNI bagus dan lancar')],
+    ['consumer mobile banking',youtubeRecord('banking','Mobile banking saya gagal login')],
+    ['old consumer app',youtubeRecord('old-app','BNI Mobile saya gagal login')],
+  ]) await t.test(name,() => {
+    const original = structuredClone(raw), label = classifyReview(raw);
+    assert.notEqual(classifyText(raw.text).sentiment,'unclassified','Fixture must challenge a keyword sentiment');
+    assert.equal(label.sentiment,'unclassified');assert.deepEqual(label.tags,['general']);
+    assert.equal(label.relevance.status,'excluded');assert.equal(label.relevance.method,'merchant-context-v1');
+    assert.ok(label.relevance.reason);assert.match(label.rationale,/Tetap tersimpan/);
+    assert.deepEqual(raw,original,'Classification must not alter raw evidence');
+  });
+});
+
+test('YouTube uncertain comments remain unclassified despite positive video metadata or star ratings',async t => {
+  for (const text of ['bagus videonya','Login gagal','apa ini','terima kasih atas informasinya',' \n\t ']) await t.test(JSON.stringify(text),() => {
+    const raw = youtubeRecord('uncertain',text,{rating:5,context:{...youtubeRecord('context','').context,title:'Wondr merchant bagus dan lengkap',description:'QRIS sangat membantu usaha'}});
+    const label = classifyReview(raw);
+    assert.equal(label.sentiment,'unclassified');assert.equal(label.relevance.status,'uncertain');
+    assert.deepEqual(label.tags,['general']);
+  });
+  const noContext = classifyReview(youtubeRecord('no-context','QRIS saya gagal',{context:{}}));
+  assert.equal(noContext.sentiment,'unclassified');assert.equal(noContext.relevance.status,'uncertain');
+});
+
+test('YouTube merchant experiences classify from comment text, not from metadata, stars or reply position',async t => {
+  for (const [text,sentiment,extra] of [
+    ['Wondr merchant saya bagus dan mudah digunakan.','positive',{rating:1}],
+    ['Wondr merchant saya gagal login.','negative',{rating:5}],
+    ['QRIS di toko saya gagal menerima pembayaran.','negative',{parentId:'another-customer'}],
+    ['Settlement usaha saya lancar.','positive',{}],
+    ['id.bni.wfb saya gagal login.','negative',{context:{}}],
+    ['wondr merchant','unclassified',{}],
+  ]) await t.test(text,() => {
+    const label = classifyReview(youtubeRecord('customer',text,extra));
+    assert.equal(label.relevance.status,'relevant');assert.equal(label.sentiment,sentiment);
+    assert.equal(label.labeling,'rules-v1');
+  });
+  for (const platform of ['play','appstore']) {
+    const raw = {...sample,platform};
+    assert.deepEqual(classifyReview(raw),classifyText(raw.text));
+  }
+});
+
+test('YouTube questions and hypothetical problems are not asserted customer sentiments',async t => {
+  for (const text of [
+    'Apakah wondr merchant bagus?',
+    'Kalau wondr merchant gagal login, apa yang harus saya lakukan?',
+    'Saya belum mencoba wondr merchant; apakah aplikasinya lancar?',
+  ]) await t.test(text,() => {
+    assert.equal(classifyReview(youtubeRecord('question',text)).sentiment,'unclassified');
+  });
+});
+
+test('YouTube promotions remain excluded when the invitation is not the first word',async t => {
+  for (const text of [
+    'Wondr merchant bagus! Download sekarang dan dapatkan cashback.',
+    'Info promo: unduh wondr merchant, fiturnya lengkap!',
+  ]) await t.test(text,() => {
+    const label = classifyReview(youtubeRecord('promotion',text));
+    assert.equal(label.sentiment,'unclassified');assert.equal(label.relevance.status,'excluded');
+  });
+});
+
+test('YouTube an incidental merchant mention does not turn a consumer app complaint into merchant sentiment',() => {
+  const text = 'Video ini tentang wondr merchant, tetapi keluhan saya: wondr by BNI mobile banking gagal login.';
+  const label = classifyReview(youtubeRecord('consumer-comparison',text));
+  assert.equal(label.sentiment,'unclassified');assert.equal(label.relevance.status,'excluded');
+});
+
+test('YouTube retains excluded and uncertain records without inflating sentiment or rating denominators',() => {
+  const raw = [
+    youtubeRecord('positive','Wondr merchant saya bagus.'),
+    youtubeRecord('negative','Wondr merchant saya gagal login.'),
+    youtubeRecord('owner','Wondr merchant bagus.',{authorChannelId:'fixture-owner'}),
+    youtubeRecord('promotion','Yuk download wondr merchant, bagus!'),
+    youtubeRecord('consumer','Wondr by BNI gagal login.'),
+    youtubeRecord('uncertain','bagus videonya'),youtubeRecord('blank',' \n '),
+  ];
+  const stored = upsertReviews([],raw,youtubeTime);
+  assert.equal(stored.added,raw.length);assert.deepEqual(stored.reviews.map(r => r.text),raw.map(r => r.text));
+  const totals = summary(stored.reviews);
+  assert.equal(totals.total,7);assert.equal(totals.unclassified,5);assert.equal(totals.classified,2);
+  assert.equal(totals.positive,1);assert.equal(totals.negative,1);assert.equal(totals.neutral,0);
+  assert.equal(totals.positivePct,50);assert.equal(totals.negativePct,50);assert.equal(totals.nss,0);
+  const unknowns = summary(stored.reviews.slice(2));
+  assert.equal(unknowns.total,5);assert.equal(unknowns.classified,0);assert.equal(unknowns.nss,null);assert.equal(unknowns.positivePct,null);
+  assert.deepEqual(ratingSummary(stored.reviews),{total:0,average:null,distribution:[1,2,3,4,5].map(stars => ({stars,count:0}))});
+  assert.equal(filterReviews(stored.reviews,{sentiment:'unclassified'}).length,5);
+  assert.equal(timeline(stored.reviews).reduce((sum,bin) => sum+bin.unclassified,0),5);
+});
+
+test('Social upserts use platform plus ID, never the same author, day and text fingerprint',() => {
+  const incoming = ['youtube','x','instagram','tiktok'].flatMap(platform => ['shared-id','second-id'].map(id => ({...youtubeRecord(id,'Wondr merchant saya bagus.'),platform})));
+  const first = upsertReviews([],incoming,youtubeTime);
+  assert.equal(first.added,8);assert.equal(first.reviews.length,8);
+  assert.equal(new Set(first.reviews.map(r => `${r.platform}|${r.id}`)).size,8);
+  const second = upsertReviews(first.reviews,incoming,'2026-10-24T09:00:00.456Z');
+  assert.equal(second.added,0);assert.equal(second.updated,0);assert.equal(second.unchanged,8);
+  assert.ok(second.reviews.every(r => r.history.length === 0 && r.firstSeenAt === youtubeTime));
+});
+
+test('YouTube updates retain earlier text, full timestamps, provenance and absent records',() => {
+  const before = youtubeRecord('edited','  Wondr merchant saya gagal login.\n',{retrievedAt:youtubeTime});
+  const absent = youtubeRecord('absent','bagus videonya');
+  const initial = upsertReviews([],[before,absent],youtubeTime);
+  const observedAt = '2026-10-24T09:10:11.456Z';
+  const after = {...before,text:'Wondr merchant saya lancar.',updatedAt:observedAt,retrievedAt:observedAt};
+  const next = upsertReviews(initial.reviews,[after],observedAt);
+  assert.equal(next.updated,1);assert.equal(next.added,0);assert.equal(next.reviews.length,2);
+  const updated = next.reviews[0];
+  assert.equal(updated.sentiment,'positive');assert.equal(updated.text,after.text);
+  assert.equal(updated.publishedAt,before.publishedAt);assert.equal(updated.updatedAt,observedAt);
+  assert.equal(updated.firstSeenAt,youtubeTime);assert.equal(updated.observedAt,observedAt);assert.equal(updated.lastSeenAt,observedAt);
+  const {history:ignored,...original} = initial.reviews[0];
+  assert.deepEqual(updated.history,[original]);assert.deepEqual(next.reviews[1],initial.reviews[1]);
+  assert.equal(initial.reviews[0].text,before.text);assert.deepEqual(initial.reviews[0].history,[]);
+  const repeated = upsertReviews(next.reviews,[after],'2026-10-24T10:11:12.789Z');
+  assert.equal(repeated.updated,0);assert.equal(repeated.unchanged,1);assert.deepEqual(repeated.reviews[0].history,[original]);
+  const ownerMetadata = upsertReviews(next.reviews,[{...after,authorChannelId:'fixture-owner'}],observedAt);
+  assert.equal(ownerMetadata.updated,1);assert.equal(ownerMetadata.reviews[0].history.length,2);
+  assert.equal(ownerMetadata.reviews[0].history[1].authorChannelId,'fixture-viewer');
+  assert.equal(ownerMetadata.reviews[0].sentiment,'unclassified');assert.equal(ownerMetadata.reviews[0].relevance.status,'excluded');
+});
+
+async function withIsolatedYouTubeServer(collector, check) {
+  const dir = await mkdtemp(join(tmpdir(),'wondr-youtube-test-'));
+  const storagePath = join(dir,'data.json');
+  let server;
+  const close = async () => { if (server?.listening) await new Promise(resolve => server.close(resolve)); };
+  const start = async () => {
+    server = await createDashboardServer({storagePath,collector});
+    await new Promise((resolve,reject) => { server.once('error',reject);server.listen(0,'127.0.0.1',resolve); });
+  };
+  try {
+    await start();
+    await check({
+      storagePath,
+      request:async (method = 'GET') => {
+        const url = `http://127.0.0.1:${server.address().port}/api/${method === 'POST' ? 'analyze' : 'data'}`;
+        const response = await fetch(url,{method});
+        assert.equal(response.status,200);
+        const body = await response.text();
+        assert.equal(body.includes(youtubeTestKey),false);assert.equal(body.includes('HOSTILE_ERROR'),false);
+        return JSON.parse(body);
+      },
+      restart:async () => { await close();await start(); },
+    });
+  } finally { await close();await rm(dir,{recursive:true,force:true}); }
+}
+const successfulFixtureStores = () => ['play','appstore'].map(id => ({id,status:'success',fetched:0,reviews:[],message:'Isolated readable empty store fixture'}));
+
+test('Server marks two successful stores as partial full-channel coverage, not all-source success',async () => {
+  await withIsolatedYouTubeServer(async () => successfulFixtureStores(),async ({request,storagePath}) => {
+    const result = await request('POST');
+    assert.equal(result.lastRun.status,'partial');assert.equal(result.sources.length,platforms.length);
+    assert.deepEqual(result.lastRun.coverage.fetchedSources,['play','appstore']);
+    assert.deepEqual(result.lastRun.coverage.unavailableSources,platforms.filter(p => !['play','appstore'].includes(p.id)).map(p => p.id));
+    for (const source of result.sources) {
+      if (['play','appstore'].includes(source.id)) assert.equal(source.status,'success');
+      else { assert.notEqual(source.status,'success');assert.equal(source.fetched,null); }
+    }
+    assertTimestamp(result.lastRun.startedAt);assertTimestamp(result.lastRun.finishedAt);
+    assert.equal(result.reviews.length,seedReviews.length);
+    const saved = JSON.parse(await readFile(storagePath,'utf8'));
+    assert.deepEqual(saved.lastRun,result.lastRun);assert.equal(saved.runs.length,1);
+  });
+});
+
+test('Server persists mocked YouTube updates and raw evidence through partial failures, missing credentials and restart',async () => {
+  let mode = 'initial';
+  const collector = async () => {
+    let youtube;
+    if (mode === 'missing') {
+      const mock = youtubeMock([]);
+      youtube = await collectYouTube(mock.fetcher,youtubeConfiguration({}));
+      mock.done();
+    } else if (mode === 'error') {
+      youtube = await runYouTube([{...youtubeStep('videos',{id:youtubeId(1)},[]),error:new Error(`HOSTILE_ERROR ${youtubeTestKey}`)}]);
+    } else {
+      const first = youtubeComment('persisted',mode === 'initial' ? '  Wondr merchant saya gagal login.\n' : 'Wondr merchant saya lancar.',{updatedAt:mode === 'initial' ? youtubeTime : '2026-10-24T06:00:00.123Z'});
+      const items = [youtubeThread(first)];
+      if (mode === 'initial') items.push(youtubeThread(youtubeComment('absent-on-refresh',' \n\t ')),youtubeThread(youtubeComment('owner','Wondr merchant bagus.',{authorChannelId:{value:'fixture-owner'}})));
+      const steps = [youtubeStep('videos',{id:youtubeId(1)},[youtubeVideo()]),youtubeStep('commentThreads',{videoId:youtubeId(1)},items,mode === 'update' ? 'blocked' : undefined)];
+      if (mode === 'update') steps.push({...youtubeStep('commentThreads',{videoId:youtubeId(1),pageToken:'blocked'},[]),status:403,payload:{error:{message:`HOSTILE_ERROR ${youtubeTestKey}`,errors:[{reason:'quotaExceeded'}]}}});
+      youtube = await runYouTube(steps);
+    }
+    return [...successfulFixtureStores(),youtube];
+  };
+  await withIsolatedYouTubeServer(collector,async ({request,restart,storagePath}) => {
+    const initial = await request('POST'), first = initial.reviews.find(r => r.id === 'persisted');
+    assert.equal(initial.lastRun.status,'partial');assert.equal(initial.lastRun.added,3);
+    assert.equal(initial.reviews.length,seedReviews.length+3);
+    assert.equal(initial.sources.find(s => s.id === 'youtube').status,'success');
+    assert.deepEqual(initial.lastRun.coverage.fetchedSources,['play','appstore','youtube']);
+    assert.equal(first.sentiment,'negative');assert.equal(first.observedAt,initial.lastRun.finishedAt);
+    assertTimestamp(first.observedAt);assertTimestamp(first.firstSeenAt);assertTimestamp(first.lastSeenAt);assertTimestamp(first.retrievedAt);
+    const owner = initial.reviews.find(r => r.id === 'owner');
+    assert.equal(owner.sentiment,'unclassified');assert.equal(owner.relevance.status,'excluded');
+    assert.equal(initial.reviews.find(r => r.id === 'absent-on-refresh').text,' \n\t ');
+    mode = 'update';
+    const update = await request('POST'), changed = update.reviews.find(r => r.id === 'persisted');
+    assert.equal(update.lastRun.status,'partial');assert.equal(update.lastRun.updated,1);assert.equal(update.lastRun.added,0);
+    assert.equal(update.reviews.length,initial.reviews.length);assert.equal(changed.sentiment,'positive');
+    assert.equal(changed.observedAt,update.lastRun.finishedAt);assertTimestamp(changed.observedAt);
+    assert.equal(changed.firstSeenAt,first.firstSeenAt);assert.equal(changed.history.length,1);
+    const {history:ignored,...original} = first;
+    assert.deepEqual(changed.history[0],original);
+    assert.deepEqual(update.reviews.find(r => r.id === 'owner'),owner);
+    const lastSuccessAt = update.sources.find(s => s.id === 'youtube').lastSuccessAt;
+    assert.equal(lastSuccessAt,update.lastRun.finishedAt);
+    assert.equal(update.sources.find(s => s.id === 'youtube').status,'partial');
+    for (const nextMode of ['error','missing']) {
+      mode = nextMode;
+      const failed = await request('POST'), source = failed.sources.find(s => s.id === 'youtube');
+      assert.equal(failed.lastRun.status,'partial');assert.deepEqual(failed.reviews,update.reviews);
+      assert.equal(failed.lastRun.added,0);assert.equal(failed.lastRun.updated,0);
+      assert.equal(source.status,nextMode === 'missing' ? 'needs_setup' : 'error');
+      assert.equal(source.fetched,nextMode === 'missing' ? null : 0);
+      assert.equal(source.lastSuccessAt,lastSuccessAt);assert.equal(source.checkedAt,failed.lastRun.finishedAt);
+      assert.deepEqual(failed.lastRun.coverage.fetchedSources,['play','appstore']);
+      assert.ok(failed.lastRun.coverage.unavailableSources.includes('youtube'));
+    }
+    const savedText = await readFile(storagePath,'utf8'), saved = JSON.parse(savedText);
+    assert.equal(savedText.includes(youtubeTestKey),false);assert.equal(savedText.includes('HOSTILE_ERROR'),false);
+    assert.equal(saved.runs.length,4);assert.deepEqual(saved.reviews,update.reviews);
+    assert.equal(saved.sources.find(s => s.id === 'youtube').fetched,null);
+    await restart();
+    const restarted = await request();
+    assert.deepEqual(restarted.reviews,update.reviews);assert.deepEqual(restarted.lastRun,saved.lastRun);
+    assert.equal(restarted.runs.length,4);assert.equal(restarted.running,false);
+  });
 });

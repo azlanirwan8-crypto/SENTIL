@@ -49,13 +49,15 @@ export function groupStats(reviews, groups, sentiment) {
     return { ...group, ...summary(matches), reviews: matches };
   });
 }
+export function timelineMode(reviews, mode = 'week') {
+  const dates = reviews.map(r => r.date).filter(validDate).sort();
+  return dates.length && Date.parse(dates.at(-1)) - Date.parse(dates[0]) > 365 * 86400000 ? 'month' : mode;
+}
 export function timeline(reviews, mode = 'week') {
   const dated = reviews.filter(r => validDate(r.date));
   if (!dated.length) return [];
   const sorted = [...dated].sort((a,b) => a.date.localeCompare(b.date));
-  const first = new Date(`${sorted[0].date}T00:00:00Z`);
-  const last = new Date(`${sorted.at(-1).date}T00:00:00Z`);
-  if (last - first > 365 * 86400000) mode = 'month';
+  mode = timelineMode(sorted,mode);
   const key = date => {
     const d = new Date(`${date}T00:00:00Z`);
     if (mode === 'month') return date.slice(0,7) + '-01';
@@ -104,7 +106,30 @@ export function classifyText(text) {
   const sentiment = negative ? 'negative' : positive ? 'positive' : neutral ? 'neutral' : 'unclassified';
   return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
 }
-const fingerprint = r => r.author && r.author !== 'N/A' && r.date ? `${r.platform}|${r.author.trim().toLowerCase()}|${r.date}|${r.text.trim().toLowerCase()}` : null;
+export function classifyReview(raw) {
+  const label = classifyText(raw.text);
+  if (raw.platform !== 'youtube') return label;
+  const text = raw.text.toLocaleLowerCase('id');
+  const merchant = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])/.test(text);
+  const promotion = /(?:^|[.!?:]|\b(?:ayo|yuk|buruan|segera)\b)\s*(?:download|unduh|install)\b|\bdapatkan\s+(?:cashback|bonus|promo)\b|\binfo\s+promo\b/.test(text);
+  const question = /\b(?:apakah|kalau|jika|seandainya|bisakah)\b|\bbelum\s+(?:pernah\s+)?(?:mencoba|coba|pakai|menggunakan)\b/.test(text);
+  let status = 'uncertain', reason = 'Komentar pada video terkait belum cukup untuk memastikan pengalaman terhadap aplikasi merchant.';
+  if (raw.authorChannelId && raw.authorChannelId === raw.context?.channelId) {
+    status = 'excluded'; reason = 'Balasan pemilik video disimpan sebagai konteks, bukan opini pelanggan independen.';
+  } else if (promotion) {
+    status = 'excluded'; reason = 'Ajakan promosi tidak diperlakukan sebagai pengalaman pelanggan.';
+  } else if (/\bwondr\s+by\s+bni\b|mobile banking|bni mobile/.test(text)) {
+    status = 'excluded'; reason = merchant ? 'Teks juga membahas produk konsumen. Target sentimen belum dipisahkan, sehingga teks tidak dinilai otomatis sebagai pengalaman wondr merchant.' : 'Teks menyebut produk konsumen, bukan wondr merchant.';
+  } else if (question) {
+    reason = 'Pertanyaan, kondisi hipotetis, atau pernyataan belum mencoba belum cukup untuk menetapkan pengalaman pelanggan; perlu tinjauan konteks.';
+  } else if (merchant || (raw.context?.product === 'wondr-merchant' && /\bqris\b|settlement|pencairan|merchant|toko|usaha/.test(text) && label.tags.some(tag => tag !== 'general'))) {
+    status = 'relevant'; reason = 'Teks menyebut aplikasi merchant atau aspek usaha pada video dengan identitas produk yang sesuai; penentuan otomatis masih perlu pemeriksaan manusia.';
+  }
+  const relevance = {status,reason,method:'merchant-context-v1'};
+  if (status === 'relevant') return {...label,relevance};
+  return {...label,sentiment:'unclassified',tags:['general'],relevance,rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.`};
+}
+const fingerprint = r => ['play','appstore'].includes(r.platform) && r.author && r.author !== 'N/A' && r.date ? `${r.platform}|${r.author.trim().toLowerCase()}|${r.date}|${r.text.trim().toLowerCase()}` : null;
 export function upsertReviews(existing, incoming, observedAt) {
   const reviews = existing.map(r => ({ ...r }));
   const ids = new Map(reviews.map((r,i) => [`${r.platform}|${r.id}`, i]));
@@ -114,18 +139,19 @@ export function upsertReviews(existing, incoming, observedAt) {
     const key = `${raw.platform}|${raw.id}`, print = fingerprint(raw);
     const index = ids.get(key) ?? (print ? prints.get(print) : undefined);
     if (index === undefined) {
-      const r = { ...raw, ...classifyText(raw.text), observedAt, firstSeenAt: observedAt, lastSeenAt: observedAt, history: [] };
+      const r = { ...raw, ...classifyReview(raw), observedAt, firstSeenAt: observedAt, lastSeenAt: observedAt, history: [] };
       ids.set(key,reviews.length); if (print) prints.set(print,reviews.length);
       reviews.push(r); added++;
     } else {
       const old = reviews[index];
-      const changed = ['text','title','rating','date','author'].some(k => (old[k] ?? null) !== (raw[k] ?? null));
+      const contextChanged = raw.platform === 'youtube' && (['publishedAt','updatedAt','authorChannelId','parentId'].some(k => (old[k] ?? null) !== (raw[k] ?? null)) || JSON.stringify(old.context) !== JSON.stringify(raw.context));
+      const changed = contextChanged || ['text','title','rating','date','author'].some(k => (old[k] ?? null) !== (raw[k] ?? null));
       const textChanged = old.text !== raw.text || (old.title ?? '') !== (raw.title ?? '');
       const history = [...(old.history || [])];
       if (changed) { const { history: ignored, ...version } = old; history.push(version); updated++; } else unchanged++;
       const oldPrint = fingerprint(old);
       if (oldPrint) prints.delete(oldPrint);
-      reviews[index] = { ...old, ...raw, id: old.id, ...(textChanged ? classifyText(raw.text) : {}), observedAt, firstSeenAt: old.firstSeenAt || old.observedAt, lastSeenAt: observedAt, history };
+      reviews[index] = { ...old, ...raw, id: old.id, ...(textChanged || raw.platform === 'youtube' ? classifyReview(raw) : {}), observedAt, firstSeenAt: old.firstSeenAt || old.observedAt, lastSeenAt: observedAt, history };
       ids.set(key,index); if (print) prints.set(print,index);
     }
   }
