@@ -256,17 +256,26 @@ function complaintChart() {
   </article>`;
 }
 function sampleRating(data) {
-  const r=ratingSummary(data), max=Math.max(1,...r.distribution.map(d=>d.count));
+  const r=ratingSummary(data);
   const single=data.length&&data.every(d=>d.platform===data[0].platform)?data[0].platform:null;
-  const histogram=single&&platformById(single)?.type==='Toko aplikasi'?storeHistogram(single):null;
-  const storeCount=single?storeRatingCount(single):0, textless=!histogram&&storeCount>r.total?storeCount-r.total:0;
-  let storeBlock='';
-  if (histogram) {
-    const total=histogram.reduce((s,v)=>s+v,0), average=total?histogram.reduce((s,v,i)=>s+v*(5-i),0)/total:null;
-    const written=reviews.filter(x=>x.platform===single).length, noText=Math.max(0,total-written), listing=latestListing(single);
-    storeBlock=`<div class="store-rating"><div class="store-rating-head"><h3>Penilaian seluruh halaman toko ${esc(platformById(single).short||platformById(single).name)}</h3><p><strong>${average!=null?`${number(average)} / 5`:'N/A'}</strong> · ${integer(total)} penilaian · ${integer(noText)} di antaranya tanpa teks publik</p><small>Dibaca dari halaman toko pada ${esc(timeLabel(listing.lastSuccessAt||listing.checkedAt))}. Seluruh penilaian ikut dihitung, termasuk bintang tanpa teks; analisis sentimen tetap hanya memakai ${integer(written)} ulasan berteks karena teks tidak dapat dikarang.</small></div>${histogramRows(histogram,'Distribusi penilaian seluruh halaman toko')}</div>`;
-  }
-  return `<article class="card sample-rating"><div><h2>Penilaian bintang pada ulasan</h2><p><strong>${r.total?`${decimal(r.average)} / 5`:'N/A'}</strong> · ${r.total} dari ${data.length} ulasan menyertakan penilaian bintang</p><small>Hanya ulasan dalam filter ini, bukan seluruh penilaian di halaman toko aplikasi.${textless?` Halaman toko memperhitungkan ${integer(storeCount)} penilaian bintang — ${integer(textless)} di antaranya tanpa teks publik, sehingga tidak tampil di sini dan tidak dapat dianalisis sentimennya.`:''}</small></div><div class="rating-distribution" role="list" aria-label="Distribusi penilaian bintang pada ulasan">${[...r.distribution].reverse().map(d=>`<div class="rating-row" role="listitem" aria-label="${d.stars} bintang: ${d.count} ulasan"><span>${d.stars} ★</span><span class="rating-track" aria-hidden="true"><span style="width:${pct(d.count,max)}%"></span></span><strong>${d.count}</strong></div>`).join('')}</div>${storeBlock}</article>`;
+  // SATU distribusi saja yang ditampilkan. Bila filter persis satu platform toko pada seluruh
+  // periode, angka yang dipakai adalah angka halaman toko itu sendiri — termasuk bintang tanpa
+  // teks — supaya sama persis dengan yang dilihat publik. Di luar itu, angka ulasan tertulis
+  // dalam filter, karena histogram toko tidak dipecah menurut tanggal.
+  const histogram=single&&!state.from&&!state.to&&platformById(single)?.type==='Toko aplikasi'?storeHistogram(single):null;
+  const listing=histogram?latestListing(single):null;
+  const written=histogram?reviews.filter(x=>x.platform===single).length:0;
+  const distribution=histogram?[5,4,3,2,1].map((stars,index)=>({stars,count:histogram[index]})):[...r.distribution].reverse();
+  const total=distribution.reduce((sum,row)=>sum+row.count,0);
+  const average=total?distribution.reduce((sum,row)=>sum+row.stars*row.count,0)/total:null;
+  const max=Math.max(1,...distribution.map(row=>row.count));
+  const storeCount=single?storeRatingCount(single):0, textless=!histogram&&storeCount>total?storeCount-total:0;
+  const platform=platformById(single);
+  const title=histogram?`Penilaian bintang ${platform?.short||platform?.name}`:'Penilaian bintang pada ulasan';
+  const note=histogram
+    ? `${integer(total)} penilaian di halaman toko, termasuk ${integer(Math.max(0,total-written))} tanpa teks publik — dibaca ${esc(timeLabel(listing?.lastSuccessAt||listing?.checkedAt))}. Analisis sentimen memakai ${integer(written)} ulasan berteks karena teks tidak dapat dikarang.`
+    : `Hanya ulasan dalam filter ini, bukan seluruh penilaian di halaman toko aplikasi.${textless?` Halaman toko memperhitungkan ${integer(storeCount)} penilaian bintang — ${integer(textless)} di antaranya tanpa teks publik.`:''}`;
+  return `<article class="card sample-rating"><div><h2>${esc(title)}</h2><p><strong>${average!=null?`${histogram?number(average):decimal(average)} / 5`:'N/A'}</strong> · ${integer(total)} ${histogram?'penilaian':`dari ${data.length} ulasan menyertakan penilaian bintang`}</p><small>${note}</small></div><div class="rating-distribution" role="list" aria-label="Distribusi penilaian bintang">${distribution.map(row => `<div class="rating-row" role="listitem" aria-label="${row.stars} bintang: ${row.count} penilaian"><span>${row.stars} ★</span><span class="rating-track" aria-hidden="true"><span style="width:${pct(row.count,max)}%"></span></span><strong>${row.count}</strong></div>`).join('')}</div></article>`;
 }
 function featureCard(data) {
   const groups=groupStats(data,featureGroups);

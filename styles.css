@@ -1384,42 +1384,7 @@ main {
   font-size: 13px;
 }
 
-/* Histogram halaman toko: seluruh penilaian, termasuk bintang tanpa teks publik. */
-.store-rating {
-  display: grid;
-  grid-column: 1 / -1;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.store-rating-head {
-  display: grid;
-  gap: 4px;
-}
-
-.store-rating-head h3 {
-  color: var(--heading);
-  font-size: 14px;
-}
-
-.store-rating-head p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.store-rating-head p strong {
-  color: var(--heading);
-  font-variant-numeric: tabular-nums;
-}
-
-.store-rating-head small {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
+/* Histogram per bintang di kartu Platform (sumber: halaman toko). */
 .listing-histogram {
   margin-top: 10px;
 }
