@@ -44,7 +44,8 @@ Status **terhubung** berarti permintaan benar-benar dikirim dan dijawab. Apabila
 - `/api/data`, `/api/status`, dan `/api/analyze` dilayani function Node; halaman statis tetap dari repo.
 - Function membaca environment deployment, jadi `APIFY_API_TOKEN`, `YOUTUBE_API_KEY`, dan `GOOGLE_PLACES_API_KEY` yang Anda pasang di Vercel benar-benar dipakai.
 - `api/analyze.js` diberi `maxDuration` 300 detik karena actor Apify dapat berjalan beberapa menit. Actor yang belum selesai saat function habis waktu tidak diulang: `coverage.runId` tersimpan dan penarikan berikutnya melanjutkan run yang sama.
-- `middleware.js` meminta kredensial Basic pada seluruh halaman bila `DASHBOARD_USER` dan `DASHBOARD_PASSWORD` diisi. Bila keduanya kosong, halaman tetap terbuka tetapi `/api/analyze` diblokir agar pengunjung lain tidak memakai kuota Apify Anda.
+- `middleware.js` meminta kredensial Basic pada seluruh halaman bila `DASHBOARD_USER` dan `DASHBOARD_PASSWORD` diisi. Bila keduanya kosong, halaman tetap terbuka tetapi `/api/analyze` diblokir agar pengunjung lain tidak memakai kuota Apify Anda. `api/analyze.js` memeriksa kredensial yang sama sekali lagi di dalam function (penjagaan kedua) sehingga endpoint berbayar tidak pernah terbuka walaupun middleware dilewati.
+- Middleware berjalan pada Edge Runtime Vercel: hanya API Web yang boleh dipakai (`atob`, `TextDecoder`, `Response`). `Buffer` dan `node:crypto` tidak tersedia di sana — pernah menyebabkan seluruh situs gagal dengan `500 MIDDLEWARE_INVOCATION_FAILED`.
 
 Batas yang perlu diketahui: disk Vercel Function (`/tmp`, atau `DATA_PATH` yang Anda tentukan) hanya hidup selama instance function berjalan. Riwayat penarikan dapat kembali ke dataset awal ketika instance berganti. Untuk riwayat jangka panjang, pakai host Node berkelanjutan di bawah dan arahkan `DATA_PATH` ke disk permanen.
 

@@ -1,23 +1,31 @@
 // Gerbang masuk saat dasbor dijalankan sebagai situs publik (Vercel).
-// Tombol Tarik Analisis memicu actor Apify berbayar pada akun pemilik, jadi tanpa
-// DASHBOARD_USER dan DASHBOARD_PASSWORD pada environment deployment, penarikan data
-// diblokir dan seluruh halaman lain meminta kredensial Basic melalui browser.
+// Middleware Vercel berjalan di Edge Runtime: hanya API Web yang boleh dipakai di sini
+// (atob, Response, URL). Buffer, node:crypto, dan fs tidak tersedia dan pernah membuat
+// seluruh situs gagal dengan 500 MIDDLEWARE_INVOCATION_FAILED.
 const ANALYZE = '/api/analyze';
 const HEALTH = '/api/status';
 
-// Perbandingan dilakukan atas hasil hash SHA-256, bukan string sandi, agar bentuk
-// sandi tidak ikut terbaca lewat waktu respons.
-async function digest(value) {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value)));
-  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+// Perbandingan konstan tanpa API Node: panjang keduanya dibandingkan lebih dulu, lalu
+// setiap karakter di-XOR. Tujuannya mencegah kebocoran waktu pada percobaan sandi acak.
+function secretsEqual(given, expected) {
+  if (typeof given !== 'string' || typeof expected !== 'string') return false;
+  if (given.length !== expected.length) return false;
+  let difference = 0;
+  for (let index = 0; index < given.length; index++) difference |= given.charCodeAt(index) ^ expected.charCodeAt(index);
+  return difference === 0;
 }
 
-async function credentialsOk(header, user, password) {
+function decodeBasic(header) {
   const [scheme, encoded = ''] = String(header || '').split(' ');
-  if (scheme.toLowerCase() !== 'basic') return false;
-  const [givenUser, ...rest] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
-  const given = [await digest(givenUser), await digest(rest.join(':'))];
-  return given[0] === (await digest(user)) && given[1] === (await digest(password));
+  if (scheme.toLowerCase() !== 'basic' || !encoded) return null;
+  let text;
+  try {
+    // Base64 -> byte -> UTF-8 memakai API Web murni; `escape` dan Buffer keduanya berisiko
+    // di Edge Runtime, padahal kegagalan di sini membuat seluruh situs tidak dapat dibuka.
+    text = new TextDecoder().decode(Uint8Array.from(atob(encoded), character => character.charCodeAt(0)));
+  } catch { return null; }
+  const [user, ...rest] = text.split(':');
+  return { user, password: rest.join(':') };
 }
 
 function unauthorized(message) {
@@ -32,18 +40,18 @@ function unauthorized(message) {
   });
 }
 
-export async function middleware(request) {
-  const path = new URL(request.url).pathname;
+export function middleware(request) {
   const user = (process.env.DASHBOARD_USER || '').trim();
   const password = process.env.DASHBOARD_PASSWORD || '';
+  const path = new URL(request.url).pathname;
   if (!user || !password) {
-    // Situs diizinkan tanpa akun, tetapi penarikan data harus dimatikan agar tidak
-    // ada pihak luar yang memakai kuota Apify pemilik.
-    if (path === ANALYZE) return unauthorized('Penarikan data diblokir: isi DASHBOARD_USER dan DASHBOARD_PASSWORD pada environment deployment.');
-    return;
+    // Situs diizinkan tanpa akun, tetapi penarikan data harus dimatikan agar tidak ada
+    // pihak luar yang memakai kuota Apify pemilik.
+    return path === ANALYZE ? unauthorized('Penarikan data diblokir: isi DASHBOARD_USER dan DASHBOARD_PASSWORD pada environment deployment.') : undefined;
   }
-  if (path === HEALTH) return;
-  if (await credentialsOk(request.headers.get('authorization'), user, password)) return;
+  if (path === HEALTH) return undefined;
+  const given = decodeBasic(request.headers.get('authorization'));
+  if (given && secretsEqual(given.user, user) && secretsEqual(given.password, password)) return undefined;
   return unauthorized('Kredensial diperlukan.');
 }
 

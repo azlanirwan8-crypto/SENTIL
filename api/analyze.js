@@ -1,5 +1,6 @@
 // Memicu penarikan ulasan dari sumber publik. Hanya metode POST, hanya dari situs ini.
 import { pull } from '../dashboard-store.mjs';
+import { authorized, credentialsRequired } from '../serverless-auth.mjs';
 
 const json = (response, status, body) => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -25,6 +26,12 @@ export default async function handler(request, response) {
   }
   if (rejectsSameSiteCheck(request.headers)) {
     json(response, 403, { error: 'Permintaan lintas situs ditolak.' });
+    return;
+  }
+  if (!authorized(request.headers)) {
+    json(response, 401, { error: credentialsRequired()
+      ? 'Kredensial diperlukan.'
+      : 'Penarikan data diblokir: isi DASHBOARD_USER dan DASHBOARD_PASSWORD pada environment deployment.' });
     return;
   }
   try {

@@ -1478,6 +1478,45 @@ test('Middleware blocks paid pulls until dashboard credentials are configured', 
   assert.equal(await runMiddleware('https://situs.example.com/api/data'), undefined, 'halaman tetap dapat dibaca tanpa kredensial');
 });
 
+test('Middleware decodes Basic credentials using web APIs only', async () => {
+  const source = await readFile(new URL('./middleware.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /Buffer\.from\(/, 'Buffer tidak tersedia di Edge Runtime dan pernah membuat situs gagal 500');
+  assert.equal(/^\s*import\s.+from\s+['"]node:/m.test(source), false, 'middleware tidak boleh mengimpor modul Node');
+  assert.doesNotMatch(source, /crypto\.subtle/, 'perbandingan dilakukan tanpa API asinkron yang bisa gagal di Edge');
+  process.env.DASHBOARD_USER = 'pemilik';
+  process.env.DASHBOARD_PASSWORD = 'sandi-panjang';
+  assert.equal(await runMiddleware('https://situs.example.com/', { headers: { authorization: basic('pemilik', 'sandi-panjang') } }), undefined);
+  assert.equal((await runMiddleware('https://situs.example.com/', { headers: { authorization: 'Basic bukan-base64-###' } })).status, 401, 'header rusak ditolak tanpa melempar galat');
+});
+
+test('The paid endpoint also checks credentials inside the Node function', async () => {
+  const previousUser = process.env.DASHBOARD_USER, previousPassword = process.env.DASHBOARD_PASSWORD;
+  const guard = await import('./serverless-auth.mjs');
+  try {
+    delete process.env.DASHBOARD_USER;
+    delete process.env.DASHBOARD_PASSWORD;
+    assert.equal(guard.credentialsRequired(), false);
+    assert.equal(guard.authorized({ authorization: basic('siapa', 'saja') }), false, 'tanpa kredensial terpasang, penarikan tetap tertutup');
+    process.env.DASHBOARD_USER = 'pemilik';
+    process.env.DASHBOARD_PASSWORD = 'sandi-panjang';
+    assert.equal(guard.credentialsRequired(), true);
+    assert.equal(guard.authorized({ authorization: basic('pemilik', 'sandi-panjang') }), true);
+    assert.equal(guard.authorized({ authorization: basic('pemilik', 'salah') }), false);
+    assert.equal(guard.authorized({}), false);
+    assert.equal(guard.authorized({ authorization: 'Bearer token' }), false);
+
+    // Function harus menolak sebelum collectOnline sempat dipanggil.
+    const analyze = await import('./api/analyze.js');
+    const res = mockResponse();
+    await analyze.default({ method: 'POST', url: '/api/analyze', headers: { host: 'situs.example.com', origin: 'https://situs.example.com' } }, res);
+    assert.equal(res.status, 401);
+    assert.match(res.body, /Kredensial diperlukan/);
+  } finally {
+    if (previousUser === undefined) delete process.env.DASHBOARD_USER; else process.env.DASHBOARD_USER = previousUser;
+    if (previousPassword === undefined) delete process.env.DASHBOARD_PASSWORD; else process.env.DASHBOARD_PASSWORD = previousPassword;
+  }
+});
+
 test('Middleware requires Basic credentials on every path once they are configured', async () => {
   process.env.DASHBOARD_USER = 'pemilik';
   process.env.DASHBOARD_PASSWORD = 'sandi-panjang';
