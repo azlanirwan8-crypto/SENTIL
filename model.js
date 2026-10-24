@@ -347,6 +347,8 @@ export function classifyReview(raw) {
     status = 'excluded'; reason = `Penulis "${raw.author}" adalah akun resmi BNI atau produk ini, sehingga isinya promosi pemilik, bukan pengalaman pelanggan independen.`;
   } else if (raw.authorChannelId && raw.authorChannelId === raw.context?.channelId) {
     status = 'excluded'; reason = 'Balasan pemilik video disimpan sebagai konteks, bukan opini pelanggan independen.';
+  } else if (['news', 'blog', 'forum'].includes(raw.platform)) {
+    status = 'excluded'; reason = 'Pemberitaan atau artikel ditulis bukan oleh pengguna yang mengalami aplikasi, sehingga disimpan sebagai konteks liputan, bukan sentimen pelanggan.';
   } else if (promotion) {
     status = 'excluded'; reason = 'Ajakan promosi tidak diperlakukan sebagai pengalaman pelanggan.';
   } else if (consumer) {

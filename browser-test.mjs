@@ -231,7 +231,7 @@ try {
   assert.equal(await evaluate(`document.querySelector('[data-action="analyze"]').disabled`),true);
   // Modal progres: satu baris per kanal yang punya konektor, kanal tanpa konektor tidak ikut.
   assert.equal(await evaluate(`document.querySelector('#pull-dialog').open`),true,'modal progres muncul saat penarikan berjalan');
-  assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row').length`),8,'hanya kanal berkonektor yang diantrikan');
+  assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row').length`),9,'hanya kanal berkonektor yang diantrikan');
   assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-diproses').length`),1,'satu kanal diproses pada satu waktu');
   assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-row.is-diproses').textContent`),/Google Play/);
   assert.equal(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-row')].some(row=>/Forum|Blog|Berita/.test(row.textContent))`),false,'kanal tanpa konektor tidak pernah dilaporkan sebagai nol');
@@ -265,8 +265,8 @@ try {
     await pullReady();
     // Modal progres tetap menampilkan hasil tiap kanal, lalu ditutup sebelum pemeriksaan lain.
     assert.equal(await evaluate(`document.querySelector('#pull-dialog').open`),true,'modal tetap terbuka sampai penarikan selesai');
-    assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-progress').textContent`),/dari 8 kanal diperiksa/);
-    assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row').length`),8,'satu baris per kanal berkonektor');
+    assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-progress').textContent`),/dari 9 kanal diperiksa/);
+    assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row').length`),9,'satu baris per kanal berkonektor');
     assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-diproses').length`),0,'tidak ada kanal yang masih berstatus diproses');
     await click('#pull-dialog [data-close="pull-dialog"]');
     assert.equal(await evaluate(`document.querySelector('#pull-dialog').open`),false,'modal dapat ditutup manual');
@@ -407,7 +407,7 @@ try {
       assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,`${view} overflows at ${width}px`);
       assert.equal(await evaluate(`new Set([...document.querySelectorAll('.platform-tab')].map(e=>Math.round(e.getBoundingClientRect().top))).size`),1,`${view}: platform rows at ${width}px`);
       assert.equal(await evaluate(`document.querySelectorAll('.platform-tab').length`),12);
-      assert.deepEqual(await noClip('.metric-label,.card h2,.complaint-row .btn-text,.feature-row-label strong,.projection-name,.projection-stats span,.projection-stats strong,.projection-stats small,.driver h3,.source-facts dt,.source-facts dd,.platform-tab,.badge,.priority-count,.distribution-item'),[],`${view}: clipped text at ${width}px`);
+      assert.deepEqual(await noClip('.metric-label,.card h2,.complaint-row .btn-text,.feature-row-label strong,.cluster-row .btn-text,.summary-side span,.summary-side strong,.summary-side small,.chip-intent,.absa-mixes h3,.projection-name,.projection-stats span,.projection-stats strong,.projection-stats small,.driver h3,.source-facts dt,.source-facts dd,.platform-tab,.badge,.priority-count,.distribution-item'),[],`${view}: clipped text at ${width}px`);
       if(width<=480&&(view==='overview'||view==='sentiment'))assert.equal(await evaluate(`(() => {const values=[...document.querySelectorAll('.metric-value')].map(e=>e.offsetTop);return Math.abs(values[0]-values[1])<1&&Math.abs(values[2]-values[3])<1;})()`),true,`${view}: metric alignment at ${width}px`);
       assert.equal(await evaluate(`document.querySelectorAll('#period').length`),1);
       assert.equal(await evaluate(`document.querySelectorAll('.heading-actions #period').length`),1);

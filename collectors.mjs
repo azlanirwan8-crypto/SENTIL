@@ -788,9 +788,109 @@ export async function collectGooglePlaces(fetcher = fetch, config = placesConfig
 }
 // Peta status kanal berkredensial untuk satu id platform; dipakai server lokal dan
 // function serverless agar tampilan "perlu konfigurasi" identik di kedua jalur.
+// Kanal berita/web memakai RSS resmi penerbit tanpa dependensi. Tidak ada URL bawaan yang
+// dikarang: daftar suaka diisi operator melalui NEWS_RSS_URLS, sehingga statusnya jujur
+// "belum dikonfigurasi" selama kosong.
+const feedHost = value => { try { return new URL(value).hostname.replace(/^www\./, ''); } catch { return ''; } };
+function httpsFeed(value) {
+  try { const url = new URL(String(value).trim()); return url.protocol === 'https:' && !url.username && !url.password; } catch { return false; }
+}
+export function newsConfiguration(env = process.env) {
+  const configured = [...new Set(String(env.NEWS_RSS_URLS || '').split(',').map(value => value.trim()).filter(Boolean))];
+  const feeds = configured.filter(httpsFeed);
+  const rejected = configured.length - feeds.length;
+  const limit = Number(env.NEWS_ITEM_LIMIT);
+  return {
+    feeds, rejected,
+    itemLimit: Number.isInteger(limit) && limit > 0 ? limit : 200,
+    status: feeds.length ? 'ready' : 'needs_setup',
+    message: feeds.length
+      ? `${feeds.length} suaka RSS terdaftar pada environment server; akses belum diuji pada sesi ini.${rejected ? ` ${rejected} alamat diabaikan karena bukan HTTPS tanpa kredensial di dalamnya.` : ''}`
+      : 'Konektor RSS tersedia, tetapi NEWS_RSS_URLS belum diisi. Daftarkan URL suaka RSS resmi melalui environment server atau berkas .env lokal, bukan kolom browser atau chat. Belum ada permintaan yang dikirim.',
+  };
+}
+const decodeEntities = value => String(value || '')
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)) || ' ')
+  .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)) || ' ')
+  .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&apos;', "'")
+  .replaceAll('&nbsp;', ' ').replaceAll('&amp;', '&');
+const plainText = value => decodeEntities(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+export function parseFeed(xml) {
+  const text = String(xml || '');
+  const blocks = [...text.matchAll(/<(item|entry)\b[\s\S]*?<\/\1>/gi)].map(match => match[0]);
+  return blocks.map((block, index) => {
+    const field = names => {
+      for (const name of names) {
+        const found = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i').exec(block);
+        if (found?.[1]?.trim()) return found[1].trim();
+      }
+      return '';
+    };
+    const href = /<link[^>]*href\s*=\s*["']([^"']+)["']/i.exec(block);
+    const link = (href?.[1] || field(['link'])).trim();
+    const rawDate = field(['pubDate', 'published', 'updated', 'dc:date', 'date']);
+    const title = plainText(field(['title', 'media:title']));
+    return {
+      title,
+      summary: plainText(field(['description', 'summary', 'content:encoded', 'content'])),
+      link: httpsFeed(link) ? link : '',
+      stamp: Number.isFinite(Date.parse(rawDate)) ? new Date(rawDate).toISOString() : null,
+      author: plainText(field(['author', 'dc:creator'])),
+      key: plainText(field(['guid', 'id'])) || link || `${title}|${index}`,
+    };
+  });
+}
+const integerText = value => new Intl.NumberFormat('id-ID').format(value);
+export async function collectNews(fetcher = fetch, config = newsConfiguration()) {
+  if (config.status === 'needs_setup') return { id: 'news', status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
+  const itemLimit = Number.isInteger(config.itemLimit) && config.itemLimit > 0 ? config.itemLimit : 200;
+  const retrievedAt = new Date().toISOString();
+  const identity = /\bwondr\s*(?:by\s*)?merchant\b|id\.bni\.wfb/i;
+  const rows = new Map();
+  const issues = [];
+  let feedsRead = 0, itemsRead = 0, identityFiltered = 0, truncated = false;
+  for (const feedUrl of config.feeds) {
+    let body = '';
+    try {
+      const response = await fetcher(feedUrl, { headers: { accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' }, redirect: 'error', signal: AbortSignal.timeout(20000) });
+      if (!response.ok) { issues.push(`${feedHost(feedUrl)} membalas HTTP ${response.status}`); continue; }
+      body = await response.text();
+    } catch (error) {
+      const reason = /abort/i.test(String(error?.name ?? '')) ? 'waktu habis' : 'jaringan atau sertifikat';
+      issues.push(`${feedHost(feedUrl)} tidak dapat dibaca (${reason})`);
+      continue;
+    }
+    let items = [];
+    try { items = parseFeed(body); } catch { issues.push(`struktur suaka ${feedHost(feedUrl)} tidak dapat diurai`); continue; }
+    feedsRead++;
+    if (!items.length) issues.push(`${feedHost(feedUrl)} mengembalikan 0 butir`);
+    if (items.length > itemLimit) truncated = true;
+    itemsRead += items.length;
+    for (const item of items.slice(0, itemLimit)) {
+      if (!identity.test(`${item.title} ${item.summary}`)) { identityFiltered++; continue; }
+      const outlet = feedHost(item.link) || feedHost(feedUrl) || 'N/A';
+      const hash = createHash('sha256').update(`${outlet}|${item.key}`).digest('hex').slice(0, 32);
+      const text = [item.title, item.summary].filter(Boolean).join('. ').slice(0, 1500);
+      rows.set(`news-${hash}`, {
+        id: `news-${hash}`, platform: 'news', author: item.author || outlet,
+        title: item.title, text, rating: null,
+        date: item.stamp && validDate(item.stamp.slice(0, 10)) ? item.stamp.slice(0, 10) : null,
+        publishedAt: item.stamp, sourceUrl: item.link || null, retrievedAt,
+        context: { outlet, feedUrl },
+        provenance: `Suaka RSS resmi ${outlet}; judul dan ringkasan disimpan apa adanya, bukan isi artikel penuh.`,
+      });
+    }
+  }
+  const coverage = { feeds: config.feeds.length, feedsRead, itemsRead, identityFiltered, productMatches: rows.size, sampleLimit: itemLimit, sampleLimitField: 'butiran per suaka', possiblyTruncated: truncated };
+  const base = `${rows.size} judul & ringkasan menyebut identitas produk dari ${integerText(itemsRead)} butir pada ${feedsRead} dari ${config.feeds.length} suaka RSS; ${identityFiltered} butir lain tidak menyebut wondr merchant sehingga tidak disimpan.`;
+  const limits = truncated ? ' Batas baca per suaka tercapai, jadi sebagian butir lama tidak diperiksa — bukan berarti tidak ada liputan.' : '';
+  const message = `${base}${issues.length ? ` Sebagian suaka gagal: ${issues.join('; ')}.` : ' Semua suaka yang terdaftar dapat dibaca.'}${limits} Berita bukan ulasan pelanggan dan tidak dihitung sebagai sentimen merchant.`;
+  return { id: 'news', status: issues.length || truncated ? 'partial' : 'success', fetched: rows.size, message, reviews: [...rows.values()], coverage };
+}
 export function channelConfigurations(env = process.env) {
   const apify = apifyConfiguration(env);
-  return new Map([['youtube', youtubeConfiguration(env)], ['googlemaps', placesConfiguration(env)], ...Object.keys(apifyChannels).map(id => [id, apify])]);
+  return new Map([['youtube', youtubeConfiguration(env)], ['googlemaps', placesConfiguration(env)], ['news', newsConfiguration(env)], ...Object.keys(apifyChannels).map(id => [id, apify])]);
 }
 // Peta id platform -> kolektornya. Dipakai oleh collectOnline (semua kanal sekaligus)
 // dan collectPlatform (satu kanal per permintaan, agar antarmuka dapat menampilkan
@@ -799,11 +899,13 @@ export function onlineCollectors({ apifyWaitMs = 180000, resume = new Map() } = 
   const apify = apifyConfiguration();
   const youtube = youtubeConfiguration();
   const places = placesConfiguration();
+  const news = newsConfiguration();
   const jobs = new Map([
     ['play', () => collectGoogle()],
     ['appstore', () => collectApple()],
     ['youtube', () => collectYouTube(fetch, youtube)],
     ['googlemaps', () => collectGooglePlaces(fetch, places)],
+    ['news', () => collectNews(fetch, news)],
   ]);
   for (const id of Object.keys(apifyChannels)) jobs.set(id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id) }));
   return jobs;

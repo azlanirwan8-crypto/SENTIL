@@ -7,7 +7,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
-import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces } from './collectors.mjs';
+import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
@@ -1528,6 +1528,55 @@ test('Apify social text is only scored when it names the merchant app', () => {
   assert.equal(store.relevance, undefined, 'ulasan toko tidak melewati penyaringan sosial');
 });
 
+test('News RSS connector stays unconfigured until the operator supplies real feeds', async () => {
+  const empty = newsConfiguration({});
+  assert.equal(empty.status, 'needs_setup');
+  assert.match(empty.message, /NEWS_RSS_URLS/);
+  const result = await collectNews(async () => { throw new Error('tidak boleh ada permintaan jaringan'); }, empty);
+  assert.equal(result.status, 'needs_setup');
+  assert.equal(result.fetched, null);
+  assert.deepEqual(result.reviews, []);
+  const mixed = newsConfiguration({ NEWS_RSS_URLS: 'https://berita.example/rss, http://tanpa-https.example/feed, https://berita.example/rss, https://user:pass@contoh.example/feed' });
+  assert.deepEqual(mixed.feeds, ['https://berita.example/rss']);
+  assert.equal(mixed.rejected, 2, 'URL non-HTTPS dan yang membawa kredensial ditolak, duplikat digabung');
+});
+test('Feed parser reads RSS and Atom items without any dependency', () => {
+  const rss = '<?xml version="1.0"?><rss><channel><item><title>Wondr Merchant &amp; BNI &lt;b&gt;tambah&lt;/b&gt; fitur QRIS</title><link>https://berita.example/wondr-merchant-qris</link><pubDate>Sun, 18 Oct 2026 07:00:00 GMT</pubDate><description>Ringkasan &amp; detail.</description><guid>berita-1</guid></item><item><title>Kuliner</title><link>https://berita.example/kuliner</link><description>tidak relevan</description></item></channel></rss>';
+  const atom = '<feed><entry><title>wondr merchant versi atom</title><link href="https://berita.example/atom-1"/><updated>2026-10-19T10:00:00Z</updated><summary>Ringkasan atom.</summary><id>atom-1</id></entry></feed>';
+  const items = parseFeed(rss);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].title, 'Wondr Merchant & BNI tambah fitur QRIS', 'entitas didekode tetapi markup suaka dibuang agar tidak ada HTML yang ikut tersimpan');
+  assert.equal(items[0].summary, 'Ringkasan & detail.');
+  assert.equal(items[0].stamp, '2026-10-18T07:00:00.000Z');
+  assert.equal(items[0].link, 'https://berita.example/wondr-merchant-qris');
+  assert.equal(parseFeed(atom)[0].link, 'https://berita.example/atom-1');
+  assert.equal(parseFeed(atom)[0].stamp, '2026-10-19T10:00:00.000Z');
+  assert.deepEqual(parseFeed('<rss><channel></channel></rss>'), []);
+});
+test('News collector keeps only product-mentioning items and labels them as coverage', async () => {
+  const body = '<rss><channel>'
+    + '<item><title>wondr merchant tambah batas settlement</title><link>https://berita.example/a</link><pubDate>Sun, 18 Oct 2026 07:00:00 GMT</pubDate><description>BNI menyesuaikan pencairan pada wondr merchant.</description><guid>a</guid></item>'
+    + '<item><title>Resep nasi goreng</title><link>https://berita.example/b</link><description>Tanpa kaitan produk.</description><guid>b</guid></item>'
+    + '</channel></rss>';
+  const fetcher = async url => url.includes('gagal')
+    ? new Response('x', { status: 503 })
+    : new Response(body, { status: 200, headers: { 'content-type': 'application/rss+xml' } });
+  const config = { feeds: ['https://berita.example/rss', 'https://gagal.example/rss'], rejected: 0, status: 'ready', message: '' };
+  const result = await collectNews(fetcher, config);
+  assert.equal(result.reviews.length, 1);
+  assert.equal(result.reviews[0].platform, 'news');
+  assert.equal(result.reviews[0].date, '2026-10-18');
+  assert.equal(result.reviews[0].rating, null, 'berita tidak mengarang penilaian bintang');
+  assert.match(result.reviews[0].provenance, /Suaka RSS resmi berita\.example/);
+  assert.deepEqual(result.coverage, { feeds: 2, feedsRead: 1, itemsRead: 2, identityFiltered: 1, productMatches: 1, sampleLimit: 200, sampleLimitField: 'butiran per suaka', possiblyTruncated: false });
+  assert.equal(result.status, 'partial', 'satu suaka yang gagal tidak boleh dilaporkan sukses');
+  assert.match(result.message, /1 judul & ringkasan menyebut identitas produk dari 2 butir pada 1 dari 2 suaka/);
+  assert.match(result.message, /gagal\.example membalas HTTP 503/);
+  assert.match(result.message, /Berita bukan ulasan pelanggan/);
+  const label = classifyReview(result.reviews[0]);
+  assert.equal(label.relevance.status, 'excluded', 'pemberitaan bukan pengalaman pelanggan');
+  assert.equal(label.sentiment, 'unclassified');
+});
 test('Google Reviews links are accepted only from the Google Maps host', () => {
   assert.equal(validSource('https://www.google.com/maps/place/wondr+merchant/', 'googlemaps'), true);
   assert.equal(validSource('https://maps.app.goo.gl/abc', 'googlemaps'), false, 'pendek bukan host Google Maps yang diizinkan');
@@ -1622,12 +1671,12 @@ test('Server reports every credential-backed channel as needing setup, never as 
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${server.address().port}`;
     const text = await (await fetch(`${url}/api/data`)).json();
-    for (const id of ['youtube', ...Object.keys(apifyChannels)]) {
+    for (const id of ['youtube', 'news', ...Object.keys(apifyChannels)]) {
       const source = text.sources.find(s => s.id === id);
       assert.equal(source.status, 'needs_setup', id);
       assert.equal(source.fetched, null, id);
     }
-    for (const id of ['forum', 'blog', 'news']) assert.equal(text.sources.find(s => s.id === id).status, 'unsupported', id);
+    for (const id of ['forum', 'blog']) assert.equal(text.sources.find(s => s.id === id).status, 'unsupported', id);
     const serialised = JSON.stringify(text);
     assert.ok(!/Bearer|APIFY_API_TOKEN=|apify-fixture-token/.test(serialised), 'respons tidak boleh memuat kredensial');
     await new Promise(resolve => server.close(resolve));
