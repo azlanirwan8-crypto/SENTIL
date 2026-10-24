@@ -1155,6 +1155,15 @@ test('Local env file is parsed without exposing values and never overrides the r
     assert.equal(process.env.APIFY_ACTOR_X, 'proses/sudah-ada', 'nilai environment proses harus menang atas berkas');
     assert.equal(process.env.APIFY_API_TOKEN, 'kunci-dari-berkas', 'nilai baru dari berkas ikut dipakai proses');
     assert.deepEqual(await loadLocalEnv(join(dir, 'tidak-ada.env')), {}, 'berkas yang tidak ada bukan kesalahan');
+    await writeFile(join(dir, '.env'), 'APIFY_ACTOR_X=proses/dari-dot-env\nGOOGLE_API_KEY=kunci-dot-env\n');
+    await writeFile(join(dir, '.env.local'), 'APIFY_ACTOR_X=proses/dari-dot-env-local\n');
+    delete process.env.APIFY_ACTOR_X; delete process.env.GOOGLE_API_KEY;
+    const layered = await loadLocalEnv([join(dir, '.env'), join(dir, '.env.local')]);
+    assert.equal(layered.APIFY_ACTOR_X, 'proses/dari-dot-env-local', '.env.local harus menang atas .env');
+    assert.equal(layered.GOOGLE_API_KEY, 'kunci-dot-env', 'nilai yang hanya ada di .env tetap dipakai');
+    assert.equal(process.env.APIFY_ACTOR_X, 'proses/dari-dot-env-local');
+    assert.equal(process.env.GOOGLE_API_KEY, 'kunci-dot-env');
+    delete process.env.APIFY_ACTOR_X; delete process.env.GOOGLE_API_KEY;
   } finally {
     delete process.env.APIFY_API_TOKEN; delete process.env.APIFY_ACTOR_X;
     await rm(dir, { recursive: true, force: true });

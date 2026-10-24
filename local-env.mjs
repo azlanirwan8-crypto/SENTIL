@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = dirname(fileURLToPath(import.meta.url));
-export const defaultEnvPath = join(root, '.env');
+// Urutan menimpa: .env.local lebih utama daripada .env, dan keduanya kalah oleh
+// variabel yang benar-benar dipasang pada environment proses.
+export const envFiles = [join(root, '.env'), join(root, '.env.local')];
 
 export function parseEnvFile(text) {
   const values = {};
@@ -23,11 +25,15 @@ export function parseEnvFile(text) {
   return values;
 }
 
-export async function loadLocalEnv(path = defaultEnvPath) {
-  let text;
-  try { text = await readFile(path, 'utf8'); }
-  catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
-  const values = parseEnvFile(text);
-  for (const [key, value] of Object.entries(values)) if (typeof process.env[key] !== 'string' || !process.env[key].trim()) process.env[key] = value;
-  return values;
+export async function loadLocalEnv(paths = envFiles) {
+  const files = Array.isArray(paths) ? paths : [paths];
+  const merged = {};
+  for (const file of files) {
+    let text;
+    try { text = await readFile(file, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    Object.assign(merged, parseEnvFile(text));
+  }
+  for (const [key, value] of Object.entries(merged)) if (!process.env[key]?.trim()) process.env[key] = value;
+  return merged;
 }
