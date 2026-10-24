@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
 import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
+import { parsePlaySearchResults, parseItunesResults, buildDiscovery, discoverTarget, detectCategory, deriveKeywords, titleSimilarity, queryVariants, decideStatus, playSearchUrl, itunesSearchUrl } from './discovery.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
 test('baseline totals include both stores and preserve neutral denominator', () => {
@@ -196,6 +197,79 @@ test('ABSA derives aspects, emotion and intent from text and topics',()=>{
   assert.deepEqual(absaOf({ sentiment:'negative', tags:['general'], text:'qris gagal terus' }).aspects,['payment'],'aspek juga dibaca dari teks bila topik tidak menyebutnya');
   assert.deepEqual(absaOf({ sentiment:'negative', tags:['general'], text:'lupa pin tidak bisa masuk' }).aspects,['access']);
 });
+test('Play search page is read as a ranked candidate list, never a silent top hit', async () => {
+  const html = [
+    '<div class="card"><a class="Si6A0c Gy4nib" href="/store/apps/details?id=id.bni.wondr" jslog="38003; track:click"><div class="Shbxxd"><img src="https://play-lh.googleusercontent.com/a"></div></a>',
+    '<div class="Y4A2mc"><a href="/store/apps/details?id=id.bni.wondr" aria-label="wondr by BNI" class="Qfxief"></a></div></div>',
+    '<div class="card"><a class="Si6A0c Gy4nib" href="/store/apps/details?id=id.co.bni.merchant" jslog="38003"><div class="Shbxxd"><img src="https://play-lh.googleusercontent.com/b"></div></a>',
+    '<div class="Y4A2mc"><a href="/store/apps/details?id=id.co.bni.merchant" aria-label="BNI Merchant 46" class="Qfxief"></a></div></div>',
+    '<div class="card"><a class="Si6A0c Gy4nib" href="/store/apps/details?id=id.bni.wfb" jslog="38003"><div class="Shbxxd"><img src="https://play-lh.googleusercontent.com/c"></div></a>',
+    '<div class="Y4A2mc"><a href="/store/apps/details?id=id.bni.wfb" aria-label="wondr merchant by BNI" class="Qfxief"></a></div></div>',
+  ].join('');
+  const parsed = parsePlaySearchResults(html);
+  assert.deepEqual(parsed.map(c => c.appId), ['id.bni.wondr', 'id.co.bni.merchant', 'id.bni.wfb'], 'ID dibaca dalam urutan halaman, satu entri per aplikasi');
+  assert.equal(parsed[2].title, 'wondr merchant by BNI');
+  const discovery = buildDiscovery({ entityName: 'wondr merchant', playHtml: [html], itunes: { results: [] }, now: '2026-10-25T00:00:00Z' });
+  assert.equal(discovery.resolvedAt, '2026-10-25T00:00:00Z', 'waktu resolusi dibawa untuk pemeriksaan cache');
+  assert.equal(discovery.play.candidates[0].appId, 'id.bni.wfb', 'peringkat mengikuti kemiripan judul, bukan urutan halaman');
+  assert.equal(discovery.play.candidates[0].similarity, 0.9, 'nama entitas muncul utuh di judul toko');
+  assert.ok(discovery.play.candidates[1].similarity < discovery.play.candidates[0].similarity, 'aplikasi konsumen tidak menyamai kandidat tepat');
+  assert.equal(discovery.play.status, 'confirmed', 'satu kandidat unggul jauh boleh dipilih otomatis');
+  assert.equal(discovery.needsConfirmation, true, 'App Store tanpa kandidat tetap harus dikonfirmasi');
+  assert.equal(discovery.play.chosen.appId, 'id.bni.wfb');
+  assert.match(discovery.play.candidates[0].sourceUrl, /^https:\/\/play\.google\.com\/store\/apps\/details\?id=id\.bni\.wfb/);
+});
+test('Discovery refuses to guess when two store titles are equally close', () => {
+  const html = ['Wondr Merchant Beta', 'Wondr Merchant Alpha']
+    .map((title, index) => `<a href="/store/apps/details?id=com.example.app${index}" aria-label="${title}" class="Qfxief"></a>`).join('');
+  const discovery = buildDiscovery({ entityName: 'wondr merchant', playHtml: [html], itunes: null });
+  assert.deepEqual(discovery.play.candidates.map(c => c.similarity), [0.9, 0.9], 'kedua judul sama-sama memuat nama entitas');
+  assert.equal(discovery.play.status, 'ambiguous');
+  assert.equal(discovery.play.chosen, null, 'tidak ada ID yang dipilih saat masih seri');
+  assert.match(discovery.note, /sistem tidak menebak/);
+  assert.equal(buildDiscovery({ entityName: 'x', playHtml: ['<html></html>'], itunes: null }).play.status, 'not-found');
+  assert.equal(titleSimilarity('wondr merchant', 'wondr merchant by BNI'), 0.9);
+  assert.equal(titleSimilarity('wondr merchant', 'Wondr Merchant'), 1, 'sama persis setelah normalisasi');
+  assert.equal(titleSimilarity('wondr', ''), 0);
+  // Kueri "tokopedia seller" nyata pernah menghasilkan kandidat 0,75 sebagai pemenang tunggal.
+  // Kemiripan serendah itu tidak boleh dianggap identitas.
+  const loose = buildDiscovery({ entityName: 'tokopedia seller', playHtml: ['<a href="/store/apps/details?id=com.tiktokshop.seller" aria-label="Tokopedia & TikTok Shop Seller" class="Qfxief"></a>'], itunes: null });
+  assert.equal(loose.play.candidates[0].similarity, 0.75);
+  assert.equal(loose.play.status, 'ambiguous', 'frasa entitas tidak muncul utuh, jadi harus dikonfirmasi');
+  assert.equal(loose.play.chosen, null);
+});
+test('Category and keywords come from store text, not from a brand baked into code', () => {
+  assert.equal(detectCategory([{ title: 'BCA mobile', genre: 'Finance' }]), 'fintech');
+  assert.equal(detectCategory([{ title: 'Tokopedia Seller', genre: 'Shopping' }]), 'ecommerce');
+  assert.equal(detectCategory([{ title: 'Katalog Resep', genre: 'Food & Drink' }]), 'app', 'tanpa bukti kategori hasilnya umum, bukan fintech');
+  const keywords = deriveKeywords('wondr merchant');
+  assert.deepEqual(keywords.quoted, ['"wondr merchant"', '"wondr merchant aplikasi"']);
+  assert.ok(keywords.terms.includes('wondrmerchant'), 'versi tanpa spasi dipakai karena sering merupakan nama komersial');
+  assert.equal(keywords.terms.includes('by'), false, 'kata sambung pendek tidak dijadikan kata kunci');
+  assert.doesNotMatch(JSON.stringify(deriveKeywords('aplikasi contoh')), /wondr|bni/i, 'tidak ada merek bawaan pada turunan kata kunci');
+});
+test('Discover endpoint sends no request for an unusable name and reports partial lookups', async () => {
+  const calls = [];
+  const fetcher = async url => {
+    calls.push(url);
+    if (url.includes('itunes.apple.com')) return { ok: true, json: async () => ({ resultCount: 1, results: [{ trackId: 1234567890, trackName: 'wondr merchant by BNI', artistName: 'PT BANK', primaryGenreName: 'Finance', userRatingCount: 17, averageUserRating: 4.8, trackViewUrl: 'https://apps.apple.com/id/app/id1234567890' }] }) };
+    return { ok: true, text: async () => '<a href="/store/apps/details?id=id.bni.wfb" aria-label="wondr merchant by BNI" class="Qfxief"></a>' };
+  };
+  const blocked = await discoverTarget({ entityName: 'a', fetcher });
+  assert.equal(blocked.ok, false);
+  assert.equal(calls.length, 0, 'nama terlalu pendek, tidak ada permintaan keluar');
+  const result = await discoverTarget({ entityName: 'wondr merchant', fetcher });
+  assert.equal(result.ok, true);
+  assert.ok(calls.every(url => url.startsWith('https://')), 'hanya HTTPS yang dipakai');
+  assert.equal(result.discovery.appstore.candidates[0].appId, '1234567890');
+  assert.equal(result.discovery.category, 'fintech');
+  assert.equal(result.discovery.titleAgreement, true, 'judul yang sama di dua toko menjadi bukti tambahan');
+  const failing = await discoverTarget({ entityName: 'wondr merchant', fetcher: async url => (url.includes('play.google.com') ? { ok: false, status: 503 } : (await fetcher(url))) });
+  assert.equal(failing.discovery.play.candidates.length, 0);
+  assert.equal(failing.discovery.appstore.candidates.length, 1, 'kanal yang gagal tidak menghapus hasil kanal lain');
+  assert.match(failing.partial, /tidak terjawab/);
+});
+
 test('aspect and cluster statistics count only matching reviews',()=>{
   const rows=[
     { sentiment:'negative', tags:['transactions'], text:'qris sering gagal saat pembayaran' },
