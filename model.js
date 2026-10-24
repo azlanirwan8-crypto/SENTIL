@@ -97,14 +97,27 @@ const topicRules = {
   migration: /migrasi|beralih|aplikasi lama|aplikasi sebelumnya|discontinue/,
   benefit: /membantu|mempermudah|usaha/,
 };
+// Klausa harapan ("semoga ...", "mudah-mudahan ...") adalah harapan akan perbaikan, bukan
+// keluhan yang sedang terjadi, jadi klausanya sendiri tidak dihitung sebagai negatif.
+const hopeClause = /(?:semoga|smoga|moga[\s-]?2?|mudah[\s-]?2?an|harapannya|insya\s?allah|insyallah|aminn?)\b[^,.!?]*/g;
+// Kegagalan yang sudah selesai ("... akhirnya bisa masuk") adalah riwayat, bukan keluhan aktif.
+// Jeda antar-frasa tidak boleh memuat negasi, supaya "sekarang belum bisa" tetap keluhan.
+const notNegated = /(?:(?!\b(?:tidak|belum|blum|ga|gak|nggak|ngga|tdk)\b)[^.!?]){0,60}/;
+const resolvedHead = `\\b(?:akhirnya|alhamdulillah|alhamdullilah|sekarang|kini)${notNegated.source}\\b(?:bisa|masuk|lancar|berhasil|normal|jalan|oke|enak|bagus)\\b`;
+const resolvedClause = new RegExp(`${resolvedHead}[^.!?]*`, 'g');
+const successMarker = new RegExp(`${resolvedHead}|(?<!\\b(?:tidak|belum|blum|ga|gak|nggak|ngga|tdk)\\s)(?:bisa masuk|sudah bisa|dapat masuk)\\b`);
+const negatedAbility = /\b(?:tidak|belum|blum|ga|gak|nggak|ngga|tdk)\s+(?:bisa\s+bisa|bisa|masuk|acc|selesai)\b/g;
 export function classifyText(text) {
   const value = text.toLocaleLowerCase('id').replace(/\s+/g,' ');
   const reviewTags = Object.entries(topicRules).filter(([,rule]) => rule.test(value)).map(([tag]) => tag);
-  const negative = /gagal|lambat|lemot|ribet|repot|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|(?:tidak|belum|blum|ga|gak|nggak|tdk) (?:bisa|ada|update|acc|selesai)|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|tidak menyelesaikan|bankke/.test(value.replace(/\btidak ada (?:masalah|kendala)\b/g,''));
-  const positive = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|^ok(?:e)?[.! ]*$/.test(value);
+  const resolved = successMarker.test(value);
+  const scope = value.replace(/\btidak ada (?:masalah|kendala)\b/g,'').replace(hopeClause,' ');
+  const negativeScope = resolved ? scope.replace(resolvedClause,' ').replace(negatedAbility,' ') : scope;
+  const negative = /gagal|lambat|lemot|ribet|repot|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|(?:tidak|belum|blum|ga|gak|nggak|tdk) (?:bisa|ada|update|acc|selesai)|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|(?:notif|notifikasi|transaksi|dana|uang|laporan)\s+(?:tidak|ga|gak|belum|blum|tdk)\s+masuk|tidak menyelesaikan|bankke/.test(negativeScope);
+  const positive = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|^ok(?:e)?[.! ]*$/.test(value) || (resolved && !negative);
   const neutral = /^(?:[1-5] bintang dulu|terima kasih atas informasinya)[.! ]*$/.test(value);
   const sentiment = negative ? 'negative' : positive ? 'positive' : neutral ? 'neutral' : 'unclassified';
-  return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
+  return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Klausa harapan dan kegagalan yang sudah selesai ("akhirnya bisa masuk") tidak dihitung sebagai keluhan aktif. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
 }
 export function classifyReview(raw) {
   const label = classifyText(raw.text);

@@ -62,6 +62,22 @@ test('online text classification is explicit and never falls back to stars',()=>
   assert.equal(classifyText('tidak ada masalah').sentiment,'positive');
   assert.equal(classifyText('bagus tapi login gagal').sentiment,'negative');
 });
+test('hope clauses and resolved failures are not read as active complaints',()=>{
+  // Ulasan nyata 5★ ini pernah salah label: keluhannya tentang aplikasi LAMA dan sudah selesai.
+  assert.equal(classifyText('Setelah berbulan2 masuk BNI Marchant gak bisa bisa akhirnya ada Wondr Marchant By BNI bisa masuk jg. semoga gak ada gangguan lagi').sentiment,'positive','kegagalan lampau yang terselesaikan + harapan = positif');
+  assert.equal(classifyText('aplikasi lama gak bisa bisa, akhirnya sekarang lancar').sentiment,'positive');
+  for (const text of [
+    'login gagal terus, sudah coba install ulang tetap tidak bisa masuk',
+    'tidak bisa masuk, padahal sudah verifikasi',
+    'gak bisa masuk sama sekali, kecewa',
+    'semoga cepat diperbaiki, sekarang belum bisa dipakai',
+    'bagus tapi notif tidak masuk',
+  ]) assert.equal(classifyText(text).sentiment,'negative',`keluhan aktif tidak boleh ikut dilunakkan: ${text}`);
+  assert.equal(classifyText('notif tidak masuk padahal transaksi banyak').sentiment,'negative','aset atau notifikasi yang tidak masuk dihitung keluhan');
+  assert.equal(classifyText('transaksi tidak masuk ke laporan').sentiment,'negative');
+  assert.equal(classifyText('sangat membantu transaksi jadi mudah').sentiment,'positive');
+  assert.match(classifyText('Setelah berbulan2 masuk BNI Marchant gak bisa bisa akhirnya ada Wondr Marchant By BNI bisa masuk jg. semoga gak ada gangguan lagi').rationale,/Klausa harapan dan kegagalan yang sudah selesai/);
+});
 test('unknown labels and missing dates are not converted to neutral or current dates',()=>{
   const result=upsertReviews([],[{...sample,date:null,author:'N/A',text:'apa ini',rating:5}],'2026-10-23');
   const r=result.reviews[0];assert.equal(r.date,null);assert.equal(r.author,'N/A');assert.equal(r.sentiment,'unclassified');
