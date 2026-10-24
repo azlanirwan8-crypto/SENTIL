@@ -1,12 +1,9 @@
 import { seedReviews, platforms, tags, tagColors, observationDate } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, nssBand, nssBands, nssMinSample } from './model.js';
+import { summary, filterReviews, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, nssBand, nssBands, nssMinSample, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
+import { esc, number, decimal, integer, pct, signed, colors, sentimentKeys } from './format.js';
+import { comboChart, nestedDonut, painTreemap, matrixChart, statCard } from './charts.js';
 
 const $ = selector => document.querySelector(selector);
-const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
-const number = value => new Intl.NumberFormat('id-ID', { maximumFractionDigits:1, minimumFractionDigits:1 }).format(value);
-const decimal = value => new Intl.NumberFormat('id-ID', { maximumFractionDigits:2, minimumFractionDigits:2 }).format(value);
-const integer = value => new Intl.NumberFormat('id-ID').format(value);
-const pct = (part, total) => total ? part / total * 100 : 0;
 const validDay = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
 function dateLabel(value, options = {}) {
   if (typeof value !== 'string' || !value.trim()) return 'N/A';
@@ -23,8 +20,6 @@ const reviewTags = r => Array.isArray(r.tags) ? r.tags : [];
 const reviewHistory = r => Array.isArray(r.history) ? r.history : [];
 const hasRating = rating => Number.isInteger(rating) && rating >= 1 && rating <= 5;
 const color = value => /^#[\da-f]{3,8}$/i.test(value || '') ? value : '#878a99';
-const colors = { positive:'#0ab39c', negative:'#f06548', neutral:'#878a99', unclassified:'#299cdb' };
-const sentimentKeys = Object.keys(colors);
 const sourceStatusNames = { success:'Pengambilan selesai', partial:'Berhasil sebagian', error:'Gagal', unsupported:'Konektor belum tersedia', needs_setup:'Perlu konfigurasi API', ready:'Akses API belum diuji', snapshot:'Data tersimpan · belum diperbarui' };
 const activeSourceIds = new Set(['play','appstore']);
 const awaitingSource = source => ['unsupported','needs_setup','ready'].includes(source.status);
@@ -117,7 +112,7 @@ const paths = {
 };
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.message}</svg>`; }
 let reviews = [...seedReviews];
-const state = { view:'overview', platform:'all', period:'all', from:'', to:'', trend:'week', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', cluster:'', page:1, size:10, sort:{ key:'date', dir:'desc' } };
+const state = { view:'overview', platform:'all', period:'all', from:'', to:'', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', cluster:'', aspect:'', page:1, size:10, sort:{ key:'date', dir:'desc' } };
 const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null };
 const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
@@ -129,7 +124,12 @@ function notify(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('visible'),4500);
 }
-function analyticalReviews() { return filterReviews(reviews,{ platform:state.platform, from:state.from, to:state.to }); }
+function analyticalReviews() {
+  const rows = filterReviews(reviews,{ platform:state.platform, from:state.from, to:state.to });
+  // Filter aspek berlaku untuk seluruh grafik dan tabel: aspek diturunkan dari barisnya,
+  // jadi angka yang tampil selalu berasal dari teks yang sama.
+  return state.aspect ? rows.filter(r => absaOf(r).aspects.includes(state.aspect)) : rows;
+}
 function visibleReviews() {
   if (state.complaint) {
     const group = complaintStats(analyticalReviews()).find(g => g.id === state.complaint);
@@ -141,6 +141,7 @@ function visibleReviews() {
     return [...matches].sort(newestFirst);
   }
   let data = filterReviews(reviews,state);
+  if (state.aspect) data = data.filter(r => absaOf(r).aspects.includes(state.aspect));
   if (state.group) data = data.filter(r => reviewTags(r).some(t => state.group.includes(t)));
   return [...data].sort(newestFirst);
 }
@@ -198,6 +199,8 @@ function heading() {
   </div>`:''}</section>${state.view!=='methodology'&&state.period==='custom'?`<div class="custom-dates"><label>Dari tanggal<input id="date-from" type="date" value="${esc(state.from)}"></label><label>Sampai tanggal<input id="date-to" type="date" value="${esc(state.to)}"></label><button class="btn" data-action="apply-dates">Terapkan</button><span class="filter-error" id="date-error" role="alert"></span></div>`:''}`;
 }
 function filters() {
+  const scoped = filterReviews(reviews,{ platform:'all', from:state.from, to:state.to });
+  const aspects = aspectStats(scoped,'all').filter(a => a.total > 0);
   return `<section class="filters" aria-label="Filter dashboard">
     <div class="platform-filter">
       <div class="platform-tabs" id="platform-tabs" role="group" aria-label="Pilih platform" tabindex="0">
@@ -205,6 +208,11 @@ function filters() {
         ${platforms.map(p => { const count = reviews.filter(r => r.platform === p.id).length, source = sourceFor(p), unavailable = !count && source.status !== 'success'; return `<button class="platform-tab ${state.platform===p.id?'active':''}" data-platform="${esc(p.id)}" aria-pressed="${state.platform===p.id}"><span style="color:${state.platform===p.id?color(p.color):'inherit'};display:flex">${icon(p.icon)}</span>${esc(p.short)}<span class="count" title="${unavailable?esc(sourceStatusNames[source.status]):`${count} ulasan tersimpan`}">${unavailable?'—':count}</span></button>`; }).join('')}
       </div>
     </div>
+    <div class="aspect-filter" role="group" aria-label="Filter aspek pengalaman">
+      <button class="aspect-pill ${state.aspect===''?'active':''}" data-aspect="" aria-pressed="${state.aspect===''}" title="Tampilkan seluruh aspek pengalaman">Semua aspek<span class="count">${integer(scoped.length)}</span></button>
+      ${aspects.map(a => `<button class="aspect-pill ${state.aspect===a.id?'active':''}" data-aspect="${esc(a.id)}" aria-pressed="${state.aspect===a.id}" title="${esc(`${a.name}: ${a.total} ulasan, ${a.negative} negatif`)}">${esc(a.name)}<span class="count">${integer(a.total)}${a.negative?` · ${integer(a.negative)}−`:''}</span></button>`).join('')}
+    </div>
+    ${state.aspect?`<div class="active-filter"><span>Aspek aktif: <strong>${esc(aspectNames[state.aspect]||state.aspect)}</strong> — seluruh grafik dan tabel mengikuti filter ini</span><button class="btn-text" data-action="clear-aspect" aria-label="Hapus filter aspek">Hapus filter ${icon('close')}</button></div>`:''}
   </section>`;
 }
 function metricCards(data) {
@@ -223,27 +231,49 @@ function metricCards(data) {
   return `<section class="metrics" aria-label="Metrik sentimen">${metrics.map(m=>`<article class="metric ${m.cls}"><div class="metric-top"><span class="metric-label">${m.label}</span><span class="metric-icon">${icon(m.icon)}</span></div><div class="metric-value">${m.value}<span class="unit">${m.unit}</span></div><div class="metric-sub">${m.sub}</div>${m.cls?`<div class="mini-track"><span style="width:${m.width}%"></span></div>`:''}</article>`).join('')}</section><p class="classification-note ${s.unclassified?'needs-review':''}">${s.unclassified?`<strong>${s.unclassified} ulasan perlu ditinjau</strong>; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS. `:''}${excluded?`${excluded} teks di luar penilaian pelanggan tetap dihitung dalam total teks, bukan dalam NSS. `:''}Persentase sentimen dan NSS dihitung dari ${s.classified} ulasan berlabel sentimen (positif, negatif, dan netral), bukan dari seluruh pengguna. ${esc(scope)}</p>`;
 }
 function legend() { return `<div class="legend">${sentimentKeys.map(id=>`<span class="legend-item"><span class="legend-swatch ${id}"></span>${esc(sentimentNames[id])}</span>`).join('')}</div>`; }
-function trendChart(data) {
-  const bins = timeline(data,state.trend), width = 650, height = 182, left = 30, right = 12, top = 12, bottom = 30;
-  if (!bins.length) return empty('Belum ada tanggal yang dapat digrafikkan','Ulasan tanpa tanggal tetap tersimpan dan tampil saat semua tanggal dipilih.');
-  const plotW = width-left-right, plotH = height-top-bottom;
-  const max = Math.ceil(Math.max(4,...bins.map(b=>sentimentKeys.reduce((sum,k)=>sum+(b[k]||0),0)))/4)*4;
-  const step = plotW/bins.length, barW = Math.min(30,step*.49);
-  const grids = Array.from({length:5},(_,i)=>{const y=top+plotH-i*plotH/4;return `<line x1="${left}" y1="${y}" x2="${width-right}" y2="${y}" stroke="#e9ebec" stroke-dasharray="3 4"/><text x="${left-10}" y="${y+3}" text-anchor="end" fill="#878a99" font-size="9">${Math.ceil(max*i/4)}</text>`;}).join('');
-  const bars = bins.map((b,i)=>{
-    let offset=0;
-    const x=left+step*i+step/2;
-    const segments=sentimentKeys.map(key=>{const h=(b[key]||0)/max*plotH;offset+=h;return b[key]?`<rect x="${x-barW/2}" y="${top+plotH-offset}" width="${barW}" height="${h}" rx="2" fill="${colors[key]}"><title>${esc(dateLabel(b.date))} · ${esc(sentimentNames[key])}: ${b[key]} ulasan</title></rect>`:'';}).join('');
-    return `${segments}${bins.length<=Math.floor(plotW/44)||i%Math.ceil(bins.length/Math.max(2,Math.floor(plotW/44)))===0?`<text x="${x}" y="${height-6}" text-anchor="middle" font-size="9" fill="#878a99">${esc(dateLabel(b.date))}</text>`:''}`;
-  }).join('');
-  const description=bins.map(b=>`${dateLabel(b.date)}: ${sentimentKeys.map(k=>`${sentimentNames[k]} ${b[k]||0}`).join(', ')}`).join('; ');
-  return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc('Grafik volume ulasan: '+description)}">${grids}${bars}</svg>`;
+// Kepala ringkas: dua kalimat + tiga kartu angka. Paragraf yang mengulang angka dihapus.
+function summaryHeader(data) {
+  const s = summary(data), band = nssBand(s.nss);
+  const drivers = aspectStats(data,'negative').filter(a => a.negative > 0).slice(0,2);
+  const first = s.classified
+    ? `Dari ${integer(s.classified)} teks berlabel pada pilihan ini, ${number(s.positivePct)}% positif dan ${number(s.negativePct)}% negatif; NSS ${signed(s.nss)} poin.`
+    : `Belum ada teks berlabel sentimen pada pilihan ini (${integer(s.total)} teks, ${integer(s.unclassified)} perlu ditinjau), jadi NSS tidak dapat dihitung.`;
+  const second = drivers.length
+    ? `Pendorong negatif utama: ${drivers.map(a => `${a.name} — ${integer(a.negative)} ulasan (${number(pct(a.negative, s.negative))}% dari ${integer(s.negative)} negatif)`).join('; ')}.`
+    : s.negative
+      ? `${integer(s.negative)} ulasan negatif belum dapat dipetakan ke aspek tertentu; umumnya penilaian tanpa objek yang jelas.`
+      : 'Tidak ada ulasan negatif pada pilihan ini; cakupan data tetap perlu diperiksa.';
+  const unavailable = state.platform !== 'all' && !data.length && sourceFor(platformById(state.platform)).status !== 'success';
+  return `<section class="summary-header" aria-label="Ringkasan dan angka utama">
+    <article class="card summary-card" aria-labelledby="summary-heading">
+      <div class="summary-mark">${icon('spark')}</div>
+      <div class="summary-main"><h2 id="summary-heading">Ringkasan<span class="badge neutral">${integer(s.total)} teks pada pilihan ini</span></h2><p>${esc(first)}</p><p>${esc(second)}</p>${unavailable?`<p class="summary-caveat">${esc(sourceFor(platformById(state.platform)).message)} Tidak tersedia bukan berarti nol keluhan.</p>`:''}
+        <details class="chart-notes"><summary>Cara angka ini dihitung</summary><p>NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100. Label sentimen, aspek, emosi, dan niat dihitung dengan aturan kata kunci (rules-v1) pada teks ulasan — bukan model bahasa. ${integer(s.unclassified)} teks yang perlu ditinjau tidak dihitung sebagai netral dan tidak membagi persentase.</p></details>
+      </div>
+    </article>
+    <div class="stat-cards">${statCard({ label:'Positif', value:s.classified?number(s.positivePct):'—', unit:s.classified?'%':'', tone:'positive', sub:`${integer(s.positive)} ulasan` })}${statCard({ label:'Negatif', value:s.classified?number(s.negativePct):'—', unit:s.classified?'%':'', tone:'negative', sub:`${integer(s.negative)} ulasan` })}${statCard({ label:'NSS', value:s.classified?signed(s.nss):'—', tone:'nss', sub: `${integer(s.classified)} teks berlabel · ${band ? band.label : 'belum dapat dihitung'}` })}</div>
+  </section>`;
 }
-function composition(data) {
-  const s=summary(data);
-  let start=0;
-  const segments=sentimentKeys.map(key=>{const end=start+pct(s[key],s.total), segment=`${colors[key]} ${start}% ${end}%`;start=end;return segment;}).join(',');
-  return `<article class="card"><div class="card-header"><div><h2>Komposisi sentimen</h2><p class="card-subtitle">Proporsi seluruh ulasan, termasuk yang masih perlu ditinjau</p></div>${icon('layers')}</div>${s.total?`<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${segments})" role="img" aria-label="${esc(sentimentKeys.map(k=>`${sentimentNames[k]}: ${s[k]} dari ${s.total} ulasan`).join('; '))}"><div class="donut-center"><strong>${s.total}</strong><span>total ulasan</span></div></div></div><div class="distribution-list">${sentimentKeys.map(key=>`<div class="distribution-item"><span class="legend-item"><span class="legend-swatch ${key}"></span>${esc(sentimentNames[key])}</span><strong>${s[key]}<small>ulasan</small></strong></div>`).join('')}</div><div class="insight-strip">${icon('spark')}${s.classified?`NSS ${s.nss>0?'+':''}${number(s.nss)} poin · dihitung dari ${s.classified} ulasan berlabel`:'NSS belum dapat dihitung; seluruh ulasan masih perlu ditinjau.'}</div>`:empty('Belum ada komposisi','Distribusi sentimen akan muncul setelah ada ulasan.')}</article>`;
+// Grafik 1 — volume harian bertumpuk dengan garis NSS.
+function chartOne(data) {
+  const series = dailySeries(data), badges = spikeBadges(series.days);
+  return `<article class="card chart-card combo-card" aria-labelledby="chart-one-heading"><div class="card-header"><div><h2 id="chart-one-heading">Tren sentimen &amp; fluktuasi harian</h2><p class="card-subtitle">Batang bertumpuk = volume ulasan per hari; garis = NSS harian pada sumbu kanan</p></div><span class="badge ${badges.length?'negative':'neutral'}">${badges.length?`${integer(badges.length)} hari melonjakan`:'tidak ada lonjakan harian'}</span></div>${comboChart({ days: series.days, badges })}${series.truncated?`<p class="note-inline">Rentang panjang: grafik memuat ${integer(series.days.length)} hari pertama dari ${integer(series.span)} hari; seluruh ulasan tetap dihitung pada angka lain.</p>`:''}${series.undated?`<p class="note-inline">${integer(series.undated)} teks tanpa tanggal publikasi tidak masuk grafik ini, tetapi tetap dihitung pada metrik lain.</p>`:''}</article>`;
+}
+// Grafik 2 — aspek (cincin dalam) dipecah per kanal (cincin luar).
+function chartTwo(data) {
+  const rings = aspectChannelRings(data, platforms, 'negative');
+  const total = rings.inner.reduce((sum, slice) => sum + slice.value, 0);
+  const negative = summary(data).negative;
+  return `<article class="card chart-card donut-card" aria-labelledby="chart-two-heading"><div class="card-header"><div><h2 id="chart-two-heading">Pendorong negatif per aspek &amp; kanal</h2><p class="card-subtitle">Cincin dalam = aspek pengalaman; cincin luar = pemecahan tiap aspek menurut kanal</p></div>${icon('layers')}</div>${nestedDonut({ inner: rings.inner, outer: rings.outer, total })}<p class="note-inline">Angka ${integer(total)} adalah jumlah keanggotaan aspek dari ${integer(negative)} ulasan negatif — satu ulasan dapat menyebut beberapa aspek, jadi cincin ini tidak dijumlahkan menjadi jumlah ulasan. Ulasan negatif tanpa aspek tidak ikut digambar.</p></article>`;
+}
+// Grafik 3 — peta kotak klaster keluhan.
+function chartThree(data) {
+  const nodes = squarify(painTreemapNodes(data), 0, 0, 100, 100);
+  return `<article class="card chart-card treemap-card" aria-labelledby="chart-three-heading"><div class="card-header"><div><h2 id="chart-three-heading">Klaster masalah berulang</h2><p class="card-subtitle">Luas kotak = jumlah ulasan negatif yang menyebut frasa tersebut</p></div><span class="badge negative">${integer(summary(data).negative)} ulasan negatif</span></div>${painTreemap({ nodes })}<p class="note-inline">Klik satu kotak untuk membuka ulasan negatif pada klaster itu. Satu ulasan dapat masuk beberapa klaster, jadi luasnya tidak dijumlahkan menjadi jumlah ulasan negatif.</p></article>`;
+}
+// Grafik 4 — matriks NSS dan persen negatif antar kanal.
+function chartFour(data) {
+  return `<article class="card chart-card matrix-card" aria-labelledby="chart-four-heading"><div class="card-header"><div><h2 id="chart-four-heading">Matriks perbandingan antar-kanal</h2><p class="card-subtitle">NSS dan persentase negatif berdampingan, hanya kanal yang punya teks tersimpan</p></div>${icon('chart')}</div>${matrixChart({ rows: platformMatrix(data, platforms) })}<p class="note-inline">Kanal tanpa ulasan berlabel tidak digambar; absennya batang berarti datanya belum ada, bukan nilainya nol.</p></article>`;
 }
 const complaintName = group => group.id === 'general' ? 'Penilaian umum (tanpa rincian)' : group.name;
 // Tata letak disamakan dengan kartu "Topik yang dibahas": satu baris label, satu batang
@@ -311,47 +341,6 @@ function sampleRating(data) {
 }
 // Ringkasan eksekutif disusun dari angka yang sudah dihitung pada filter ini: polanya
 // tetap, angkanya tidak. Tidak ada model bahasa yang menulis kalimat di sini.
-function executiveSummary(data) {
-  const s=summary(data), negative=s.negative;
-  const drivers=aspectStats(data,'negative').filter(a=>a.negative>0).slice(0,3);
-  const intents=data.map(absaOf);
-  const countOf=pick=>intents.filter(pick).length;
-  const bugs=countOf(a=>a.intent==='bug_report'), wishes=countOf(a=>a.intent==='feature_request');
-  const anger=countOf(a=>a.emotion==='anger'), frustration=countOf(a=>a.emotion==='frustration');
-  const clusters=clusterStats(data);
-  const lead=s.classified
-    ? `Dari ${integer(s.classified)} ulasan berlabel pada pilihan ini, ${number(s.positivePct)}% bernada positif dan ${number(s.negativePct)}% negatif dengan skor sentimen neto ${s.nss>0?'+':''}${number(s.nss)} poin.`
-    : `Belum ada ulasan berlabel sentimen pada pilihan ini, sehingga ringkasan tidak dapat dihitung — bukan berarti tidak ada keluhan.`;
-  const follow=drivers.length
-    ? `Pendorong negatif utama: ${drivers.map(a=>`${a.name} (${number(pct(a.negative,negative))}% dari ${negative} ulasan negatif)`).join(', ')}.`
-    : negative ? `Tidak ada aspek yang dapat dipetakan dari ${negative} ulasan negatif; teksnya umumnya penilaian umum tanpa objek.` : 'Tidak ada ulasan negatif pada pilihan ini; cakupan data tetap perlu diperhatikan.';
-  return `<article class="card summary-card" aria-labelledby="summary-heading">
-    <div class="summary-mark">${icon('spark')}</div>
-    <div class="summary-main"><h2 id="summary-heading">Ringkasan eksekutif</h2><p>${esc(lead)}</p><p>${esc(follow)}</p>
-      <div class="summary-chips"><span class="chip-intent bug">Laporan bug ${bugs}</span><span class="chip-intent wish">Permintaan fitur ${wishes}</span><span class="chip-intent anger">Marah ${anger}</span><span class="chip-intent frust">Frustrasi ${frustration}</span>${clusters.length?`<span class="chip-intent cluster">${clusters.length} klaster keluhan berulang</span>`:''}</div>
-      <p class="summary-note">Dihitung dengan aturan kata kunci pada teks ulasan — bukan model bahasa. Aspek, emosi, dan niat dapat dibuka ulang pada rincian setiap ulasan.</p>
-    </div>
-    <div class="summary-side">
-      <div><span>Positif</span><strong>${s.classified?`${number(s.positivePct)}%`:'—'}</strong><small>${s.positive} ulasan</small></div>
-      <div><span>Negatif</span><strong>${s.classified?`${number(s.negativePct)}%`:'—'}</strong><small>${s.negative} ulasan</small></div>
-      <div><span>NSS</span><strong>${s.classified?`${s.nss>0?'+':''}${number(s.nss)}`:'—'}</strong><small>poin</small></div>
-    </div>
-  </article>`;
-}
-function clusterCard(data) {
-  const negative=summary(data).negative;
-  const matched=clusterStats(data), all=new Map(clusterStats(data,'all').map(c=>[c.id,c.total]));
-  const scale=Math.max(1,...matched.map(c=>c.total));
-  return `<article class="card cluster-card" aria-labelledby="cluster-heading">
-    <div class="card-header"><div><h2 id="cluster-heading">Klaster keluhan yang berulang</h2><p class="card-subtitle">Frasa negatif yang sering muncul, dihitung dari teks ulasan pada filter ini</p></div><span class="badge negative">${negative} ulasan negatif</span></div>
-    ${matched.length?`<div class="feature-list cluster-list">${matched.map(c=>{const total=all.get(c.id)||c.total;return `<div class="feature-row cluster-row">
-      <div class="feature-row-label"><button class="btn-text" data-cluster="${esc(c.id)}" aria-label="${esc(`${c.label}: ${c.total} ulasan negatif dari ${total} teks yang menyebut frasa ini. Buka ulasan terkait.`)}">${esc(c.label)}</button><strong>${c.total} negatif · ${total} teks</strong></div>
-      <div class="feature-bar" role="img" aria-label="${esc(`${c.label}: ${c.total} ulasan negatif, ${total-c.total} teks bernada lain`)}"><span class="negative" style="width:${pct(c.total,scale)}%" title="Ulasan negatif: ${c.total}"></span><span class="neutral" style="width:${pct(total-c.total,scale)}%" title="Teks lain yang menyebut frasa yang sama: ${total-c.total}"></span></div>
-    </div>`;}).join('')}${legend()}<p class="feature-hint">Kamus frasa bersifat tetap agar setiap klaster dapat diperiksa artinya; satu ulasan dapat masuk beberapa klaster, dan hanya ulasan negatif yang dapat dibuka dari tautan ini.</p></div>`:empty('Belum ada klaster yang cocok','Tidak ada ulasan negatif pada filter ini yang menyebut frasa dalam kamus klaster.')}
-  </article>`;
-}
-// Gauge NSS: setengah lingkaran dengan pita interpretasi; jarum hanya menunjuk angka yang
-// sudah dihitung pada filter ini. Sampel kecil ditandai, tidak disamarkan.
 const gaugePoint = (fraction, radius) => ({ x: 160 - radius * Math.cos(Math.PI * fraction), y: 150 - radius * Math.sin(Math.PI * fraction) });
 const gaugeArc = (from, to, radius) => {
   const a = gaugePoint(from, radius), b = gaugePoint(to, radius);
@@ -423,13 +412,6 @@ function incidentCard(data) {
     <div class="incident-actions"><button class="btn btn-primary" data-action="print-incident" ${negative.length ? '' : 'disabled'}>${icon('printer')}Cetak / simpan PDF</button><button class="btn" data-action="export-incident" ${negative.length ? '' : 'disabled'}>${icon('download')}Unduh CSV insiden</button></div>
     <p class="note-inline">Laporan memuat ${integer(negative.length)} ulasan negatif tanpa pembatasan sampel dan tidak menambahkan baris yang tidak ada di data. Teks yang masih perlu ditinjau (${integer(s.unclassified)}) sengaja dikecualikan dari daftar insiden karena labelnya belum pasti; angka NSS dan komposisi di laporan tetap memakai denominasi yang sama dengan dasbor.</p>
   </article>`;
-}
-function shareOfVoice() {
-  const rows=platforms.map(p=>({p,total:reviews.filter(r=>r.platform===p.id).length})).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);
-  const total=rows.reduce((sum,row)=>sum+row.total,0);
-  let start=0;
-  const segments=rows.map(({p,total:count})=>{const end=start+pct(count,total);const segment=`${color(p.color)} ${start}% ${end}%`;start=end;return segment;}).join(',');
-  return `<article class="card sov-card"><div class="card-header"><div><h2>Pangsa volume per kanal</h2><p class="card-subtitle">Bagaimana teks yang terkumpul tersebar menurut kanal</p></div>${icon('layers')}</div>${total?`<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${segments})" role="img" aria-label="${esc(rows.map(({p,total:count})=>`${p.short}: ${count} dari ${total} teks`).join('; '))}"><div class="donut-center"><strong>${integer(total)}</strong><span>teks tersimpan</span></div></div></div><div class="distribution-list">${rows.map(({p,total:count})=>`<div class="distribution-item"><span class="platform-label"><span style="color:${color(p.color)};display:flex">${icon(p.icon)}</span>${esc(p.short)}</span><strong>${integer(count)}<small>${number(pct(count,total))}%</small></strong></div>`).join('')}</div><p class="note-inline">Yang dibagi di sini adalah volume teks yang benar-benar terkumpul pada dasbor ini, bukan pangsa percakapan di internet. Kanal tanpa konektor atau tanpa hasil tidak muncul, jadi angkanya bukan perbandingan popularitas aplikasi.</p>`:empty('Belum ada teks tersimpan','Pangsa kanal akan muncul setelah ada ulasan atau komentar yang tersimpan.')}</article>`;
 }
 // Laporan insiden ditulis ke wadah terpisah lalu dicetak lewat stylesheet cetak browser
 // (Simpan sebagai PDF). Tidak ada dependensi PDF, dan setiap tabel hanya memuat baris yang
@@ -517,19 +499,6 @@ function openIncidentReport(kind) {
   window.print();
   setTimeout(restoreReportChrome, 1500);
 }
-function sentimentLine(bins) {
-  const width=650, height=182, left=30, right=12, top=12, bottom=30, plotW=width-left-right, plotH=height-top-bottom;
-  const step=plotW/Math.max(1,bins.length);
-  const value=b=>{const classified=b.positive+b.negative+b.neutral;return classified?(b.positive-b.negative)/classified*100:null;};
-  const y=nss=>top+plotH-(nss+100)/200*plotH;
-  const points=bins.map((b,i)=>({x:left+step*i+step/2,y:y(value(b)),value:value(b),b})).filter(p=>p.value!==null);
-  const grid=[-100,-50,0,50,100].map(v=>`<line x1="${left}" y1="${y(v)}" x2="${width-right}" y2="${y(v)}" stroke="${v===0?'#c7ccd8':'#eef1f5'}" stroke-width="1"/><text x="4" y="${y(v)+3}" font-size="9" fill="#878a99">${v}</text>`).join('');
-  const path=points.map((p,i)=>`${i?'L':'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const dots=points.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="#299cdb"><title>${esc(`${dateLabel(p.b.date)}: NSS ${p.value>0?'+':''}${number(p.value)} poin · positif ${p.b.positive}, negatif ${p.b.negative}`)}</title></circle>`).join('');
-  const labels=bins.map((b,i)=>i%Math.ceil(bins.length/Math.max(2,Math.floor(plotW/64)))===0?`<text x="${left+step*i+step/2}" y="${height-6}" text-anchor="middle" font-size="9" fill="#878a99">${esc(dateLabel(b.date))}</text>`:'').join('');
-  const description=bins.map(b=>`${dateLabel(b.date)}: ${value(b)===null?'belum ada ulasan berlabel':`NSS ${number(value(b))} poin`}`).join('; ');
-  return bins.length?`<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc('Grafik garis skor sentimen neto per periode: '+description)}">${grid}<path d="${path}" fill="none" stroke="#299cdb" stroke-width="2"/>${dots}${labels}</svg>`:`<p class="chart-caption">Belum ada ulasan bertanggal untuk digambar.</p>`;
-}
 function mixRows(data,pick,names) {
   const counts=new Map();
   for (const row of data) { const key=pick(absaOf(row)); counts.set(key,(counts.get(key)||0)+1); }
@@ -603,8 +572,7 @@ function reviewTable(data, full=false) {
   return `<article class="card review-card"><div class="card-header"><div><h2>${full?'Seluruh ulasan':'Suara merchant terbaru'}</h2><p class="card-subtitle">${full?`Diurutkan menurut ${esc(sortFieldLabels[state.sort.key]||'tanggal ulasan')} — ${state.sort.dir==='asc'?'menaik':'menurun'}. Klik judul kolom untuk mengubah urutan.`:'Ulasan terbaru dari data yang dipilih'}</p></div>${!full?`<button class="btn-text" data-view="reviews">Lihat semua ${icon('arrow')}</button>`:`<div class="review-heading-actions"><span class="badge">${all.length} ulasan</span><button class="btn" data-action="export">${icon('download')}Unduh CSV</button></div>`}</div>${full?`<div class="review-controls"><div class="sentiment-tabs" aria-label="Filter sentimen">${Object.entries({all:'Semua',...sentimentNames}).map(([id,label])=>`<button class="sentiment-tab ${state.sentiment===id?'active':''}" data-sentiment="${esc(id)}" aria-pressed="${state.sentiment===id}">${esc(label)}</button>`).join('')}</div><label class="search-box">${icon('search')}<input type="search" id="review-search" value="${esc(state.query)}" placeholder="Cari ulasan atau nama…" aria-label="Cari ulasan atau nama"></label><select class="tag-filter" id="tag-filter" aria-label="Filter topik"><option value="">Semua topik (${integer(analytical.length)})</option>${Object.entries(tags).map(([id,label])=>`<option value="${esc(id)}" ${state.tag===id?'selected':''} style="color:${esc(tagColors[id]||'#5e6374')}">${esc(label)} (${integer(topicCounts.get(id)||0)})</option>`).join('')}</select><select class="tag-filter size-filter" id="page-size" aria-label="Jumlah baris ulasan yang ditampilkan">${[10,25,50].map(size=>`<option value="${size}" ${String(state.size)===String(size)?'selected':''}>${size} baris</option>`).join('')}<option value="all" ${state.size==='all'?'selected':''}>Semua ${integer(all.length)} ulasan</option></select></div>${dataScopeNote()}${state.complaint?`<div class="active-filter complaint-filter"><span>Keluhan: <strong>${esc(complaint?complaintName(complaint):state.complaint)}</strong> · hanya negatif · ${all.length} ulasan unik</span><button class="btn-text" data-action="clear-complaint" aria-label="Hapus filter keluhan">Hapus filter ${icon('close')}</button></div>`:''}${state.cluster?`<div class="active-filter complaint-filter"><span>Klaster keluhan: <strong>${esc(cluster?cluster.label:state.cluster)}</strong> · hanya negatif · ${all.length} ulasan</span><button class="btn-text" data-action="clear-complaint" aria-label="Hapus filter klaster">Hapus filter ${icon('close')}</button></div>`:''}${state.group?`<div class="active-filter"><span>Topik: ${esc(state.groupName)}</span><button class="btn-text" data-action="clear-group">Hapus filter ${icon('close')}</button></div>`:''}${summary(all).unclassified?`<p class="note-inline">${summary(all).unclassified} ulasan perlu ditinjau; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</p>`:''}`:''}${all.length?`<div class="table-wrap" tabindex="0" role="region" aria-label="Tabel ulasan; gulir horizontal jika diperlukan"><table><thead><tr>${full?reviewHeadings():'<th scope="col">Pengguna / tanggal</th><th scope="col">Ulasan & topik</th><th scope="col">Platform</th><th scope="col">Sentimen</th>'}<th scope="col"><span class="sr-only">Detail</span></th></tr></thead><tbody>${reviewRows(shown)}</tbody></table></div><div class="table-footer"><span>Menampilkan ${full?(state.page-1)*pageSize+1:1}–${full?Math.min(state.page*pageSize,all.length):shown.length} dari ${all.length} ulasan</span>${full?`<div class="pagination"><button data-page="prev" aria-label="Halaman sebelumnya" ${state.page===1?'disabled':''}>${icon('left')}</button><span>${state.page} / ${totalPages}</span><button data-page="next" aria-label="Halaman berikutnya" ${state.page===totalPages?'disabled':''}>${icon('chevron')}</button></div>`:'<span>Tanggal terbaru; tanpa tanggal di akhir</span>'}</div>`:empty('Tidak ada ulasan yang sesuai','Ubah kata kunci, sentimen, topik, platform, atau rentang tanggal. Ulasan tanpa tanggal hanya masuk pilihan semua tanggal.')}</article>`;
 }
 function overview(data) {
-  const undated=data.filter(r=>!validDay(r.date)).length, mode=timelineMode(data,state.trend);
-  return `${executiveSummary(data)}${anomalyBanner(data)}${metricCards(data)}<section class="grid-complaint">${complaintChart()}${projectionCard(data)}</section>${sampleRating(data)}<section class="grid-chart"><article class="card"><div class="card-header"><div><h2>Tren ulasan</h2><p class="card-subtitle">${mode==='line'?'Garis menunjukkan skor sentimen neto per pekan, bukan jumlah ulasan.':mode!==state.trend?'Agregasi bulanan otomatis untuk rentang lebih dari satu tahun.':'Jumlah ulasan menurut tanggal publikasi'}</p></div><select id="trend-mode" aria-label="Agregasi grafik"><option value="week" ${mode==='week'?'selected':''}>Batangan mingguan</option><option value="month" ${mode==='month'?'selected':''}>Batangan bulanan</option><option value="line" ${mode==='line'?'selected':''}>Garis skor sentimen</option></select></div><div class="chart-body" tabindex="0" role="region" aria-label="Grafik tren ulasan; gulir horizontal jika diperlukan">${mode==='line'?sentimentLine(timeline(data,'line')):`${legend()}${trendChart(data)}`}</div><div class="chart-caption">${icon('info')}${mode==='line'?'Periode tanpa satu pun ulasan berlabel tidak titik-gariskan; garis hanya menghubungkan periode yang punya data. ':' '}Tren ini menggambarkan ulasan tertulis yang terkumpul, bukan seluruh pengguna atau aktivitas waktu nyata. ${undated?`${undated} ulasan tanpa tanggal tidak dimasukkan ke grafik.`:'Seluruh ulasan memiliki tanggal dan dimasukkan ke grafik.'}</div></article>${composition(data)}</section><section class="grid-lower">${nssGauge(data)}${shareOfVoice()}</section><section class="grid-lower">${featureCard(data)}${clusterCard(data)}</section><section class="grid-lower">${priorities(data)}${incidentCard(data)}</section>${reviewTable(data)}`;
+  return `${summaryHeader(data)}${anomalyBanner(data)}${chartOne(data)}<section class="grid-lower">${chartTwo(data)}${chartThree(data)}</section><section class="grid-lower">${chartFour(data)}${nssGauge(data)}</section><section class="grid-complaint">${complaintChart()}${projectionCard(data)}</section>${sampleRating(data)}<section class="grid-lower">${featureCard(data)}${priorities(data)}</section>${incidentCard(data)}${reviewTable(data)}`;
 }
 function driverCard(data,sentiment) {
   const groups=groupStats(data,sentiment==='positive'?positiveGroups:painGroups,sentiment).filter(g=>g.total).sort((a,b)=>b.total-a.total);
@@ -936,6 +904,15 @@ document.addEventListener('click',event=>{
     if (!painClusters.some(c => c.id===button.dataset.cluster)) return;
     clearReviewFilters(); state.cluster=button.dataset.cluster; state.sentiment='negative'; navigate('reviews',true); return;
   }
+  if (button.dataset.aspect !== undefined) { state.aspect = button.dataset.aspect; state.page = 1; render(); return; }
+  if (button.dataset.complaintSpike) {
+    const day = button.dataset.complaintSpike;
+    if (!validDay(day)) return;
+    clearReviewFilters(); state.period='custom'; state.from=day; state.to=day;
+    render();
+    notify(`Grafik dan tabel dibatasi pada ${dateLabel(day, { year:'numeric' })}; penanda lonjakan hanya menyebut jumlah harian, penyebabnya belum terverifikasi.`);
+    return;
+  }
   if (button.dataset.sentiment) { clearComplaint(); state.sentiment=button.dataset.sentiment; state.page=1; render(); return; }
   if (button.dataset.tag) { clearReviewFilters(); state.tag=button.dataset.tag; navigate('reviews'); return; }
   if (button.dataset.feature!==undefined) {
@@ -953,6 +930,7 @@ document.addEventListener('click',event=>{
   const action=button.dataset.action;
   if (action==='analyze') { void analyze(); return; }
   if (action==='clear-complaint') { clearComplaint(); state.page=1; render(); }
+  if (action==='clear-aspect') { state.aspect=''; state.page=1; render(); }
   if (action==='clear-group') { state.group=null; state.groupName=''; state.page=1; render(); }
   if (action==='export') {
     const data=visibleReviews();
@@ -979,7 +957,6 @@ document.addEventListener('change',event=>{
     }
     render();
   }
-  if (event.target.id==='trend-mode') { state.trend=event.target.value; render(); }
   if (event.target.id==='tag-filter') { clearComplaint(); state.tag=event.target.value; state.page=1; render(); }
   if (event.target.id==='page-size') { state.size=event.target.value==='all'?'all':Number(event.target.value)||10; state.page=1; render(); }
 });

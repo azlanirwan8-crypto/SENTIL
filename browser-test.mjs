@@ -77,9 +77,12 @@ try {
     if(result.exceptionDetails)throw new Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);
     return result.result.value;
   };
-  const ready=()=>evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.metric-value'))resolve(true);else if(Date.now()>end)reject(Error('App did not render'));else requestAnimationFrame(check);}check();})`);
+  const ready=()=>evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.stat-card'))resolve(true);else if(Date.now()>end)reject(Error('App did not render'));else requestAnimationFrame(check);}check();})`);
   const click=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
-  const metricValues=()=>evaluate(`[...document.querySelectorAll('.metric-value')].map(e=>e.textContent.trim())`);
+  const statValues=()=>evaluate(`[...document.querySelectorAll('.stat-card')].map(e=>e.querySelector('.stat-value').textContent.trim())`);
+  const metricValues=()=>evaluate(`[...document.querySelectorAll('.metrics .metric-value')].map(e=>e.textContent.trim())`);
+  const totalBadge=()=>evaluate(`document.querySelector('.summary-card .badge').textContent.trim()`);
+  const labeledBadge=()=>evaluate(`document.querySelector('.stat-card.nss .stat-sub').textContent.trim()`);
   const screenshot=async(name,full=true)=>{
     await evaluate('document.fonts.ready');
     await evaluate('new Promise(resolve=>setTimeout(resolve,900))');
@@ -90,7 +93,8 @@ try {
   };
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await send('Page.navigate',{url:baseUrl});await ready();
-  assert.deepEqual(await metricValues(),['64','64,1%','34,4%','+29,7']);
+  assert.deepEqual(await statValues(),['64,1%','34,4%','+29,7']);
+  assert.equal(await totalBadge(),'64 teks pada pilihan ini');
   assert.equal(await evaluate(`Boolean(document.querySelector('.brand,.workspace-chip'))`),false);
   const navigationLabels=['Dashboard','Analisis sentimen','Review','Platform'];
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.querySelector('span').textContent)`),navigationLabels);
@@ -123,17 +127,17 @@ try {
   assert.equal(await evaluate(`performance.getEntriesByType('resource').every(e=>new URL(e.name).origin===location.origin)`),true);
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth`),true);
   await screenshot('dashboard-desktop.png');completed.push('Velzon Default visual tokens, locally loaded Poppins and baseline metrics');
-  await click('[data-platform="play"]');assert.deepEqual(await metricValues(),['55','58,2%','40,0%','+18,2']);
-  await click('[data-platform="appstore"]');assert.deepEqual(await metricValues(),['9','100,0%','0,0%','+100,0']);
-  await click('[data-platform="tiktok"]');assert.deepEqual(await metricValues(),['—','—','—','—']);
+  await click('[data-platform="play"]');assert.deepEqual(await statValues(),['58,2%','40,0%','+18,2']);assert.equal(await totalBadge(),'55 teks pada pilihan ini');
+  await click('[data-platform="appstore"]');assert.deepEqual(await statValues(),['100,0%','0,0%','+100,0']);
+  await click('[data-platform="tiktok"]');assert.deepEqual(await statValues(),['—','—','—']);
   completed.push('Store filters and unavailable social empty states');
   await click('[data-platform="all"]');
   await evaluate(`document.querySelector('#period').value='2026-10';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));`);
-  assert.equal((await metricValues())[0],'18');
+  assert.equal(await totalBadge(),'18 teks pada pilihan ini');
   await evaluate(`document.querySelector('#period').value='custom';document.querySelector('#period').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#date-from').value='2026-10-23';document.querySelector('#date-to').value='2026-08-01';`);
   await click('[data-action="apply-dates"]');assert.match(await evaluate(`document.querySelector('#date-error').textContent`),/tanggal awal/);
   await evaluate(`document.querySelector('#date-from').value='2026-10-01';document.querySelector('#date-to').value='2026-10-22';`);
-  await click('[data-action="apply-dates"]');assert.equal((await metricValues())[0],'18');
+  await click('[data-action="apply-dates"]');assert.equal(await totalBadge(),'18 teks pada pilihan ini');
   for(const view of ['overview','sentiment','reviews','platforms']) {
     await click(`[data-view="${view}"]`);
     assert.deepEqual(await evaluate(`[document.querySelector('#period').value,document.querySelector('#date-from').value,document.querySelector('#date-to').value]`),['custom','2026-10-01','2026-10-22']);
@@ -318,27 +322,27 @@ try {
   assert.match(await evaluate(`document.querySelector('.projection-card .empty-state p').textContent`),/pekan memuat ulasan bertanggal|masih sedikit|belum ada ulasan bertanggal/);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.sample-rating > .rating-distribution .rating-row')].filter(e=>e.querySelector('strong').textContent==='0').map(e=>e.querySelector('.rating-track span').getBoundingClientRect().width)`),[0,0,0],'tiga bintang kosong App Store berukuran nol');
   await click('[data-platform="all"]');completed.push('Complaint chart reusing the topic bar grammar, projection card with Poisson range, exact drilldown and zero-value bars');
-  assert.equal(await evaluate(`document.querySelector('.summary-card h2').textContent`),'Ringkasan eksekutif');
-  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Dari 64 ulasan berlabel pada pilihan ini, 64,1% bernada positif dan 34,4% negatif dengan skor sentimen neto \+29,7 poin\./,'kalimat ringkasan memakai angka hasil perhitungan');
-  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Masuk, OTP & keamanan akun \(63,6% dari 22 ulasan negatif\)/);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.summary-chips .chip-intent')].map(e=>e.textContent)`),['Laporan bug 5','Permintaan fitur 0','Marah 0','Frustrasi 10','5 klaster keluhan berulang']);
-  assert.match(await evaluate(`document.querySelector('.summary-note').textContent`),/bukan model bahasa/,'sumber ringkasan dinyatakan terbuka');
+  assert.equal(await evaluate(`document.querySelector('.summary-card h2').textContent.startsWith('Ringkasan')`),true);
+  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Dari 64 teks berlabel pada pilihan ini, 64,1% positif dan 34,4% negatif; NSS \+29,7 poin\./,'kalimat ringkasan memakai angka hasil perhitungan');
+  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Masuk, OTP & keamanan akun — 14 ulasan \(63,6% dari 22 negatif\); Pembayaran, QRIS & pencairan — 8 ulasan \(36,4% dari 22 negatif\)/);
+  assert.equal(await evaluate(`document.querySelectorAll('.stat-card').length`),3,'kepala ringkas memuat tepat tiga kartu angka');
+  assert.equal(await evaluate(`document.querySelectorAll('.summary-main p').length`),2,'ringkasan maksimal dua kalimat');
+  assert.match(await evaluate(`document.querySelector('.summary-card .chart-notes').textContent`),/bukan model bahasa/,'sumber ringkasan dinyatakan terbuka');
   const expectedClusters=clusterStats(seedReviews,'negative').map(c=>c.id);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.cluster-row [data-cluster]')].map(b=>b.dataset.cluster)`),expectedClusters,'klaster hanya menampilkan frasa yang benar-benar cocok');
-  assert.match(await evaluate(`document.querySelector('.cluster-row').textContent`),/\d+ negatif · \d+ teks/);
-  await click('[data-cluster="login-blocked"]');
-  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),1,'drill-down klaster membuka ulasan sumber');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.treemap-cell')].map(b=>b.dataset.cluster).sort()`),[...expectedClusters].sort(),'peta kotak hanya menampilkan frasa yang benar-benar cocok');
+  assert.match(await evaluate(`document.querySelector('.treemap-cell').textContent`),/\d+ negatif/);
+  assert.equal(await evaluate(`[...document.querySelectorAll('.treemap-cell')].every(c=>{const r=c.getBoundingClientRect();return r.width>4&&r.height>4;})`),true,'setiap kotak peta punya ukuran nyata');
+  await click('.treemap-cell[data-cluster="login-blocked"]');
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),1,'drill-down peta kotak membuka ulasan sumber');
   assert.match(await evaluate(`document.querySelector('.active-filter').textContent`),/Klaster keluhan: Tidak bisa masuk/);
   await click('[data-view="overview"]');
-  assert.equal(await evaluate(`document.querySelectorAll('.sov-card .distribution-item').length`),2,'pangsa kanal hanya menampilkan kanal berisi data');
-  assert.match(await evaluate(`document.querySelector('.sov-card').textContent`),/85,9%/);
-  assert.match(await evaluate(`document.querySelector('.sov-card .note-inline').textContent`),/bukan perbandingan popularitas aplikasi|bukan pangsa seluruh percakapan/,'pangsa kanal diberi batas baca');
-  await evaluate(`(() => { const s=document.querySelector('#trend-mode'); s.value='line'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
-  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg path').length`),1,'garis skor sentimen digambar');
-  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg circle').length`)>0,true,'titik per periode tersedia dengan nilai pada title');
-  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg text').length>=5`),true,'sumbu nilai ditandai');
-  await evaluate(`(() => { const s=document.querySelector('#trend-mode'); s.value='week'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
-  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg rect').length>0`),true,'mode batangan kembali tersedia');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.matrix-card svg g')].map(g=>g.querySelector('text')?.textContent)`),['Play Store','App Store'],'matriks hanya menggambar kanal berisi data');
+  assert.match(await evaluate(`document.querySelector('.matrix-card').textContent`),/absennya batang berarti datanya belum ada/,'kanal tanpa data tidak dibaca sebagai nol');
+  assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-bar').length`)>0,true,'batang volume harian digambar');
+  assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-line').length`),1,'garis NSS harian digambar');
+  assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-dot').length`)>0,true,'titik NSS tersedia dengan nilai pada title');
+  assert.equal(await evaluate(`document.querySelectorAll('.donut-card svg path').length`),28,'cincin dalam dan luar digambar dari angka yang sama');
+  assert.match(await evaluate(`document.querySelector('.donut-card .note-inline').textContent`),/28 adalah jumlah keanggotaan aspek dari 22 ulasan negatif/,'satu ulasan yang masuk beberapa aspek tidak dihitung dua kali diam-diam');
   assert.equal(await evaluate(`document.querySelector('.nss-card h2').textContent`),'Skor sentimen neto');
   assert.equal(await evaluate(`document.querySelectorAll('.nss-card .nss-gauge path').length`),6,'keenam pita NSS digambar');
   assert.equal(await evaluate(`document.querySelectorAll('.nss-card .nss-gauge line').length`),1,'jarum hanya ada bila NSS dapat dihitung');
@@ -385,11 +389,11 @@ try {
   await click('[data-view="overview"]');
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.complaint-row .feature-bar span')).animationName`),'none');
-  assert.equal(await evaluate(`new Set([...document.querySelectorAll('.chart-body .legend-swatch')].map(e=>getComputedStyle(e).backgroundColor)).size`),4);
+  assert.equal(await evaluate(`new Set([...document.querySelectorAll('.combo-card .legend-swatch')].map(e=>getComputedStyle(e).backgroundColor)).size`),5);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.feature-bar .unclassified')).backgroundColor`),'rgb(41, 156, 219)');
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.chart-body .legend-swatch')].map(e=>getComputedStyle(e).backgroundColor)`),['rgb(10, 179, 156)','rgb(240, 101, 72)','rgb(135, 138, 153)','rgb(41, 156, 219)']);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.combo-card .legend-swatch')].map(e=>getComputedStyle(e).backgroundColor)`),['rgb(10, 179, 156)','rgb(240, 101, 72)','rgb(135, 138, 153)','rgb(41, 156, 219)','rgb(255, 255, 255)']);
   const noClip=selector=>evaluate(`[...document.querySelectorAll('${selector}')].filter(e=>e.getClientRects().length&&e.scrollWidth>e.clientWidth+1).map(e=>e.textContent.trim().slice(0,40))`);
-  assert.deepEqual(await noClip('.metric-label,.card h2,.complaint-row .btn-text,.projection-name,.driver h3,.platform-tab,.badge,.priority-count,.distribution-item,.anomaly-row span,.anomaly-row strong,.anomaly-more'),[],'teks terpotong di ringkasan');
+  assert.deepEqual(await noClip('.stat-label,.stat-value,.stat-sub,.card h2,.complaint-row .btn-text,.projection-name,.driver h3,.platform-tab,.badge,.priority-count,.distribution-item,.anomaly-row span,.anomaly-row strong,.anomaly-more,.treemap-cell,.aspect-pill,.combo-badges span'),[],'teks terpotong di ringkasan');
   await screenshot('dashboard-desktop.png');
   await click('[data-view="platforms"]');assert.equal(await evaluate(`document.querySelectorAll('.coverage-card').length`),11);
   assert.match(await evaluate(`[...document.querySelectorAll('.coverage-card')].find(c=>c.textContent.includes('Google Play')).textContent`),/Unduhan dipublikasikan\s*10K\+ · rentang Google/);
@@ -402,8 +406,8 @@ try {
   assert.match(await evaluate(`document.querySelector('.source-message').textContent`),/YOUTUBE_API_KEY/);
   assert.equal(await evaluate(`document.querySelector('.coverage-card').classList.contains('is-unavailable')`),true);
   assert.match(await evaluate(`document.querySelector('.coverage-intro').textContent`),/bukan analisis media sosial/);
-  await click('[data-view="overview"]');assert.deepEqual(await metricValues(),['—','—','—','—']);
-  assert.match(await evaluate(`document.querySelector('.classification-note').textContent`),/Tidak tersedia bukan berarti nol keluhan/);
+  await click('[data-view="overview"]');assert.deepEqual(await statValues(),['—','—','—']);assert.equal(await totalBadge(),'0 teks pada pilihan ini');
+  assert.match(await evaluate(`document.querySelector('.summary-caveat').textContent`),/Tidak tersedia bukan berarti nol keluhan/,'kanal kosong diberi keterangan, bukan dianggap nol keluhan');
   await click('[data-view="platforms"]');await click('[data-platform="all"]');await screenshot('platform-coverage.png');
   const storeLayout=await evaluate(`[...document.querySelectorAll('[data-source-card="play"],[data-source-card="appstore"]')].map(card=>({
     metrics:[...card.querySelectorAll('.coverage-stats strong')].map(e=>e.textContent),
@@ -448,8 +452,9 @@ try {
       assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,`${view} overflows at ${width}px`);
       assert.equal(await evaluate(`new Set([...document.querySelectorAll('.platform-tab')].map(e=>Math.round(e.getBoundingClientRect().top))).size`),1,`${view}: platform rows at ${width}px`);
       assert.equal(await evaluate(`document.querySelectorAll('.platform-tab').length`),12);
-      assert.deepEqual(await noClip('.metric-label,.card h2,.complaint-row .btn-text,.feature-row-label strong,.cluster-row .btn-text,.summary-side span,.summary-side strong,.summary-side small,.chip-intent,.absa-mixes h3,.projection-name,.projection-stats span,.projection-stats strong,.projection-stats small,.driver h3,.source-facts dt,.source-facts dd,.platform-tab,.badge,.priority-count,.distribution-item'),[],`${view}: clipped text at ${width}px`);
-      if(width<=480&&(view==='overview'||view==='sentiment'))assert.equal(await evaluate(`(() => {const values=[...document.querySelectorAll('.metric-value')].map(e=>e.offsetTop);return Math.abs(values[0]-values[1])<1&&Math.abs(values[2]-values[3])<1;})()`),true,`${view}: metric alignment at ${width}px`);
+      assert.deepEqual(await noClip('.metric-label,.stat-label,.stat-value,.stat-sub,.card h2,.complaint-row .btn-text,.feature-row-label strong,.treemap-cell,.aspect-pill,.distribution-item,.absa-mixes h3,.projection-name,.projection-stats span,.projection-stats strong,.projection-stats small,.driver h3,.source-facts dt,.source-facts dd,.platform-tab,.badge,.priority-count,.distribution-item'),[],`${view}: clipped text at ${width}px`);
+      if(width<=480&&view==='overview')assert.equal(await evaluate(`(()=>{const row=document.querySelector('.stat-cards').getBoundingClientRect();return document.querySelectorAll('.stat-card').length===3&&[...document.querySelectorAll('.stat-card')].every(card=>{const b=card.getBoundingClientRect();return b.width>=100&&b.left>=row.left-1&&b.right<=row.right+1;});})()`),true,`${view}: tiga kartu angka penuh satu baris tanpa keluar wadah di ${width}px`);
+      if(width<=480&&view==='sentiment')assert.equal(await evaluate(`(() => {const values=[...document.querySelectorAll('.metric-value')].map(e=>e.offsetTop);return Math.abs(values[0]-values[1])<1&&Math.abs(values[2]-values[3])<1;})()`),true,`${view}: metric alignment at ${width}px`);
       assert.equal(await evaluate(`document.querySelectorAll('#period').length`),1);
       assert.equal(await evaluate(`document.querySelectorAll('.heading-actions #period').length`),1);
       assert.equal(await evaluate(`document.querySelectorAll('[data-action="analyze"]').length`),view==='platforms'?1:0,`${view}: pull action visibility at ${width}px`);
@@ -485,16 +490,20 @@ try {
   // Tombol geser dihapus dan scrollbar disembunyikan di seluruh menu; baris platform
   // tetap dapat digulir dengan keyboard.
   assert.equal(await evaluate(`document.querySelectorAll('[data-scroll-platforms]').length`),0,'tombol geser tidak dipakai lagi');
-  assert.deepEqual(await evaluate(`['#platform-tabs','.table-wrap','.chart-body'].map(s=>{const e=document.querySelector(s);return e.offsetHeight-e.clientHeight;})`),[0,0,0],'tidak ada scrollbar yang mengambil ruang tampilan');
+  assert.deepEqual(await evaluate(`['#platform-tabs','.table-wrap','.chart-scroll'].map(s=>{const e=document.querySelector(s);return e.offsetHeight-e.clientHeight;})`),[0,0,0],'tidak ada scrollbar yang mengambil ruang tampilan');
   // Tanpa tombol geser, tab yang mendapat fokus keyboard tetap ikut terlihat.
   assert.equal(await evaluate(`(()=>{const tabs=document.querySelector('#platform-tabs');tabs.scrollLeft=0;const last=tabs.lastElementChild;last.focus({preventScroll:true});last.scrollIntoView({block:'nearest',inline:'nearest'});const a=last.getBoundingClientRect(),b=tabs.getBoundingClientRect();return a.left>=b.left-1&&a.right<=b.right+1;})()`),true,'tab terakhir ikut terlihat saat mendapat fokus keyboard');
   await evaluate(`document.querySelector('#platform-tabs').scrollLeft=0`);
   assert.equal(await evaluate(`document.querySelector('#platform-tabs').scrollLeft`),0);
-  assert.equal(await evaluate(`document.querySelector('.chart-body').tabIndex`),0);
-  await evaluate(`document.querySelector('.chart-body').focus()`);
+  // Kanvas grafik yang lebih lebar dari layarnya dapat digulir dengan keyboard tanpa
+  // membuat seluruh halaman bergeser.
+  assert.equal(await evaluate(`document.querySelector('.chart-scroll').scrollWidth>document.querySelector('.chart-scroll').clientWidth`),true,'kanvas grafik dapat digulir pada layar sempit');
+  assert.equal(await evaluate(`document.querySelector('.chart-scroll').tabIndex`),0);
+  await evaluate(`document.querySelector('.chart-scroll').focus()`);
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
-  assert.equal(await evaluate(`new Promise(resolve=>{const end=Date.now()+2000;function check(){if(document.querySelector('.chart-body').scrollLeft>0)resolve(true);else if(Date.now()>end)resolve(false);else requestAnimationFrame(check);}check();})`),true);
+  assert.equal(await evaluate(`new Promise(resolve=>{const end=Date.now()+2000;function check(){if(document.querySelector('.chart-scroll').scrollLeft>0)resolve(true);else if(Date.now()>end)resolve(false);else requestAnimationFrame(check);}check();})`),true,'garis bawah keyboard menggulir kanvas grafik');
+  assert.equal(await evaluate(`window.scrollX`),0,'halaman tidak ikut bergeser saat kanvas digulir');
   await evaluate(`document.querySelector('[data-platform="all"]').focus()`);
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
@@ -531,10 +540,10 @@ try {
   assert.equal(await evaluate(`document.querySelector('.complaint-row .feature-bar').getBoundingClientRect().width>0`),true);
   await screenshot('dashboard-mobile.png');completed.push('Platform coverage and mobile layout without page overflow');
   collectorMode='new';await pullFromPlatform();
-  assert.equal((await metricValues())[0],'65');
-  await pullFromPlatform();assert.equal((await metricValues())[0],'65');
+  assert.equal(await totalBadge(),'65 teks pada pilihan ini','teks baru masuk hitungan ringkasan');
+  await pullFromPlatform();assert.equal(await totalBadge(),'65 teks pada pilihan ini','penarikan ulang tidak menduplikasi teks yang sama');
   await send('Page.reload');await ready();
-  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.metric-value').textContent==='65')resolve(true);else if(Date.now()>end)reject(Error('Stored data not loaded'));else requestAnimationFrame(check);}check();})`);
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const badge=document.querySelector('.summary-card .badge');if(badge&&badge.textContent==='65 teks pada pilihan ini')resolve(true);else if(Date.now()>end)reject(Error('Stored data not loaded'));else requestAnimationFrame(check);}check();})`);
   await click('[data-view="reviews"]');
   await evaluate(`document.querySelector('#review-search').value='QA <img';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`new Promise(resolve=>{const check=()=>document.querySelectorAll('tbody tr').length===1?resolve(true):requestAnimationFrame(check);check();})`);

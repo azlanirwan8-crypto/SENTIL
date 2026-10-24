@@ -140,7 +140,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible,
-.chart-body:focus-visible,
+.chart-scroll:focus-visible,
 .table-wrap:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
@@ -977,12 +977,6 @@ main {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.chart-body {
-  padding: 16px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-}
-
 .legend {
   display: flex;
   align-items: center;
@@ -1336,6 +1330,10 @@ main {
 }
 
 .summary-main h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 15px;
 }
 
@@ -1344,76 +1342,6 @@ main {
   color: var(--text);
   font-size: 13.5px;
   line-height: 1.7;
-}
-
-.summary-chips {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.chip-intent {
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--text-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.chip-intent.bug {
-  background: var(--danger-soft);
-  color: var(--danger-text);
-}
-
-.chip-intent.wish {
-  background: var(--info-soft);
-  color: var(--info-text);
-}
-
-.chip-intent.anger {
-  background: var(--warning-soft);
-  color: var(--warning-text);
-}
-
-.summary-note {
-  margin-top: 10px;
-  color: var(--text-muted);
-  font-size: 11.5px;
-  line-height: 1.7;
-}
-
-.summary-side {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.summary-side > div {
-  display: grid;
-  gap: 2px;
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  background: var(--surface-soft);
-}
-
-.summary-side span {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.summary-side strong {
-  color: var(--heading);
-  font-size: 19px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.summary-side small {
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 .cluster-list,
@@ -2022,14 +1950,16 @@ main {
   color: var(--heading);
 }
 
-.table-wrap {
+.table-wrap,
+.chart-scroll {
   position: relative;
   max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   overscroll-behavior-x: contain;
 }
 
-.chart-body:focus-visible,
+.chart-scroll:focus-visible,
 .table-wrap:focus-visible {
   outline-offset: -3px;
 }
@@ -2970,10 +2900,6 @@ tbody tr:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .summary-side {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .absa-mixes {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3530,14 +3456,14 @@ th[aria-sort='descending'] .th-sort.active .icon {
 /* Tidak ada scrollbar atau tombol geser yang tampil di seluruh menu. */
 .platform-tabs,
 .table-wrap,
-.chart-body,
+.chart-scroll,
 .dialog-body {
   scrollbar-width: none;
 }
 
 .platform-tabs::-webkit-scrollbar,
 .table-wrap::-webkit-scrollbar,
-.chart-body::-webkit-scrollbar,
+.chart-scroll::-webkit-scrollbar,
 .dialog-body::-webkit-scrollbar {
   display: none;
   width: 0;
@@ -3892,4 +3818,255 @@ th[aria-sort='descending'] .th-sort.active .icon {
     color: #404551;
     font-size: 10px;
   }
+}
+
+/* Sistem grafik dasbor: kepala ringkas, empat grafik utama, dan filter aspek. */
+.summary-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--gutter);
+  align-items: stretch;
+  margin-bottom: var(--gutter);
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.stat-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  color: var(--heading);
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.stat-value small {
+  margin-left: 2px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.stat-sub {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.stat-card.positive .stat-value { color: var(--success-text); }
+.stat-card.negative .stat-value { color: var(--danger-text); }
+.stat-card.nss .stat-value { color: var(--primary); }
+
+.aspect-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.aspect-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.aspect-pill .count {
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.aspect-pill:hover { border-color: var(--primary-border); color: var(--primary); }
+
+.aspect-pill.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.aspect-pill.active .count { color: #fff; }
+
+.chart-card { margin-bottom: var(--gutter); }
+
+/* Isi kartu grafik mendapat jarak yang sama dengan kepala kartu; hanya kanvas yang boleh bergulir. */
+.chart-card > .chart-scroll,
+.chart-card > .donut-grid,
+.chart-card > .combo-badges,
+.chart-card > .legend,
+.chart-card > .chart-empty {
+  padding-inline: 16px;
+}
+
+.chart-card > .chart-scroll { padding-top: 14px; }
+.chart-card > .legend { padding-block: 12px 16px; }
+.chart-card > .combo-badges { padding-bottom: 14px; }
+.chart-card > .donut-grid { padding-block: 16px; }
+.chart-card > .chart-empty { padding-block: 24px; }
+.chart-card > .treemap-plot { margin: 14px 16px 0; }
+
+.combo-svg,
+.matrix-svg {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  height: auto;
+}
+
+.combo-line { pointer-events: none; }
+
+.combo-spike-frame {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+.combo-dot.is-spike { stroke: #fff; stroke-width: 1.5; }
+
+.combo-badges {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.combo-badges li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.combo-badges .btn-text { font-weight: 600; }
+
+.chart-empty {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.donut-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.donut-grid svg { width: 100%; height: auto; }
+
+.donut-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.treemap-plot {
+  position: relative;
+  display: block;
+  aspect-ratio: var(--treemap-ar, 1000 / 420);
+  min-height: 220px;
+}
+
+.treemap-cell {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, .7);
+  border-radius: 3px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.treemap-cell.severity-critical { background: #f06548; }
+.treemap-cell.severity-warning { background: #f7b84b; color: #4b3a13; }
+.treemap-cell.severity-info { background: #299cdb; }
+
+.treemap-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.treemap-value { font-size: 11px; font-variant-numeric: tabular-nums; }
+.treemap-sev { font-size: 10px; opacity: .85; }
+
+.legend-swatch.nss { background: #299cdb; }
+.legend-swatch.spike { background: #fff; border: 1.5px dashed var(--danger); }
+.legend-swatch.warning { background: #f7b84b; }
+.legend-swatch.severity-critical { background: #f06548; }
+.legend-swatch.severity-warning { background: #f7b84b; }
+.legend-swatch.severity-info { background: #299cdb; }
+
+.matrix-rate { opacity: .9; }
+
+@media (max-width: 1180px) {
+  .summary-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .stat-cards {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .donut-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chart-card > .treemap-plot { aspect-ratio: 4 / 5; }
+
+  .treemap-cell { padding: 5px; gap: 0; }
+  .treemap-name { font-size: 11px; }
+  .treemap-sev { display: none; }
+
+  .stat-value { font-size: 22px; }
 }

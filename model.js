@@ -246,6 +246,121 @@ export function nssBand(nss) {
   if (nss === null || !Number.isFinite(nss)) return null;
   return nssBands.find(band => nss >= band.min && nss <= band.max) || null;
 }
+// Deret harian untuk grafik batang bertumpuk + garis NSS. Hari disusun berurutan dari tanggal
+// pertama sampai terakhir yang benar-benar ada datanya (dibatasi maxDays sebagai pagar
+// memori, bukan pembatas sampel — bila terpotong, caller mendapat flag truncated).
+export function dailySeries(reviews, options = {}) {
+  const { maxDays = 400 } = { ...anomalyDefaults, ...options };
+  const dated = reviews.filter(r => validDate(r.date)).sort((a, b) => a.date.localeCompare(b.date));
+  if (!dated.length) return { days: [], truncated: false, undated: reviews.length };
+  const first = dated[0].date, last = dated.at(-1).date;
+  const span = Math.floor((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86400000) + 1;
+  const days = [];
+  const cursor = new Date(`${first}T00:00:00Z`);
+  while (days.length < maxDays && days.length < span) {
+    days.push({ date: cursor.toISOString().slice(0, 10), positive: 0, negative: 0, neutral: 0, unclassified: 0, total: 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  const index = new Map(days.map((day, position) => [day.date, position]));
+  for (const review of dated) {
+    const slot = index.get(review.date);
+    if (slot === undefined) continue;
+    const day = days[slot];
+    day[review.sentiment]++; day.total++;
+  }
+  for (const day of days) {
+    const classified = day.positive + day.negative + day.neutral;
+    day.nss = nssRatio(day.positive, day.negative);
+    day.classified = classified;
+  }
+  return { days, truncated: span > days.length, span, undated: reviews.length - dated.length };
+}
+// Penanda lonjakan pada sumbu waktu. Sengaja hanya berisi angka dan tanggal hasil hitungan:
+// tidak ada label rilis aplikasi atau insiden yang tidak ada sumbernya di data.
+export function spikeBadges(series, options = {}) {
+  const settings = { ...anomalyDefaults, ...options };
+  const values = series.map(day => day.negative);
+  const badges = [];
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] < settings.minCurrent) continue;
+    const prior = values.slice(Math.max(0, i - settings.dailyBaselineWindows), i);
+    if (prior.length < Math.min(settings.minWindows, 3)) continue;
+    const baseline = prior.reduce((sum, value) => sum + value, 0) / prior.length;
+    const increasePct = baseline > 0 ? (values[i] - baseline) / baseline * 100 : Number.POSITIVE_INFINITY;
+    if (!(increasePct > settings.thresholdPct)) continue;
+    badges.push({ date: series[i].date, negative: values[i], baseline, increasePct, label: `${values[i]} ulasan negatif${baseline > 0 ? ` (+${Math.round(increasePct)}% dari rata-rata ${baseline.toFixed(1)} per hari)` : ' (muncul setelah hari-hari tanpa keluhan)'}` });
+  }
+  return badges.sort((a, b) => b.negative - a.negative || b.date.localeCompare(a.date));
+}
+// Matriks antar platform: satu baris per kanal yang benar-benar punya teks tersimpan.
+export function platformMatrix(reviews, platformList) {
+  return platformList.map(platform => {
+    const rows = reviews.filter(review => review.platform === platform.id);
+    return { id: platform.id, name: platform.short, color: platform.color, icon: platform.icon, total: rows.length, ...summary(rows) };
+  }).filter(row => row.total > 0).sort((a, b) => b.total - a.total);
+}
+// Donut berjenjang: cincin dalam = aspek pengalaman (pendorong), cincin luar = pemecahan
+// tiap aspek menurut kanal. Semua angka dihitung dari baris yang sama dengan dasbor.
+export function aspectChannelRings(reviews, platformList, sentiment = 'negative') {
+  const wanted = review => !sentiment || sentiment === 'all' || review.sentiment === sentiment;
+  const inner = [], outer = [];
+  for (const group of aspectGroups) {
+    const rows = reviews.filter(review => wanted(review) && absaOf(review).aspects.includes(group.id));
+    if (!rows.length) continue;
+    inner.push({ id: group.id, name: group.name, value: rows.length });
+    for (const platform of platformList) {
+      const count = rows.filter(review => review.platform === platform.id).length;
+      if (count) outer.push({ aspect: group.id, aspectName: group.name, platform: platform.id, name: platform.short, color: platform.color, value: count });
+    }
+  }
+  return { inner: inner.sort((a, b) => b.value - a.value), outer: outer.sort((a, b) => b.value - a.value) };
+}
+// Peta kotak (squarified treemap) untuk klaster keluhan. Urutan dijaga dari nilai terbesar,
+// dan setiap node mendapat persegi panjang tanpa tumpang tindih di dalam area yang diberikan.
+export function squarify(nodes, x, y, width, height) {
+  const items = nodes.filter(node => node.value > 0).sort((a, b) => b.value - a.value);
+  const total = items.reduce((sum, node) => sum + node.value, 0);
+  if (!items.length || !total || !(width > 0) || !(height > 0)) return [];
+  const scale = (width * height) / total;
+  let cells = items.map(node => ({ ...node, area: node.value * scale }));
+  const layout = [];
+  let box = { x, y, width, height };
+  const worst = (candidate, side) => {
+    let sum = 0, max = 0, min = Number.POSITIVE_INFINITY;
+    for (const cell of candidate) { sum += cell.area; max = Math.max(max, cell.area); min = Math.min(min, cell.area); }
+    if (!sum || !min || !(side > 0)) return Number.POSITIVE_INFINITY;
+    return Math.max((side * side * max) / (sum * sum), (sum * sum) / (side * side * min));
+  };
+  while (cells.length) {
+    const side = Math.min(box.width, box.height);
+    let row = [cells[0]], rest = cells.slice(1);
+    while (rest.length && worst([...row, rest[0]], side) <= worst(row, side)) { row.push(rest[0]); rest = rest.slice(1); }
+    const sum = row.reduce((acc, cell) => acc + cell.area, 0);
+    const thickness = sum / side;
+    let offset = 0;
+    for (const cell of row) {
+      const length = cell.area / thickness;
+      // Sisi pendek kotak menjadi tempat baris ditumpuk; sisanya menjadi tebal pita.
+      layout.push(box.width <= box.height
+        ? { ...cell, x: box.x + offset, y: box.y, width: length, height: thickness }
+        : { ...cell, x: box.x, y: box.y + offset, width: thickness, height: length });
+      offset += length;
+    }
+    box = box.width <= box.height
+      ? { x: box.x, y: box.y + thickness, width: box.width, height: box.height - thickness }
+      : { x: box.x + thickness, y: box.y, width: box.width - thickness, height: box.height };
+    cells = rest;
+  }
+  return layout;
+}
+// Node treemap keluhan: klaster frasa berulang, diwarnai menurut beratnya keluhan.
+export function painTreemapNodes(reviews) {
+  const negative = summary(reviews).negative || 1;
+  return clusterStats(reviews).map(cluster => {
+    const share = cluster.total / negative;
+    return { id: cluster.id, name: cluster.label, value: cluster.total, severity: share >= 0.2 ? 'critical' : share >= 0.08 ? 'warning' : 'info' };
+  });
+}
 const sourceDomains = { play: ['play.google.com'], appstore: ['apps.apple.com', 'itunes.apple.com'], x: ['x.com','twitter.com'], instagram: ['instagram.com'], tiktok: ['tiktok.com'], youtube: ['youtube.com','youtu.be'], googlemaps: ['google.com'] };
 export function validSource(value, platform) {
   try {

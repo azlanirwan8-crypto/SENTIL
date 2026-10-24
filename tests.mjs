@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
 import { createDashboardServer, deploymentConfig } from './server.mjs';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -325,6 +325,85 @@ test('Target identity is built from the target, and only from a confirmed discov
   assert.throws(() => targetFromDiscovery({ discovery: loose }), /discovery_unconfirmed/);
   assert.throws(() => normalizeTarget({ entityName: 'x', playAppId: 'bukan paket' }), /target_invalid/);
   assert.throws(() => normalizeTarget({ entityName: 'contoh', appleAppId: 'abc' }), /target_invalid/);
+});
+
+const chartRows = [
+  { platform:'play', sentiment:'negative', date:'2026-10-01', tags:['login'], text:'tidak bisa masuk' },
+  { platform:'play', sentiment:'negative', date:'2026-10-01', tags:['transactions'], text:'qris gagal' },
+  { platform:'play', sentiment:'negative', date:'2026-10-01', tags:['transactions'], text:'qris gagal lagi' },
+  { platform:'play', sentiment:'positive', date:'2026-10-01', tags:['ux'], text:'bagus' },
+  { platform:'appstore', sentiment:'positive', date:'2026-10-03', tags:['ux'], text:'mantap' },
+  { platform:'play', sentiment:'negative', date:'2026-10-04', tags:['performance'], text:'loading lama' },
+  { platform:'youtube', sentiment:'unclassified', date:null, tags:[], text:'tanya' },
+];
+test('daily series fills real calendar days and never invents them', () => {
+  const series = dailySeries(chartRows);
+  assert.deepEqual(series.days.map(d => d.date), ['2026-10-01','2026-10-02','2026-10-03','2026-10-04'], 'hari berurutan termasuk hari tanpa ulasan');
+  assert.deepEqual(series.days.map(d => d.negative), [3,0,0,1]);
+  assert.equal(series.days[0].total, 4);
+  assert.equal(series.days[1].nss, null, 'hari tanpa ulasan berlabel tidak diberi angka');
+  assert.ok(Math.abs(series.days[0].nss - (1-3)/4*100) < 1e-9);
+  assert.equal(series.undated, 1, 'teks tanpa tanggal tidak disebar ke hari mana pun');
+  assert.equal(series.truncated, false);
+  assert.equal(dailySeries([]).days.length, 0);
+});
+test('Spike badges carry only numbers that exist in the data', () => {
+  const quiet = Array.from({ length: 20 }, (_, index) => index + 1).flatMap(day => [
+    { platform:'play', sentiment:'negative', date:`2026-09-${String(day).padStart(2,'0')}`, tags:['login'], text:'tidak bisa masuk' },
+    { platform:'play', sentiment:'positive', date:`2026-09-${String(day).padStart(2,'0')}`, tags:['ux'], text:'bagus' },
+  ]);
+  const rows = [...quiet, ...Array.from({ length: 5 }, () => ({ platform:'play', sentiment:'negative', date:'2026-09-21', tags:['login'], text:'gagal' }))];
+  const badges = spikeBadges(dailySeries(rows).days);
+  assert.equal(badges.length, 1);
+  assert.equal(badges[0].date, '2026-09-21');
+  assert.equal(badges[0].negative, 5);
+  assert.ok(Math.abs(badges[0].baseline - 1) < 1e-9);
+  assert.match(badges[0].label, /5 ulasan negatif/);
+  assert.doesNotMatch(badges[0].label, /outage|rilis|v1\./i, 'label tidak berisi kejadian yang tidak ada di data');
+  assert.deepEqual(spikeBadges(dailySeries(quiet).days), [], 'hari biasa tidak ditandai');
+});
+test('Platform matrix and aspect rings use the same rows as the dashboard', () => {
+  const matrix = platformMatrix(chartRows, platforms);
+  assert.deepEqual(matrix.map(row => [row.id, row.total]), [['play',5],['appstore',1],['youtube',1]]);
+  assert.equal(matrix[0].nss, (1-4)/5*100);
+  assert.equal(matrix[2].nss, null, 'kanal tanpa label tidak menghasilkan angka');
+  const rings = aspectChannelRings(chartRows.filter(r => r.sentiment === 'negative'), platforms);
+  const payment = rings.inner.find(a => a.id === 'payment');
+  assert.equal(payment.value, 2, 'dua ulasan QRIS masuk aspek pembayaran');
+  assert.deepEqual(rings.outer.filter(o => o.aspect === 'payment').map(o => [o.platform, o.value]), [['play',2]]);
+  assert.equal(rings.inner.reduce((sum,a)=>sum+a.value,0), rings.outer.reduce((sum,o)=>sum+o.value,0), 'cincin dalam dan luar membaca jumlah yang sama');
+});
+test('Squarified treemap lays out every node inside the box without overlap', () => {
+  const nodes = [{id:'a',value:40},{id:'b',value:30},{id:'c',value:20},{id:'d',value:10},{id:'e',value:0}];
+  const cells = squarify(nodes, 0, 0, 600, 300);
+  assert.deepEqual(cells.map(c => c.id).sort(), ['a','b','c','d'], 'node bernilai nol tidak digambar');
+  for (const cell of cells) {
+    assert.ok(cell.x >= -1e-6 && cell.y >= -1e-6, `${cell.id} keluar kotak`);
+    assert.ok(cell.x + cell.width <= 600 + 1e-6 && cell.y + cell.height <= 300 + 1e-6, `${cell.id} melewati tepi`);
+    assert.ok(cell.width > 0 && cell.height > 0);
+  }
+  const area = cells.reduce((sum, cell) => sum + cell.width * cell.height, 0);
+  assert.ok(Math.abs(area - 600 * 300) < 1, 'seluruh kotak terisi tanpa ruang kosong yang berarti');
+  for (let i = 0; i < cells.length; i++) for (let j = i + 1; j < cells.length; j++) {
+    const a = cells[i], b = cells[j];
+    const overlap = Math.max(0, Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)) * Math.max(0, Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y));
+    assert.ok(overlap < 1e-6, `${a.id} dan ${b.id} tumpang tindih`);
+  }
+  const ratio = value => cells.find(c => c.value === value);
+  assert.ok(Math.abs(ratio(40).width*ratio(40).height / (ratio(10).width*ratio(10).height) - 4) < 0.05, 'luas kotak sebanding dengan nilainya');
+  assert.deepEqual(squarify([], 0, 0, 600, 300), []);
+  assert.deepEqual(squarify(nodes, 0, 0, 0, 300), [], 'kotak tanpa lebar tidak menghasilkan angka palsu');
+});
+test('Pain-point treemap nodes are graded by real share of complaints', () => {
+  const rows = [
+    ...Array.from({ length: 8 }, (_, i) => ({ platform:'play', sentiment:'negative', date:'2026-10-01', tags:['login'], text:`tidak bisa masuk ${i}` })),
+    ...Array.from({ length: 2 }, (_, i) => ({ platform:'play', sentiment:'negative', date:'2026-10-02', tags:['transactions'], text:`qris gagal ${i}` })),
+  ];
+  const nodes = painTreemapNodes(rows);
+  assert.ok(nodes.length >= 2);
+  assert.equal(nodes[0].severity, 'critical', 'klaster dengan 20%+ dari keluhan masuk kategori kritis');
+  assert.equal(nodes.reduce((sum, node) => sum + node.value, 0) > 0, true);
+  assert.deepEqual(painTreemapNodes(rows.filter(r => r.sentiment === 'positive')), [], 'pujian tidak dijadikan keluhan');
 });
 
 test('aspect and cluster statistics count only matching reviews',()=>{
