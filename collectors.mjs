@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
-import { playUrl } from './data.js';
+import { defaultTarget, appleReviewsUrl, appleFeedUrl, playDetailsUrl, identityPattern } from './target.mjs';
 import { validDate, validSource, hasMerchantContext, merchantKeywords } from './model.js';
-
-const appleId = '6741567238';
-const appleUrl = `https://apps.apple.com/id/app/wondr-merchant-by-bni/id${appleId}?see-all=reviews&platform=iphone`;
 // Batas keamanan jumlah tautan lanjutan, bukan pembatas jumlah sampel.
 const applePageLimit = 30;
 // Google memisahkan daftar ulasan menurut bahasa antarmuka. Setiap kumpulan harus dibaca lalu digabung.
@@ -27,7 +24,7 @@ async function fetchText(url, options = {}, fetcher = fetch) {
   }
   return Buffer.concat(chunks).toString('utf8');
 }
-function normalizeReview(raw, platform, sourceUrl) {
+function normalizeReview(raw, platform, sourceUrl, target = defaultTarget) {
   check(typeof raw.id === 'string' && raw.id.length > 0 && raw.id.length <= 200,'ID ulasan tidak valid');
   check(typeof raw.text === 'string' && raw.text.length <= 20000,'teks ulasan tidak valid');
   check(raw.author == null || (typeof raw.author === 'string' && raw.author.length <= 500),'nama pengguna tidak valid');
@@ -38,11 +35,11 @@ function normalizeReview(raw, platform, sourceUrl) {
     check(typeof raw.date === 'string' && Number.isFinite(Date.parse(raw.date)) && validDate(raw.date.slice(0,10)),'tanggal ulasan tidak valid');
     publishedAt = raw.date;
   }
-  return { id:platform === 'appstore' ? `apple-${raw.id}` : raw.id, platform, author:raw.author?.trim() || 'N/A', text:raw.text, ...(raw.title != null ? {title:raw.title} : {}), rating:raw.rating ?? null, date:publishedAt?.slice(0,10) ?? null, publishedAt, sourceUrl, provenance:platform === 'play' ? 'Halaman publik Google Play; gabungan kumpulan ulasan bahasa Indonesia dan Inggris, urutan terbaru (id.bni.wfb)' : 'Halaman ulasan publik App Store Indonesia; ID dan waktu asli (6741567238)' };
+  return { id:platform === 'appstore' ? `apple-${raw.id}` : raw.id, platform, author:raw.author?.trim() || 'N/A', text:raw.text, ...(raw.title != null ? {title:raw.title} : {}), rating:raw.rating ?? null, date:publishedAt?.slice(0,10) ?? null, publishedAt, sourceUrl, provenance:platform === 'play' ? `Halaman publik Google Play; gabungan kumpulan ulasan bahasa Indonesia dan Inggris, urutan terbaru (${target.play.appId ?? 'tanpa ID paket'})` : `Halaman ulasan publik App Store Indonesia; ID dan waktu asli (${target.appstore.appId ?? 'tanpa ID'})` };
 }
-export function parseGoogleListing(html) {
+export function parseGoogleListing(html, target = defaultTarget) {
   const listing = scripts(html).filter(m => /type=["']application\/ld\+json["']/i.test(m[1])).map(m => JSON.parse(m[2])).find(x => x['@type'] === 'SoftwareApplication');
-  check(listing && new URL(listing.url).searchParams.get('id') === 'id.bni.wfb','identitas aplikasi di Google Play berubah');
+  check(listing && new URL(listing.url).searchParams.get('id') === target.play.appId,'identitas aplikasi di Google Play berubah');
   const rating = Number(listing.aggregateRating?.ratingValue), ratingCount = Number(listing.aggregateRating?.ratingCount);
   check(rating >= 1 && rating <= 5 && Number.isInteger(ratingCount) && ratingCount >= 0,'nilai rating Google Play tidak terbaca');
   return {rating,ratingCount};
@@ -63,7 +60,7 @@ export function parsePlayInstalls(html) {
   const match = html.match(/<div class="[^"]*">([^<]{1,24})<\/div><div class="[^"]*">\s*(Downloads|Unduhan)\s*<\/div>/i);
   return match ? match[1].trim() : null;
 }
-export function parseGoogleReviews(text) {
+export function parseGoogleReviews(text, target = defaultTarget) {
   const frames = text.split(/\r?\n/).filter(line => line.trimStart().startsWith('[')).flatMap(line => JSON.parse(line));
   const frame = frames.find(f => f[0] === 'wrb.fr' && f[1] === 'oCPfdb');
   check(frame,'data ulasan Google Play tidak ditemukan');
@@ -77,20 +74,20 @@ export function parseGoogleReviews(text) {
       check(Array.isArray(r[5]) && Number.isFinite(r[5][0]) && (r[5][1] == null || Number.isFinite(r[5][1])),'waktu ulasan Google tidak valid');
       date = new Date(r[5][0]*1000 + Math.floor((r[5][1] || 0)/1e6)).toISOString();
     }
-    return normalizeReview({id:r[0],author:r[1]?.[0],rating:r[2],text:r[4] ?? '',date},'play',playUrl);
+    return normalizeReview({id:r[0],author:r[1]?.[0],rating:r[2],text:r[4] ?? '',date},'play',target.play.url,target);
   }).filter(r => r.text.trim());
   return {reviews, rows: payload[0].length, cursor:payload[1]?.[1] ?? null};
 }
-export function parseApplePage(html) {
+export function parseApplePage(html, target = defaultTarget) {
   const script = scripts(html).find(m => /\bid=["']serialized-server-data["']/i.test(m[1]));
   check(script,'data ulasan App Store tidak ditemukan');
   const root = JSON.parse(script[2]);
   check(Array.isArray(root.data),'struktur data App Store berubah');
-  const page = root.data.find(x => x.intent?.id === appleId && x.intent?.storefront === 'id')?.data;
+  const page = root.data.find(x => x.intent?.id === target.appstore.appId && x.intent?.storefront === (target.appstore.country || 'id'))?.data;
   const shelf = page?.shelfMapping?.allProductReviews;
   const listing = page?.shelfMapping?.productRatings?.items?.[0];
   check(Array.isArray(shelf?.items),'bagian ulasan App Store tidak ditemukan');
-  check(listing?.productId === appleId,'identitas aplikasi di App Store berubah');
+  check(listing?.productId === target.appstore.appId,'identitas aplikasi di App Store berubah');
   const rating = Number(listing.ratingAverage), ratingCount = Number(listing.totalNumberOfRatings);
   check(rating >= 1 && rating <= 5 && Number.isInteger(ratingCount) && ratingCount >= 0,'nilai rating App Store tidak terbaca');
   // Apple menyimpan jumlah per bintang pada urutan 5→1. Urutan tidak diasumsikan:
@@ -103,33 +100,35 @@ export function parseApplePage(html) {
   for (const item of shelf.items) {
     const r = item.review;
     check(r?.$kind === 'Review','struktur data ulasan Apple berubah');
-    const review = normalizeReview({id:r.id,author:r.reviewerName,title:r.title,text:r.contents ?? '',rating:r.rating,date:r.date},'appstore',appleUrl);
+    const review = normalizeReview({id:r.id,author:r.reviewerName,title:r.title,text:r.contents ?? '',rating:r.rating,date:r.date},'appstore',appleReviewsUrl(target),target);
     if (review.text.trim()) unique.set(review.id,review);
   }
   return {reviews:[...unique.values()],rating,ratingCount,ratingHistogram,continuationUrl: shelf.url ?? null};
 }
 // Paginasi dibaca sampai sumber tidak mengirim token halaman berikutnya; tidak ada batas jumlah sampel.
 const timeBudget = 240000;
-export async function collectGoogle(fetcher = fetch) {
-  const listingHtml = await fetchText(playUrl + '&gl=ID',{},fetcher);
-  const metadata = parseGoogleListing(listingHtml);
+export async function collectGoogle(fetcher = fetch, options = {}) {
+  const target = options.target ?? defaultTarget;
+  check(target.play?.appId,'target tanpa ID paket Google Play: kanal ini dilewati, tidak ada permintaan dikirim.');
+  const listingHtml = await fetchText(playDetailsUrl(target),{},fetcher);
+  const metadata = parseGoogleListing(listingHtml, target);
   const breakdown = parsePlayRatingHistogram(listingHtml);
   let installs = null;
-  try { installs = parsePlayInstalls(await fetchText('https://play.google.com/store/apps/details?id=id.bni.wfb&hl=en&gl=US',{},fetcher)); }
+  try { installs = parsePlayInstalls(await fetchText(playDetailsUrl(target,{hl:'en',gl:'US'}),{},fetcher)); }
   catch { installs = null; }
   const reviews = new Map();
   const pools = [];
   const started = Date.now();
   for (const pool of playPools) {
-    const pageUrl = `https://play.google.com/store/apps/details?id=id.bni.wfb&hl=${pool.hl}&gl=${pool.gl}`;
+    const pageUrl = playDetailsUrl(target,{hl:pool.hl,gl:pool.gl});
     let cursor = null, complete = false, pagesRead = 0, rows = 0, added = 0, error = null;
     const cursors = new Set();
     for (;;) {
       if (Date.now() - started > timeBudget) { error = 'time_budget: batas waktu pengambilan tercapai; halaman berikutnya belum dibaca.'; break; }
       try {
-        const args = [null,[2,2,[100,null,cursor],null,[null,null,null,null,null,null,null,null,2]],['id.bni.wfb',7]];
+        const args = [null,[2,2,[100,null,cursor],null,[null,null,null,null,null,null,null,null,2]],[target.play.appId,7]];
         const raw = await fetchText(rpcUrl(pool.hl,pool.gl),{method:'POST',body:new URLSearchParams({'f.req':JSON.stringify([[['oCPfdb',JSON.stringify(args),null,'generic']]])})},fetcher);
-        const result = parseGoogleReviews(raw);
+        const result = parseGoogleReviews(raw, target);
         pagesRead++; rows += result.rows;
         for (const review of result.reviews) if (!reviews.has(review.id)) { reviews.set(review.id,{...review,sourceUrl:pageUrl}); added++; }
         cursor = result.cursor;
@@ -151,7 +150,7 @@ export async function collectGoogle(fetcher = fetch) {
     message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya dibaca agar tidak ada ulasan terlewat. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya (${depth}); kolektor tidak memiliki batas jumlah sampel. ${allPoolsComplete?'Kedua kumpulan selesai dipaginasi.':`Hasil belum lengkap; ${issues.join('; ')}`} ${histogramNote} Angka agregat halaman toko menyebut ${metadata.ratingCount} penilaian; kedua angka dipublikasikan Google pada elemen halaman yang berbeda dan tidak dipaksa sama. Unduhan: ${installs ? `${installs} (rentang yang dipublikasikan Google, bukan angka pasti)` : 'tidak terbaca pada pemeriksaan ini'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
 }
 // Feed ulasan pelanggan publik Apple menjadi jalur resmi kedua, sehingga daftar halaman web dapat diuji silang.
-export function parseAppleRss(text) {
+export function parseAppleRss(text, target = defaultTarget) {
   let feed;
   try { feed = JSON.parse(text).feed; } catch { throw new Error('parse_error: struktur feed ulasan App Store berubah'); }
   check(feed != null,'feed ulasan App Store tidak ditemukan');
@@ -159,45 +158,45 @@ export function parseAppleRss(text) {
     const rating = Number(entry['im:rating']?.label);
     check(typeof entry.content?.label === 'string','teks ulasan feed App Store tidak valid');
     check(entry.author?.name?.label == null || typeof entry.author.name.label === 'string','nama penulis feed App Store tidak valid');
-    return normalizeReview({id:String(entry.id.label),author:entry.author?.name?.label,title:entry.title?.label,text:entry.content.label,rating:Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,date:entry.updated?.label},'appstore',appleUrl);
+    return normalizeReview({id:String(entry.id.label),author:entry.author?.name?.label,title:entry.title?.label,text:entry.content.label,rating:Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,date:entry.updated?.label},'appstore',appleReviewsUrl(target),target);
   }).filter(review => review.text.trim());
   return {reviews};
 }
-function appleNextUrl(value, current) {
+function appleNextUrl(value, current, target) {
   if (typeof value !== 'string' || !value.trim()) return null;
   let url;
   try { url = new URL(value,'https://apps.apple.com'); } catch { return null; }
-  if (url.protocol !== 'https:' || url.hostname !== 'apps.apple.com' || !url.pathname.includes(`/id${appleId}`)) return null;
+  if (url.protocol !== 'https:' || url.hostname !== 'apps.apple.com' || !url.pathname.includes(`/id${target.appstore.appId}`)) return null;
   return url.href === current ? null : url.href;
 }
-async function collectAppleShelf(fetcher) {
+async function collectAppleShelf(fetcher, target) {
   const reviews = new Map(), seen = new Set();
-  let url = appleUrl, rating = null, ratingCount = null, ratingHistogram = null, pages = 0, complete = false, error = null;
+  let url = appleReviewsUrl(target), rating = null, ratingCount = null, ratingHistogram = null, pages = 0, complete = false, error = null;
   for (;;) {
     if (seen.has(url)) { error = 'pagination_error: tautan lanjutan berulang; pengambilan dihentikan.'; break; }
     seen.add(url);
     if (pages >= applePageLimit) { error = 'page_limit: batas keamanan tautan lanjutan tercapai; halaman berikutnya belum dibaca.'; break; }
     let result;
-    try { result = parseApplePage(await fetchText(url,{},fetcher)); }
+    try { result = parseApplePage(await fetchText(url,{},fetcher), target); }
     catch (cause) { error = cause.message; break; }
     pages++;
     rating = result.rating; ratingCount = result.ratingCount;
     if (ratingHistogram == null) ratingHistogram = result.ratingHistogram ?? null;
     for (const review of result.reviews) if (!reviews.has(review.id)) reviews.set(review.id,review);
-    const next = appleNextUrl(result.continuationUrl, url);
+    const next = appleNextUrl(result.continuationUrl, url, target);
     if (result.continuationUrl != null && !next) { error = 'continuation_error: tautan halaman berikutnya bukan halaman publik aplikasi ini; pengambilan dihentikan.'; break; }
     if (!next) { complete = true; break; }
     url = next;
   }
   return {reviews,rating,ratingCount,ratingHistogram,pages,complete,error};
 }
-async function collectAppleFeed(fetcher) {
+async function collectAppleFeed(fetcher, target) {
   const reviews = new Map();
   let page = 1, pages = 0, complete = false, error = null;
   for (;;) {
     if (page > applePageLimit) { error = 'page_limit: batas keamanan halaman feed tercapai; feed belum tentu habis.'; break; }
     let result;
-    try { result = parseAppleRss(await fetchText(`https://itunes.apple.com/id/rss/customerreviews/page=${page}/id=${appleId}/sortby=mostrecent/json`,{},fetcher)); }
+    try { result = parseAppleRss(await fetchText(appleFeedUrl(target, page),{},fetcher), target); }
     catch (cause) { error = cause.message; break; }
     if (!result.reviews.length) { complete = true; break; }
     pages = page;
@@ -206,8 +205,10 @@ async function collectAppleFeed(fetcher) {
   }
   return {reviews,pages,complete,error};
 }
-export async function collectApple(fetcher = fetch) {
-  const [shelf, feed] = await Promise.all([collectAppleShelf(fetcher), collectAppleFeed(fetcher)]);
+export async function collectApple(fetcher = fetch, options = {}) {
+  const target = options.target ?? defaultTarget;
+  check(target.appstore?.appId,'target tanpa ID App Store: kanal ini dilewati, tidak ada permintaan dikirim.');
+  const [shelf, feed] = await Promise.all([collectAppleShelf(fetcher, target), collectAppleFeed(fetcher, target)]);
   const reviews = new Map(shelf.reviews);
   const feedOnly = [...feed.reviews.values()].filter(review => !reviews.has(review.id));
   for (const review of feedOnly) reviews.set(review.id,{...review,provenance:`${review.provenance}; ulasan ini hanya dikembalikan feed ulasan pelanggan publik Apple`});
@@ -219,7 +220,7 @@ export async function collectApple(fetcher = fetch) {
     coverage:{shelfPages:shelf.pages,feedPages:feed.pages,shelfReviews:shelf.reviews.size,feedReviews:feed.reviews.size,sharedReviews:shared,feedOnly:feedOnly.length,sampleLimit:null},
     message:`${reviews.size} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi (${shelf.reviews.size} ulasan pada ${shelf.pages} halaman) dan feed ulasan pelanggan resmi (${feed.reviews.size} ulasan pada ${feed.pages} halaman); ${shared} ulasan dikonfirmasi oleh kedua jalur dan ${feedOnly.length} hanya dikembalikan salah satu jalur. Paginasi kedua jalur diikuti sampai sumber tidak memberi halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. ${complete?'Kedua jalur selesai dibaca.':`Hasil belum lengkap; ${issues.join('; ')}.`} ${Number.isInteger(shelf.ratingCount)?histogramNote:'Nilai halaman toko tidak terbaca pada pemeriksaan ini.'} Apple tidak mempublikasikan jumlah unduhan.`};
 }
-const merchantIdentity = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])|\b(?:id)?6741567238\b/i;
+const merchantIdentity = identityPattern(defaultTarget);
 // Teks dari RSS/actor dapat membawa markup atau entitas mentah. Entitas didekode lebih dulu
 // lalu semua tag dibuang, sehingga tidak ada HTML yang ikut tersimpan atau tampil.
 export function sanitizeText(value) {
@@ -904,19 +905,26 @@ export function channelConfigurations(env = process.env) {
 // Peta id platform -> kolektornya. Dipakai oleh collectOnline (semua kanal sekaligus)
 // dan collectPlatform (satu kanal per permintaan, agar antarmuka dapat menampilkan
 // progres yang nyata dan agar function serverless tidak perlu menahan 3 menit).
-export function onlineCollectors({ apifyWaitMs = 180000, resume = new Map() } = {}) {
+// Kanal yang kolektornya sudah menerima target analisis. Kanal lain sengaja DITOLAK bila
+// project memakai target selain bawaan: lebih baik satu kanal dilaporkan tidak dijalankan
+// daripada menyimpan teks milik aplikasi lain ke dalam project yang salah.
+export const targetReadyChannels = new Set(['play', 'appstore']);
+export function onlineCollectors({ apifyWaitMs = 180000, resume = new Map(), target = defaultTarget } = {}) {
   const apify = apifyConfiguration();
   const youtube = youtubeConfiguration();
   const places = placesConfiguration();
   const news = newsConfiguration();
   const jobs = new Map([
-    ['play', () => collectGoogle()],
-    ['appstore', () => collectApple()],
+    ['play', () => collectGoogle(fetch, { target })],
+    ['appstore', () => collectApple(fetch, { target })],
     ['youtube', () => collectYouTube(fetch, youtube)],
     ['googlemaps', () => collectGooglePlaces(fetch, places)],
     ['news', () => collectNews(fetch, news)],
   ]);
   for (const id of Object.keys(apifyChannels)) jobs.set(id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id) }));
+  if (target.id !== defaultTarget.id) for (const id of [...jobs.keys()]) if (!targetReadyChannels.has(id)) {
+    jobs.set(id, () => ({ id, status: 'unsupported', fetched: 0, reviews: [], message: `Kanal ini belum dapat diarahkan ke target "${target.name}"; penarikan dijalankan pada kanal yang sudah mendukung target project.` }));
+  }
   return jobs;
 }
 export async function collectPlatform(id, options = {}) {

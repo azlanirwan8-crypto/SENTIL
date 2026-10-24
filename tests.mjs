@@ -7,9 +7,10 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
-import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText } from './collectors.mjs';
+import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText, onlineCollectors } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 import { parsePlaySearchResults, parseItunesResults, buildDiscovery, discoverTarget, detectCategory, deriveKeywords, titleSimilarity, queryVariants, decideStatus, playSearchUrl, itunesSearchUrl } from './discovery.mjs';
+import { defaultTarget, normalizeTarget, identityPattern, targetFromDiscovery } from './target.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
 test('baseline totals include both stores and preserve neutral denominator', () => {
@@ -268,6 +269,62 @@ test('Discover endpoint sends no request for an unusable name and reports partia
   assert.equal(failing.discovery.play.candidates.length, 0);
   assert.equal(failing.discovery.appstore.candidates.length, 1, 'kanal yang gagal tidak menghapus hasil kanal lain');
   assert.match(failing.partial, /tidak terjawab/);
+});
+
+test('A project target redirects the store collectors instead of reusing the default app', async () => {
+  const target = normalizeTarget({ id: 'seller-project', name: 'Tokopedia Seller', entityName: 'tokopedia seller', playAppId: 'com.example.seller', appleAppId: '1111222222' });
+  const requested = [], rpcBodies = [];
+  const fetcher = async (url, options = {}) => {
+    requested.push(String(url));
+    if (String(url).includes('batchexecute')) rpcBodies.push(String(options.body));
+    if (String(url).startsWith('https://play.google.com/store/apps/details')) return new Response(`${listingFixture}${playHistogramFixture}`.replaceAll('id.bni.wfb', 'com.example.seller'));
+    return new Response(rpcFixture([googleRowB, googleRowC]));
+  };
+  const result = await collectGoogle(fetcher, { target });
+  assert.equal(result.reviews.length, 2);
+  const details = requested.filter(url => url.startsWith('https://play.google.com/store/apps/details'));
+  assert.equal(details.length >= 2 && details.every(url => url.includes('id=com.example.seller')), true, 'setiap halaman Play yang dibaca adalah halaman paket project');
+  assert.equal(rpcBodies.length > 0 && rpcBodies.every(body => body.includes('com.example.seller')), true, 'permintaan RPC membawa paket project, bukan paket bawaan');
+  assert.match(result.reviews[0].provenance, /com\.example\.seller/);
+  assert.doesNotMatch(JSON.stringify(result.reviews), /id\.bni\.wfb/, 'tidak ada jejak aplikasi bawaan pada teks project lain');
+  assert.throws(() => parseGoogleListing(listingFixture, target), /identitas aplikasi di Google Play berubah/, 'halaman aplikasi lain ditolak, tidak dibaca sebagai project ini');
+});
+test('App Store pull follows the project target and never the default id', async () => {
+  const target = normalizeTarget({ entityName: 'tokopedia seller', playAppId: 'com.example.seller', appleAppId: '1111222222' });
+  const requested = [];
+  const result = await collectApple(async url => { requested.push(String(url)); throw new Error('network_error: koneksi sumber gagal atau melewati 25 detik.'); }, { target });
+  assert.equal(result.reviews.length, 0);
+  assert.equal(result.status, 'partial', 'kanal yang gagal tetap dilaporkan apa adanya');
+  assert.equal(requested.some(url => url.includes('/id1111222222')), true, 'halaman ulasan project');
+  assert.equal(requested.some(url => url.includes('/id=1111222222/')), true, 'feed ulasan project');
+  assert.doesNotMatch(requested.join(' '), /6741567238/);
+});
+test('Channels that are not target-aware are refused rather than filled with the wrong app', async () => {
+  const other = normalizeTarget({ entityName: 'tokopedia seller', playAppId: 'com.example.seller', appleAppId: '1111222222' });
+  const jobs = onlineCollectors({ target: other });
+  const guarded = await jobs.get('youtube')();
+  assert.equal(guarded.status, 'unsupported');
+  assert.equal(guarded.reviews.length, 0);
+  assert.match(guarded.message, /belum dapat diarahkan ke target "tokopedia seller"/);
+  assert.equal(onlineCollectors().get('youtube') === undefined, false, 'target bawaan tidak terkena pagar ini');
+});
+test('Target identity is built from the target, and only from a confirmed discovery', () => {
+  assert.equal(identityPattern(defaultTarget).test('wondr merchant gagal'), true);
+  assert.equal(identityPattern(defaultTarget).test('paket id.bni.wfb error'), true);
+  assert.equal(identityPattern(defaultTarget).test('id6741567238'), true);
+  const other = normalizeTarget({ entityName: 'tokopedia seller', playAppId: 'com.example.seller', appleAppId: '1111222222' });
+  assert.equal(identityPattern(other).test('wondr merchant gagal'), false, 'teks aplikasi lain tidak pernah cocok');
+  assert.equal(identityPattern(other).test('Tokopedia Seller lambat'), true);
+  const confirmed = buildDiscovery({ entityName: 'wondr merchant', playHtml: ['<a href="/store/apps/details?id=id.bni.wfb" aria-label="wondr merchant by BNI" class="Qfxief"></a>'], itunes: { results: [{ trackId: 6741567238, trackName: 'wondr merchant by BNI' }] } });
+  const target = targetFromDiscovery({ discovery: confirmed, id: 'p1', name: 'Wondr Merchant' });
+  assert.equal(target.play.appId, 'id.bni.wfb');
+  assert.equal(target.appstore.appId, '6741567238');
+  assert.equal(target.keywords.entity, 'wondr merchant');
+  assert.equal(target.resolvedAt, confirmed.resolvedAt, 'waktu penemuan ikut disimpan untuk pemeriksaan cache');
+  const loose = buildDiscovery({ entityName: 'tokopedia seller', playHtml: ['<a href="/store/apps/details?id=com.tiktokshop.seller" aria-label="Tokopedia & TikTok Shop Seller" class="Qfxief"></a>'], itunes: null });
+  assert.throws(() => targetFromDiscovery({ discovery: loose }), /discovery_unconfirmed/);
+  assert.throws(() => normalizeTarget({ entityName: 'x', playAppId: 'bukan paket' }), /target_invalid/);
+  assert.throws(() => normalizeTarget({ entityName: 'contoh', appleAppId: 'abc' }), /target_invalid/);
 });
 
 test('aspect and cluster statistics count only matching reviews',()=>{
