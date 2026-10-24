@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
 import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
 import { createDashboardServer } from './server.mjs';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get } from 'node:http';
-import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube } from './collectors.mjs';
+import { parseGoogleListing, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels } from './collectors.mjs';
+import { loadLocalEnv } from './local-env.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
 test('baseline totals include both stores and preserve neutral denominator', () => {
@@ -118,7 +119,7 @@ test('online API preserves history across partial success, failure and restart',
     if(mode==='wait')await new Promise(resolve=>{release=resolve;});
     return mode==='error' ? [{id:'play',status:'error',fetched:0,message:'Test network failure'},{id:'appstore',status:'error',fetched:0,message:'Test parse failure'}] : [{id:'play',status:'success',fetched:1,message:'Fixture only',reviews:[sample]},{id:'appstore',status:'error',fetched:0,message:'Test parse failure'}];
   };
-  let server=await createDashboardServer({storagePath,collector});
+  let server=await createDashboardServer({storagePath,collector,env:{}});
   const listen=async()=>{await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));return `http://127.0.0.1:${server.address().port}`;};
   const close=()=>new Promise(resolve=>server.close(resolve));
   try{
@@ -127,7 +128,9 @@ test('online API preserves history across partial success, failure and restart',
     assert.equal((await fetch(url+'/api/analyze',{method:'POST',headers:{Origin:'https://invalid.example'}})).status,403);
     const first=await (await fetch(url+'/api/analyze',{method:'POST'})).json();
     assert.equal(first.reviews.length,65);assert.equal(first.lastRun.added,1);assert.equal(first.lastRun.status,'partial');
-    assert.equal(first.sources.find(s=>s.id==='facebook').status,'unsupported');assert.equal(first.sources.find(s=>s.id==='appstore').status,'error');
+    assert.equal(first.sources.find(s=>s.id==='facebook').status,'needs_setup');assert.equal(first.sources.find(s=>s.id==='appstore').status,'error');
+    assert.equal(first.sources.find(s=>s.id==='forum').status,'unsupported');
+    assert.match(first.sources.find(s=>s.id==='facebook').message,/APIFY_API_TOKEN/);
     const repeat=await (await fetch(url+'/api/analyze',{method:'POST'})).json();assert.equal(repeat.lastRun.added,0);assert.equal(repeat.reviews.length,65);
     mode='error';const failed=await (await fetch(url+'/api/analyze',{method:'POST'})).json();
     assert.equal(failed.lastRun.status,'error');assert.equal(failed.reviews.length,65);
@@ -137,7 +140,7 @@ test('online API preserves history across partial success, failure and restart',
     assert.equal((await (await fetch(url+'/api/data')).json()).running,true);release();await request;
     assert.equal((await fetch(url+'/online-data.json')).status,404);
     assert.equal(JSON.parse(await readFile(storagePath,'utf8')).runs.length,4);
-    await close();server=await createDashboardServer({storagePath,collector});url=await listen();
+    await close();server=await createDashboardServer({storagePath,collector,env:{}});url=await listen();
     assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,65);
     const blocked=await new Promise((resolve,reject)=>get(url+'/api/data',{headers:{Host:'attacker.invalid'}},res=>{res.resume();resolve(res.statusCode);}).on('error',reject));
     assert.equal(blocked,403);
@@ -145,7 +148,7 @@ test('online API preserves history across partial success, failure and restart',
 });
 test('local Poppins fonts retain their license and use the explicit asset allowlist',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'wondr-font-test-'));
-  const server=await createDashboardServer({storagePath:join(dir,'data.json')});
+  const server=await createDashboardServer({storagePath:join(dir,'data.json'),env:{}});
   try{
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
     const url=`http://127.0.0.1:${server.address().port}`;
@@ -839,7 +842,7 @@ async function withIsolatedYouTubeServer(collector, check) {
   let server;
   const close = async () => { if (server?.listening) await new Promise(resolve => server.close(resolve)); };
   const start = async () => {
-    server = await createDashboardServer({storagePath,collector});
+    server = await createDashboardServer({storagePath,collector,env:{}});
     await new Promise((resolve,reject) => { server.once('error',reject);server.listen(0,'127.0.0.1',resolve); });
   };
   try {
@@ -940,4 +943,220 @@ test('Server persists mocked YouTube updates and raw evidence through partial fa
     assert.deepEqual(restarted.reviews,update.reviews);assert.deepEqual(restarted.lastRun,saved.lastRun);
     assert.equal(restarted.runs.length,4);assert.equal(restarted.running,false);
   });
+});
+
+// --- Konektor Apify: selalu memakai fetcher tiruan; tidak ada panggilan nyata dan tidak ada kunci asli. ---
+const apifyToken = 'apify-fixture-token-jangan-dicatat';
+const apifyConfig = (env = { APIFY_API_TOKEN: apifyToken }) => apifyConfiguration(env);
+const apifyJson = value => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
+const apifyRun = (id = 'run-1', extra = {}) => ({ id, status: 'RUNNING', defaultDatasetId: `dataset-${id}`, ...extra });
+function apifyRoutes(routes) {
+  const calls = [];
+  const fetcher = async (url, options = {}) => {
+    const parsed = new URL(String(url));
+    const key = `${options.method ?? 'GET'} ${parsed.pathname}`;
+    calls.push({ key, url: String(url), options });
+    for (const [pattern, respond] of routes) if (pattern.test(key)) return respond(calls.length, options);
+    throw new Error('permintaan tak terduga: ' + key);
+  };
+  return { calls, fetcher };
+}
+const socialRoutes = items => apifyRoutes([
+  [/POST \/v2\/acts\/.+\/runs$/, () => apifyJson({ data: apifyRun() })],
+  [/GET \/v2\/actor-runs\/run-1$/, () => apifyJson({ data: { status: 'SUCCEEDED' } })],
+  [/GET \/v2\/datasets\/dataset-run-1\/items$/, n => apifyJson(n === 3 ? items : [])],
+]);
+
+test('Apify connector sends no request until a token exists on the server', async () => {
+  const config = apifyConfig({});
+  assert.equal(config.status, 'needs_setup');
+  for (const id of Object.keys(apifyChannels)) {
+    const { calls, fetcher } = apifyRoutes([[/./, () => { throw new Error('Apify tidak boleh dipanggil'); }]]);
+    const result = await collectApify(id, fetcher, config, { pollMs: 0 });
+    assert.equal(result.status, 'needs_setup', id);
+    assert.equal(result.fetched, null, id);
+    assert.equal(result.reviews.length, 0, id);
+    assert.equal(calls.length, 0, `${id} mengirim permintaan tanpa token`);
+    assert.match(result.message, /APIFY_API_TOKEN/);
+  }
+});
+
+test('Apify records keep actor text, expand nested comments, and never place the token in a URL', async () => {
+  const items = [
+    { id: 'post-1', text: 'wondr merchant saya gagal login lagi', date: '2026-10-20T04:05:06.000Z', url: 'https://x.com/u/status/1', author: { username: 'pelanggan_a' },
+      comments: [
+        { id: 'c-1', text: 'sama sih, QRIS-nya lama sekali', createdAt: '2026-10-20T05:00:00Z', user: { name: 'pelanggan_b' }, url: 'https://x.com/u/status/2' },
+        { id: 'c-1', text: 'ID duplikat tidak boleh menambah baris' },
+      ] },
+    { id: 'post-2', caption: 'Ayo download wondr merchant sekarang ada cashback', time: 1792713600, permalink: 'https://x.com/brand/status/3', author: 'brandresmi' },
+    { id: 'post-3', text: 'aplikasi bank lain lambat', date: 'bukan tanggal', url: 'http://x.com/tidak-aman/4' },
+    { text: 'wondr merchant pencairan telat terus', author: 'tanpa_id' },
+    { id: 'post-4' },
+  ];
+  const { calls, fetcher } = socialRoutes(items);
+  const result = await collectApify('x', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.status, 'success');
+  assert.equal(result.fetched, 5, 'item tanpa teks dibuang, ID duplikat digabung');
+  assert.ok(calls.every(call => call.options?.headers?.authorization === `Bearer ${apifyToken}`), 'setiap permintaan memakai header Authorization');
+  assert.ok(!calls.some(call => call.url.includes(apifyToken)), 'token tidak boleh muncul di URL');
+  assert.ok(!result.message.includes(apifyToken), 'pesan tidak boleh memuat token');
+  assert.equal(result.coverage.actor, 'apidojo/tweet-scraper');
+  assert.equal(result.coverage.runId, 'run-1');
+  assert.equal(result.coverage.itemsRead, 5);
+  assert.equal(result.coverage.nestedRecords, 1);
+  assert.equal(result.coverage.sampleLimit, null);
+  const byId = new Map(result.reviews.map(r => [r.id, r]));
+  assert.equal(byId.get('post-1').author, 'pelanggan_a');
+  assert.equal(byId.get('post-1').date, '2026-10-20');
+  assert.equal(byId.get('post-1').sourceUrl, 'https://x.com/u/status/1');
+  assert.equal(byId.get('c-1').text, 'sama sih, QRIS-nya lama sekali', 'komentar duplikat ID memakai rekaman pertama');
+  assert.equal(byId.get('c-1').parentId, 'post-1');
+  assert.equal(byId.get('c-1').context.postId, 'post-1');
+  assert.equal(byId.get('post-2').platform, 'x');
+  assert.match(byId.get('post-2').date, /^\d{4}-\d{2}-\d{2}$/, 'waktu epoch actor diubah ke tanggal nyata');
+  assert.equal(byId.get('post-3').date, null, 'tanggal yang tidak dapat dibaca dibiarkan kosong, tidak ditebak');
+  assert.equal(byId.get('post-3').sourceUrl, null, 'tautan non-HTTPS ditolak');
+  const synthesized = [...byId.values()].find(r => r.author === 'tanpa_id');
+  assert.ok(synthesized, 'item tanpa ID sumber tetap disimpan sebagai teks nyata');
+  assert.match(synthesized.id, /^x-[0-9a-f]{32}$/, 'identitas lokal dibuat dari hash teks');
+  assert.match(synthesized.provenance, /hash lokal dari teks ini, bukan ID dari platform/);
+  assert.equal(byId.get('post-1').provenance.includes('hash lokal'), false, 'item ber-ID sumber tidak diklaim ber-ID hash');
+  assert.ok(!byId.has('post-4'));
+  assert.match(byId.get('post-1').provenance, /apidojo\/tweet-scraper/);
+  assert.match(byId.get('post-1').provenance, /run run-1/);
+});
+
+test('Apify dataset is read through every page instead of stopping at the first', async () => {
+  const page1 = Array.from({ length: 2 }, (_, i) => ({ id: `p1-${i}`, text: `wondr merchant ulasan ${i}` }));
+  const page2 = [{ id: 'p2-0', text: 'wondr merchant ulasan terakhir' }];
+  const { calls, fetcher } = apifyRoutes([
+    [/POST \/v2\/acts/, () => apifyJson({ data: apifyRun('run-2') })],
+    [/GET \/v2\/actor-runs\/run-2$/, () => apifyJson({ data: { status: 'SUCCEEDED' } })],
+    [/GET \/v2\/datasets\/dataset-run-2\/items$/, n => apifyJson(n === 3 ? page1 : page2)],
+  ]);
+  const result = await collectApify('instagram', fetcher, apifyConfig(), { pollMs: 0, pageLimit: 2 });
+  assert.equal(result.status, 'success');
+  assert.equal(result.fetched, 3);
+  const itemCalls = calls.filter(call => call.key.includes('/items'));
+  assert.equal(itemCalls.length, 2);
+  assert.match(itemCalls.at(-1).url, /offset=2&limit=2/);
+});
+
+test('Apify credential and quota failures are reported without echoing the token', async () => {
+  for (const [type, status, expected] of [
+    ['invalid-api-key', 401, /token Apify ditolak/],
+    ['payment-required', 402, /pembayaran atau batas kuota/],
+    ['not-found', 404, /actor tidak ditemukan/],
+    ['validation-error', 400, /input actor ditolak/],
+  ]) {
+    const { calls, fetcher } = apifyRoutes([[/POST \/v2\/acts/, () => new Response(JSON.stringify({ error: { type } }), { status, headers: { 'content-type': 'application/json' } })]]);
+    const result = await collectApify('tiktok', fetcher, apifyConfig(), { pollMs: 0 });
+    assert.equal(result.status, 'error', type);
+    assert.equal(result.fetched, null, type);
+    assert.equal(result.reviews.length, 0, type);
+    assert.match(result.message, expected, type);
+    assert.ok(!result.message.includes(apifyToken), `${type}: pesan memuat token`);
+    assert.equal(calls.length, 1, type);
+  }
+});
+
+test('A failed actor run keeps partial evidence instead of claiming success', async () => {
+  const { fetcher } = apifyRoutes([
+    [/POST \/v2\/acts/, () => apifyJson({ data: apifyRun('run-3') })],
+    [/GET \/v2\/actor-runs\/run-3$/, () => apifyJson({ data: { status: 'FAILED' } })],
+    [/GET \/v2\/datasets\/dataset-run-3\/items$/, n => apifyJson(n === 3 ? [{ id: 'x-9', text: 'wondr merchant notifikasi hilang' }] : [])],
+  ]);
+  const result = await collectApify('x', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.status, 'partial');
+  assert.equal(result.fetched, 1);
+  assert.match(result.message, /status FAILED/);
+});
+
+test('An empty actor dataset is an accessible empty result, not a failure', async () => {
+  const { fetcher } = socialRoutes([]);
+  const result = await collectApify('facebook', fetcher, apifyConfig(), { pollMs: 0 });
+  assert.equal(result.status, 'success');
+  assert.equal(result.fetched, 0);
+  assert.match(result.message, /hasil kueri actor, bukan seluruh percakapan Facebook/);
+});
+
+test('Invalid Apify input override is rejected before any request', async () => {
+  const config = apifyConfig({ APIFY_API_TOKEN: apifyToken, APIFY_INPUT_X: '{bukan json' });
+  assert.match(config.channels.x.inputError, /APIFY_INPUT_X bukan JSON/);
+  const { calls, fetcher } = apifyRoutes([[/./, () => { throw new Error('Apify tidak boleh dipanggil'); }]]);
+  const result = await collectApify('x', fetcher, config, { pollMs: 0 });
+  assert.equal(result.status, 'error');
+  assert.equal(calls.length, 0);
+});
+
+test('Apify actor and input can be replaced per channel from the environment', () => {
+  const config = apifyConfig({ APIFY_API_TOKEN: apifyToken, APIFY_ACTOR_INSTAGRAM: 'pelanggan/instagram-kustom', APIFY_INPUT_INSTAGRAM: '{"usernames":["wondrmerchant"]}' });
+  assert.equal(config.channels.instagram.actor, 'pelanggan/instagram-kustom');
+  assert.deepEqual(config.channels.instagram.input, { usernames: ['wondrmerchant'] });
+  assert.equal(config.channels.instagram.inputError, null);
+});
+
+test('Apify social text is only scored when it names the merchant app', () => {
+  const relevant = classifyReview({ platform: 'x', text: 'wondr merchant saya gagal login', author: 'a' });
+  assert.equal(relevant.sentiment, 'negative');
+  assert.equal(relevant.relevance.status, 'relevant');
+  const vague = classifyReview({ platform: 'x', text: 'aplikasi bank ini lambat sekali', author: 'b' });
+  assert.equal(vague.sentiment, 'unclassified');
+  assert.equal(vague.relevance.status, 'uncertain');
+  const consumer = classifyReview({ platform: 'instagram', text: 'wondr by BNI mobile banking saya error', author: 'c' });
+  assert.equal(consumer.sentiment, 'unclassified');
+  assert.equal(consumer.relevance.status, 'excluded');
+  const maps = classifyReview({ platform: 'googlemaps', text: 'pelayanannya ramah', author: 'd' });
+  assert.equal(maps.relevance.status, 'uncertain', 'ulasan tempat tanpa sebutan aplikasi tidak dinilai otomatis');
+  const store = classifyReview({ platform: 'play', text: 'aplikasi ini lambat sekali', author: 'e' });
+  assert.equal(store.relevance, undefined, 'ulasan toko tidak melewati penyaringan sosial');
+});
+
+test('Google Reviews links are accepted only from the Google Maps host', () => {
+  assert.equal(validSource('https://www.google.com/maps/place/wondr+merchant/', 'googlemaps'), true);
+  assert.equal(validSource('https://maps.app.goo.gl/abc', 'googlemaps'), false, 'pendek bukan host Google Maps yang diizinkan');
+  assert.equal(validSource('http://google.com/maps/place/x', 'googlemaps'), false, 'non-HTTPS ditolak');
+  const { fetcher } = socialRoutes([{ id: 'r-1', text: 'wondr merchant QRIS lambat di tempat saya', url: 'https://www.google.com/maps/place/tempat', author: 'pelanggan', date: '2026-10-18T01:02:03Z' }]);
+  return collectApify('googlemaps', fetcher, apifyConfig(), { pollMs: 0 }).then(result => {
+    assert.equal(result.reviews[0].sourceUrl, 'https://www.google.com/maps/place/tempat');
+    assert.equal(result.reviews[0].platform, 'googlemaps');
+  });
+});
+
+test('Server reports every credential-backed channel as needing setup, never as connected', async () => {  const dir = await mkdtemp(join(tmpdir(), 'wondr-apify-'));
+  try {
+    const server = await createDashboardServer({ storagePath: join(dir, 'data.json'), env: {}, collector: async () => [] });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const text = await (await fetch(`${url}/api/data`)).json();
+    for (const id of ['youtube', ...Object.keys(apifyChannels)]) {
+      const source = text.sources.find(s => s.id === id);
+      assert.equal(source.status, 'needs_setup', id);
+      assert.equal(source.fetched, null, id);
+    }
+    for (const id of ['forum', 'blog', 'news']) assert.equal(text.sources.find(s => s.id === id).status, 'unsupported', id);
+    const serialised = JSON.stringify(text);
+    assert.ok(!/Bearer|APIFY_API_TOKEN=|apify-fixture-token/.test(serialised), 'respons tidak boleh memuat kredensial');
+    await new Promise(resolve => server.close(resolve));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Local env file is parsed without exposing values and never overrides the real environment', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-env-'));
+  const path = join(dir, '.env');
+  await writeFile(path, '# komentar\nAPIFY_API_TOKEN="kunci-dari-berkas"\nKOSONG=\nBUKAN_KUNCI\nAPIFY_ACTOR_X=pelanggan/aktor-kustom\n');
+  process.env.APIFY_ACTOR_X = 'proses/sudah-ada';
+  try {
+    const loaded = await loadLocalEnv(path);
+    assert.equal(loaded.APIFY_API_TOKEN, 'kunci-dari-berkas', 'tanda kutip dilepas');
+    assert.equal(loaded.KOSONG, '');
+    assert.equal(loaded.BUKAN_KUNCI, undefined, 'baris tanpa tanda sama dengan diabaikan');
+    assert.equal(loaded.APIFY_ACTOR_X, 'pelanggan/aktor-kustom');
+    assert.equal(process.env.APIFY_ACTOR_X, 'proses/sudah-ada', 'nilai environment proses harus menang atas berkas');
+    assert.equal(process.env.APIFY_API_TOKEN, 'kunci-dari-berkas', 'nilai baru dari berkas ikut dipakai proses');
+    assert.deepEqual(await loadLocalEnv(join(dir, 'tidak-ada.env')), {}, 'berkas yang tidak ada bukan kesalahan');
+  } finally {
+    delete process.env.APIFY_API_TOKEN; delete process.env.APIFY_ACTOR_X;
+    await rm(dir, { recursive: true, force: true });
+  }
 });

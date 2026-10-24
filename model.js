@@ -74,7 +74,7 @@ export function timeline(reviews, mode = 'week') {
   for (const r of dated) bins.get(key(r.date))[r.sentiment]++;
   return [...bins].map(([date, values]) => ({ date, ...values }));
 }
-const sourceDomains = { play: ['play.google.com'], appstore: ['apps.apple.com', 'itunes.apple.com'], x: ['x.com','twitter.com'], instagram: ['instagram.com'], tiktok: ['tiktok.com'], youtube: ['youtube.com','youtu.be'] };
+const sourceDomains = { play: ['play.google.com'], appstore: ['apps.apple.com', 'itunes.apple.com'], x: ['x.com','twitter.com'], instagram: ['instagram.com'], tiktok: ['tiktok.com'], youtube: ['youtube.com','youtu.be'], googlemaps: ['google.com'] };
 export function validSource(value, platform) {
   try {
     const url = new URL(value);
@@ -108,7 +108,7 @@ export function classifyText(text) {
 }
 export function classifyReview(raw) {
   const label = classifyText(raw.text);
-  if (raw.platform !== 'youtube') return label;
+  if (raw.platform === 'play' || raw.platform === 'appstore') return label;
   const text = raw.text.toLocaleLowerCase('id');
   const merchant = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])/.test(text);
   const promotion = /(?:^|[.!?:]|\b(?:ayo|yuk|buruan|segera)\b)\s*(?:download|unduh|install)\b|\bdapatkan\s+(?:cashback|bonus|promo)\b|\binfo\s+promo\b/.test(text);
@@ -122,7 +122,7 @@ export function classifyReview(raw) {
     status = 'excluded'; reason = merchant ? 'Teks juga membahas produk konsumen. Target sentimen belum dipisahkan, sehingga teks tidak dinilai otomatis sebagai pengalaman wondr merchant.' : 'Teks menyebut produk konsumen, bukan wondr merchant.';
   } else if (question) {
     reason = 'Pertanyaan, kondisi hipotetis, atau pernyataan belum mencoba belum cukup untuk menetapkan pengalaman pelanggan; perlu tinjauan konteks.';
-  } else if (merchant || (raw.context?.product === 'wondr-merchant' && /\bqris\b|settlement|pencairan|merchant|toko|usaha/.test(text) && label.tags.some(tag => tag !== 'general'))) {
+  } else if (merchant || (raw.platform === 'youtube' && raw.context?.product === 'wondr-merchant' && /\bqris\b|settlement|pencairan|merchant|toko|usaha/.test(text) && label.tags.some(tag => tag !== 'general'))) {
     status = 'relevant'; reason = 'Teks menyebut aplikasi merchant atau aspek usaha pada video dengan identitas produk yang sesuai; penentuan otomatis masih perlu pemeriksaan manusia.';
   }
   const relevance = {status,reason,method:'merchant-context-v1'};

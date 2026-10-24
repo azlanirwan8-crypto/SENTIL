@@ -3,7 +3,8 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { seedReviews, platforms, observationDate } from './data.js';
 import { upsertReviews } from './model.js';
-import { collectOnline, youtubeConfiguration } from './collectors.mjs';
+import { collectOnline, youtubeConfiguration, apifyConfiguration, apifyChannels } from './collectors.mjs';
+import { loadLocalEnv } from './local-env.mjs';
 
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -19,7 +20,7 @@ const files = new Map([
   ['/assets/fonts/Poppins-OFL.txt', ['assets/fonts/Poppins-OFL.txt', 'text/plain; charset=utf-8']],
 ]);
 const connectedSources = new Set(['play','appstore']);
-export async function createDashboardServer({ storagePath = new URL('./online-data.json', import.meta.url), collector = collectOnline } = {}) {
+export async function createDashboardServer({ storagePath = new URL('./online-data.json', import.meta.url), collector = collectOnline, env } = {}) {
   let data = {
     reviews: seedReviews, runs: [], lastRun: null,
     sources: platforms.map(p => ({ id: p.id, status: connectedSources.has(p.id) ? 'snapshot' : 'unsupported', fetched: 0, message: connectedSources.has(p.id) ? 'Data awal dari halaman publik; belum diperbarui pada sesi ini.' : `Belum terhubung; tidak ada pengambilan data. ${p.note}`, ...(p.rating ? { rating: p.rating, ratingCount: p.ratingCount, ratingObservedAt: observationDate, installs: p.installs ?? null } : {}) })),
@@ -29,9 +30,16 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
     if (!Array.isArray(saved.reviews) || !Array.isArray(saved.sources) || !Array.isArray(saved.runs)) throw new Error('Format data tersimpan tidak valid. Berkas tidak diubah.');
     data = saved;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const youtube = youtubeConfiguration();
+  // Pengujian menyuntik env sendiri; tanpa env, berkas .env lokal dimuat lebih dulu.
+  const environment = env ?? await loadLocalEnv().then(() => process.env);
+  const youtube = youtubeConfiguration(environment);
+  const apify = apifyConfiguration(environment);
+  // Status konfigurasi hanya menimpa tampilan; data tersimpan tidak diubah dan kunci tidak pernah dikirim ke browser.
+  const channelConfig = new Map([['youtube', youtube], ...Object.keys(apifyChannels).map(id => [id, apify])]);
+  const awaiting = new Set(['unsupported','needs_setup','ready']);
   data.sources = data.sources.map(source => {
-    if (source.id === 'youtube' && (youtube.status === 'needs_setup' || ['unsupported','needs_setup','ready'].includes(source.status))) return {...source,status:youtube.status,message:youtube.message,fetched:null};
+    const config = channelConfig.get(source.id);
+    if (config && (config.status === 'needs_setup' || awaiting.has(source.status))) return {...source,status:config.status,message:config.message,fetched:null};
     if (source.status === 'unsupported') return {...source,message:platforms.find(platform=>platform.id===source.id)?.note || source.message};
     return source;
   });
@@ -65,7 +73,7 @@ export async function createDashboardServer({ storagePath = new URL('./online-da
         const sources = platforms.map(p => {
           const result = results.find(r => r.id === p.id);
           const previous = data.sources.find(s => s.id === p.id) || { id: p.id };
-          if (!result) return { ...previous, status: p.id === 'youtube' ? youtube.status : 'unsupported', fetched: null, message: p.id === 'youtube' ? youtube.message : `Belum terhubung; tidak ada pengambilan data. ${p.note}` };
+          if (!result) { const config = channelConfig.get(p.id); return config ? { ...previous, status: config.status, fetched: null, message: config.message } : { ...previous, status: 'unsupported', fetched: null, message: `Belum terhubung; tidak ada pengambilan data. ${p.note}` }; }
           const { reviews, ...source } = result;
           const success = source.status === 'success' || source.status === 'partial';
           return { ...previous, ...source, checkedAt: finishedAt, ...(success ? { lastSuccessAt: finishedAt } : {}), ...(Number.isFinite(source.rating) ? { ratingObservedAt: finishedAt } : {}) };

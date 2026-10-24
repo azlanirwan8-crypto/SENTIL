@@ -1,3 +1,7 @@
 node_modules/
 online-data.json
 *.tmp
+
+# Kredensial environment server lokal; jangan pernah di-commit.
+.env
+.env.local

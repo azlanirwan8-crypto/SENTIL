@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { playUrl } from './data.js';
-import { validDate } from './model.js';
+import { validDate, validSource } from './model.js';
 
 const appleId = '6741567238';
 const appleUrl = `https://apps.apple.com/id/app/wondr-merchant-by-bni/id${appleId}?see-all=reviews&platform=iphone`;
@@ -197,10 +198,10 @@ export async function collectApple(fetcher = fetch) {
 }
 const merchantIdentity = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])|\b(?:id)?6741567238\b/i;
 export function youtubeConfiguration(env = process.env) {
-  const apiKey = env.YOUTUBE_API_KEY?.trim() || '';
+  const apiKey = env.YOUTUBE_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim() || '';
   const videoIds = [...new Set((env.YOUTUBE_VIDEO_IDS || '').split(/[\s,]+/).filter(Boolean))];
   const valid = videoIds.every(id => /^[\w-]{11}$/.test(id));
-  return { apiKey, videoIds, status: apiKey && valid ? 'ready' : 'needs_setup', message: !apiKey ? 'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY belum dikonfigurasi pada server. Aktifkan YouTube Data API v3 dan pasang kunci melalui environment server, bukan kolom browser atau chat. Belum ada komentar yang diambil.' : !valid ? 'YOUTUBE_VIDEO_IDS harus berisi ID video YouTube yang valid, dipisahkan koma. Belum ada permintaan dikirim.' : 'Kunci API tersedia, tetapi akses belum diuji. Tarik Analisis akan mencari video wondr merchant dan membaca komentar publik beserta balasannya; status ini belum berarti terhubung.' };
+  return { apiKey, videoIds, status: apiKey && valid ? 'ready' : 'needs_setup', message: !apiKey ? 'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY atau GOOGLE_API_KEY belum tersedia pada environment server. Aktifkan YouTube Data API v3 dan pasang kunci melalui environment server, bukan kolom browser atau chat. Belum ada komentar yang diambil.' : !valid ? 'YOUTUBE_VIDEO_IDS harus berisi ID video YouTube yang valid, dipisahkan koma. Belum ada permintaan dikirim.' : 'Kunci API tersedia, tetapi akses belum diuji. Tarik Analisis akan mencari video wondr merchant dan membaca komentar publik beserta balasannya; status ini belum berarti terhubung.' };
 }
 async function youtubeRequest(resource, params, apiKey, fetcher) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${resource}`);
@@ -315,9 +316,144 @@ export async function collectYouTube(fetcher = fetch, config = youtubeConfigurat
   const status = !issues.length?'success':responded?'partial':'error';
   return {id:'youtube',status,fetched:reviews.size,reviews:[...reviews.values()],scope,issues,message:`${reviews.size} komentar unik dibaca dari ${scope.relevantVideos} video dengan identitas wondr merchant pada metadata. ${scope.completedVideos} video selesai dipaginasi pada pemeriksaan ini. ${scope.mode==='search'?'Cakupan hanya hasil pencarian API untuk frasa "wondr merchant".':'Cakupan hanya ID video yang dikonfigurasi.'} ${issues.length?'Sebagian pengambilan gagal atau belum lengkap.':'Semua halaman yang dikembalikan API telah diproses, termasuk balasan.'} Komentar privat, dihapus, ditahan moderasi, dan konten di luar hasil API tidak tercakup; ini bukan seluruh percakapan YouTube. Komentar pemilik video, promosi, dan konteks yang belum jelas tidak diberi sentimen pelanggan otomatis.${issues.length?` Kendala: ${[...new Set(issues.map(issue=>issue.message))].join(' ')}`:''}`};
 }
+// Apify adalah layanan pengambilan data pihak ketiga yang sah. Token hanya dibaca dari environment
+// server dan dikirim sebagai header Authorization; tidak pernah masuk URL, browser, atau pesan galat.
+export const apifyChannels = {
+  x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: () => ({ query: '"wondr merchant" OR "wondr merchant by BNI"', maxItems: 100, queryType: 1 }) },
+  instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: () => ({ search: ['wondr merchant'], searchType: 'hashtags', maximumItemsPerQuery: 100 }) },
+  tiktok: { label: 'TikTok', actor: 'apify/tiktok-scraper', input: () => ({ searchCommands: [{ id: 'wondr-merchant', commands: [{ query: '"wondr merchant"', count: 100, offset: 0 }], hashtags: [], profiles: [] }] }) },
+  facebook: { label: 'Facebook', actor: 'apify/facebook-pages-scraper', input: () => ({ searchTerms: ['wondr merchant bni'], maxResult: 20 }) },
+  googlemaps: { label: 'Google Reviews', actor: 'compass/crawler-google-places', input: () => ({ searchStringsTerms: ['"wondr merchant" BNI'], language: 'id', country: 'ID', maxCrawledPlacesPerSearchTerm: 10, reviewLimit: 100 }) },
+};
+const apifyTextFields = ['text', 'fullText', 'caption', 'content', 'body', 'reviewText', 'comment', 'shortText'];
+const apifyAuthorFields = ['author', 'username', 'owner', 'nickname', 'authorName', 'reviewerName', 'user', 'handle'];
+const apifyIdFields = ['id', '_id', 'uniqueId', 'tweetId', 'idInline', 'reviewId'];
+const apifyUrlFields = ['url', 'link', 'permalink', 'tweetUrl', 'webVideoUrl', 'mapsUrl', 'reviewUrl'];
+function pickField(item, fields) {
+  for (const field of fields) {
+    const value = item?.[field];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    if (value && typeof value === 'object') for (const nested of ['label', 'name', 'text', 'fullName', 'full_name', 'username']) if (typeof value[nested] === 'string' && value[nested].trim()) return value[nested].trim();
+  }
+  return null;
+}
+// Hanya tanggal ISO yang diterima; format lain dibiarkan kosong (N/A) daripada ditebak.
+function apifyDate(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const iso = new Date(value > 1e11 ? value : value * 1000).toISOString();
+    return validDate(iso.slice(0, 10)) ? iso : null;
+  }
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(value) || !Number.isFinite(Date.parse(value))) return null;
+  return validDate(value.slice(0, 10)) ? new Date(value).toISOString() : null;
+}
+function apifyItems(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    for (const key of ['items', 'data', 'reviews', 'comments', 'tweets', 'posts', 'results']) if (Array.isArray(value[key])) return value[key];
+  }
+  return [];
+}
+function apifyRecords(item, platform, actor, runId, retrievedAt) {
+  const found = [];
+  const parentId = pickField(item, apifyIdFields);
+  const postUrl = pickField(item, apifyUrlFields);
+  const collect = (source, parent) => {
+    const text = pickField(source, apifyTextFields);
+    if (!text) return;
+    const sourceId = pickField(source, apifyIdFields);
+    // Item tanpa identitas sumber tetap disimpan sebagai teks nyata, tetapi ID lokal dibuat dari
+    // hash isinya dan hal itu dicatat pada provenance agar tidak disangka ID dari platform.
+    const id = sourceId ?? `${platform}-${createHash('sha256').update(`${parent ?? ''}|${text}`).digest('hex').slice(0, 32)}`;
+    const rating = Number(source.rating ?? source.stars ?? source.score);
+    const url = pickField(source, apifyUrlFields) ?? (parent ? postUrl : null);
+    const when = apifyDate(source.date ?? source.createdAt ?? source.timestamp ?? source.time ?? source.postedAt ?? source.publishedAt ?? source.creationDate ?? source.reviewDate);
+    found.push({
+      id, platform, author: pickField(source, apifyAuthorFields) || 'N/A', text, rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,
+      date: when?.slice(0, 10) ?? null, publishedAt: when,
+      sourceUrl: url && validSource(url, platform) ? url : null, retrievedAt, parentId: parent ?? null,
+      context: parent ? { postId: parent, postUrl: postUrl && validSource(postUrl, platform) ? postUrl : null, product: 'wondr-merchant' } : undefined,
+      provenance: `Diambil melalui Apify actor ${actor} (run ${runId}); teks disimpan apa adanya dari item dataset. ${sourceId ? 'ID ulasan berasal dari item sumber.' : 'Item sumber tidak membawa ID, sehingga identitas di bawah adalah hash lokal dari teks ini, bukan ID dari platform.'} Waktu memakai nilai yang dikembalikan actor; tanggal yang tidak dapat dibaca dibiarkan kosong.`,
+    });
+  };
+  collect(item, null);
+  for (const key of ['comments', 'reviews']) if (Array.isArray(item[key])) for (const child of item[key]) if (child && typeof child === 'object') collect(child, parentId);
+  return found;
+}
+export function apifyConfiguration(env = process.env) {
+  const token = env.APIFY_API_TOKEN?.trim() || '';
+  const channels = Object.fromEntries(Object.entries(apifyChannels).map(([id, channel]) => {
+    const upper = id.toUpperCase();
+    let input = channel.input(), inputError = null;
+    const rawInput = env[`APIFY_INPUT_${upper}`]?.trim();
+    if (rawInput) { try { input = JSON.parse(rawInput); } catch { inputError = `APIFY_INPUT_${upper} bukan JSON yang valid.`; } }
+    return [id, { label: channel.label, actor: env[`APIFY_ACTOR_${upper}`]?.trim() || channel.actor, input, inputError }];
+  }));
+  return { token, channels, status: token ? 'ready' : 'needs_setup', message: token
+    ? 'Token Apify tersedia pada server, tetapi akses belum diuji. Tarik Analisis akan menjalankan actor untuk kanal ini; status ini belum berarti terhubung dan pemakaian actor dapat memakan kuota berbayar.'
+    : 'Konektor Apify tersedia, tetapi APIFY_API_TOKEN belum tersedia pada environment server. Pasang kunci melalui environment server atau berkas .env lokal, bukan kolom browser atau chat. Belum ada data yang diambil.' };
+}
+async function apifyJson(path, token, fetcher, options = {}) {
+  let response;
+  try { response = await fetcher(`https://api.apify.com/v2/${path}`, { ...options, headers: { authorization: `Bearer ${token}`, accept: 'application/json', ...(options.body ? { 'content-type': 'application/json' } : {}) }, redirect: 'error', signal: AbortSignal.timeout(30000) }); }
+  catch { throw new Error('network_error: Apify tidak dapat dihubungi atau melewati 30 detik.'); }
+  const chunks = []; let size = 0;
+  for await (const chunk of response.body) { size += chunk.length; if (size > 12 * 1024 * 1024) throw new Error('response_error: respons Apify melebihi batas 12 MB.'); chunks.push(chunk); }
+  const text = Buffer.concat(chunks).toString('utf8');
+  let payload = null;
+  try { payload = JSON.parse(text); } catch { if (response.ok) throw new Error('parse_error: respons Apify bukan JSON.'); }
+  if (!response.ok) {
+    const reason = String(payload?.error?.type ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const reasons = { invalidapikey: 'token Apify ditolak', tokennotfound: 'token Apify tidak dikenali', paymentrequired: 'pembayaran atau batas kuota Apify belum mencukupi', notfound: 'actor tidak ditemukan pada Apify', validationerror: 'input actor ditolak Apify', methodnotallowed: 'metode permintaan ditolak Apify', conflict: 'run actor bertabrakan dengan status saat ini' };
+    throw new Error(`api_error: HTTP ${response.status}; ${Object.hasOwn(reasons, reason) ? reasons[reason] : reason ? `permintaan ditolak Apify (${reason})` : 'permintaan ditolak Apify'}.`);
+  }
+  return payload?.data ?? payload;
+}
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+export async function collectApify(id, fetcher = fetch, config = apifyConfiguration(), { waitMs = 180000, pollMs = 5000, pageLimit = 1000 } = {}) {
+  const channel = config.channels[id];
+  if (config.status === 'needs_setup') return { id, status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
+  if (channel.inputError) return { id, status: 'error', fetched: null, message: `${channel.inputError} Belum ada permintaan dikirim; data tersimpan tetap dipertahankan.`, reviews: [] };
+  const issues = [];
+  let run;
+  try {
+    run = await apifyJson(`acts/${encodeURIComponent(channel.actor)}/runs`, config.token, fetcher, { method: 'POST', body: JSON.stringify({ cleanInputs: true, ...channel.input }) });
+    if (typeof run?.id !== 'string') throw new Error('parse_error: Apify tidak mengembalikan identitas run.');
+  } catch (error) {
+    return { id, status: 'error', fetched: null, message: `Pengambilan ${channel.label} gagal: ${error.message} Belum ada data yang diubah.`, reviews: [] };
+  }
+  const finished = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT', 'TIMED_OUT'];
+  const deadline = Date.now() + waitMs;
+  let status = run.status ?? 'READY';
+  while (!finished.includes(status)) {
+    if (Date.now() >= deadline) { issues.push('batas waktu tunggu actor tercapai; hasil belum lengkap'); break; }
+    try { await wait(pollMs); status = (await apifyJson(`actor-runs/${encodeURIComponent(run.id)}`, config.token, fetcher)).status ?? status; }
+    catch (error) { issues.push(error.message); break; }
+  }
+  const reviews = new Map();
+  let items = 0, expanded = 0;
+  const datasetId = run.defaultDatasetId;
+  if (status !== 'SUCCEEDED') issues.push(`actor berakhir dengan status ${status}; hasil mungkin tidak lengkap`);
+  if (typeof datasetId !== 'string') issues.push('Apify tidak mengembalikan identitas dataset untuk run ini');
+  else for (let offset = 0; ; offset += pageLimit) {
+    try {
+      const page = apifyItems(await apifyJson(`datasets/${encodeURIComponent(datasetId)}/items?clean=true&format=json&offset=${offset}&limit=${pageLimit}`, config.token, fetcher));
+      for (const item of page) { items++; for (const record of apifyRecords(item, id, channel.actor, run.id, new Date().toISOString())) { if (!reviews.has(record.id)) { reviews.set(record.id, record); if (record.parentId) expanded++; } } }
+      if (page.length < pageLimit) break;
+    } catch (error) { issues.push(error.message); break; }
+  }
+  const complete = !issues.length;
+  return { id, status: complete ? 'success' : reviews.size ? 'partial' : 'error', fetched: reviews.size, reviews: [...reviews.values()],
+    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, sampleLimit: null },
+    message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${run.id}); ${items} item dataset diperiksa dan ${expanded} di antaranya berasal dari komentar/ulasan bersarang. ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set(issues)].join(' ')}`} Teks disimpan apa adanya dari actor dan disaring ketat ke identitas wondr merchant; yang tidak jelas targetnya tetap dihitung sebagai teks tetapi tidak diberi sentimen pelanggan. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
+}
 export async function collectOnline() {
-  return Promise.all([['play',collectGoogle],['appstore',collectApple],['youtube',collectYouTube]].map(async ([id,collect]) => {
+  const apify = apifyConfiguration();
+  const youtube = youtubeConfiguration();
+  const jobs = [['play', () => collectGoogle()], ['appstore', () => collectApple()], ['youtube', () => collectYouTube(fetch, youtube)]];
+  for (const id of Object.keys(apifyChannels)) jobs.push([id, () => collectApify(id, fetch, apify)]);
+  return Promise.all(jobs.map(async ([id, collect]) => {
     try { return await collect(); }
-    catch (error) { return {id,status:'error',fetched:0,message:`Gagal membaca sumber data. ${error instanceof SyntaxError ? 'parse_error: struktur data sumber berubah.' : error.message} Data sebelumnya tetap dipertahankan.`,reviews:[]}; }
+    catch (error) { return { id, status: 'error', fetched: 0, message: `Gagal membaca sumber data. ${error instanceof SyntaxError ? 'parse_error: struktur data sumber berubah.' : error.message} Data sebelumnya tetap dipertahankan.`, reviews: [] }; }
   }));
 }

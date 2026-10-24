@@ -11,7 +11,7 @@ let collectorMode='baseline', releasePull, pulls=0;
 const synthetic={id:'qa-browser-only',platform:'play',author:'QA <img src=x onerror="window.__xss=true">',date:null,text:'Login gagal <script>window.__xss=true</script>',rating:null,sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb',provenance:'Synthetic isolated browser fixture'};
 const socialBase={platform:'youtube',author:'YouTube test fixture',date:'2026-10-23',publishedAt:'2026-10-23T12:30:00Z',retrievedAt:'2026-10-24T01:00:00Z',rating:null,sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',authorChannelId:'viewer',context:{videoId:'abcdefghijk',channelId:'owner',product:'wondr-merchant',title:'wondr merchant <script>window.__xss=true</script>',description:'Isolated fixture context, not customer sentiment'},provenance:'Synthetic API fixture; never live social data'};
 const socialFixtures=[{...socialBase,id:'yt-a',text:'wondr merchant login gagal'},{...socialBase,id:'yt-b',text:'wondr merchant login gagal'},{...socialBase,id:'yt-owner',authorChannelId:'owner',text:'wondr merchant bagus'},{...socialBase,id:'yt-uncertain',text:'Video bagus'}];
-const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),collector:async()=>{
+const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:async()=>{
   pulls++;
   if(collectorMode==='wait')await new Promise(resolve=>{releasePull=resolve;});
   if(collectorMode==='error')return ['play','appstore'].map(id=>({id,status:'error',fetched:0,message:'Koneksi uji gagal; histori dipertahankan.'}));
