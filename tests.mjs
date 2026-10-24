@@ -1497,28 +1497,27 @@ test('A failing gateway keeps the site open but shuts the paid route closed', as
   assert.equal(middleware({ url: 'https://situs.example.com/', headers: { get: () => { throw new Error('runtime asing'); } } }), undefined, 'halaman tidak boleh ikut mati karena middleware');
 });
 
-test('The paid endpoint also checks credentials inside the Node function', async () => {
+test('The pull endpoint runs without any login, but still refuses other sites', async () => {
   const previousUser = process.env.DASHBOARD_USER, previousPassword = process.env.DASHBOARD_PASSWORD;
-  const guard = await import('./serverless-auth.mjs');
+  delete process.env.DASHBOARD_USER;
+  delete process.env.DASHBOARD_PASSWORD;
   try {
-    delete process.env.DASHBOARD_USER;
-    delete process.env.DASHBOARD_PASSWORD;
-    assert.equal(guard.credentialsRequired(), false);
-    assert.equal(guard.authorized({ authorization: basic('siapa', 'saja') }), false, 'tanpa kredensial terpasang, penarikan tetap tertutup');
-    process.env.DASHBOARD_USER = 'pemilik';
-    process.env.DASHBOARD_PASSWORD = 'sandi-panjang';
-    assert.equal(guard.credentialsRequired(), true);
-    assert.equal(guard.authorized({ authorization: basic('pemilik', 'sandi-panjang') }), true);
-    assert.equal(guard.authorized({ authorization: basic('pemilik', 'salah') }), false);
-    assert.equal(guard.authorized({}), false);
-    assert.equal(guard.authorized({ authorization: 'Bearer token' }), false);
-
-    // Function harus menolak sebelum collectOnline sempat dipanggil.
     const analyze = await import('./api/analyze.js');
-    const res = mockResponse();
-    await analyze.default({ method: 'POST', url: '/api/analyze', headers: { host: 'situs.example.com', origin: 'https://situs.example.com' } }, res);
-    assert.equal(res.status, 401);
-    assert.match(res.body, /Kredensial diperlukan/);
+    let pulls = 0;
+    const okRes = mockResponse();
+    await analyze.default({ method: 'POST', url: '/api/analyze', headers: { host: 'situs.example.com', origin: 'https://situs.example.com' } }, okRes, async () => { pulls++; return { reviews: [], running: false }; });
+    assert.equal(okRes.status, 200, 'tanpa kredensial sekalipun, penarikan dijalankan');
+    assert.equal(pulls, 1);
+    assert.equal(JSON.parse(okRes.body).reviews.length, 0);
+
+    const crossRes = mockResponse();
+    await analyze.default({ method: 'POST', url: '/api/analyze', headers: { host: 'situs.example.com', origin: 'https://pengiklan.example' } }, crossRes, async () => { pulls++; return { reviews: [] }; });
+    assert.equal(crossRes.status, 403, 'situs lain tetap tidak bisa memicu penarikan');
+    assert.equal(pulls, 1, 'permintaan ditolak sebelum penarikan dimulai');
+
+    const busyRes = mockResponse();
+    await analyze.default({ method: 'POST', url: '/api/analyze', headers: { host: 'situs.example.com' } }, busyRes, async () => { throw new Error('busy'); });
+    assert.equal(busyRes.status, 409);
   } finally {
     if (previousUser === undefined) delete process.env.DASHBOARD_USER; else process.env.DASHBOARD_USER = previousUser;
     if (previousPassword === undefined) delete process.env.DASHBOARD_PASSWORD; else process.env.DASHBOARD_PASSWORD = previousPassword;
