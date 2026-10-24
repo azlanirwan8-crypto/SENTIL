@@ -315,7 +315,7 @@ function dataScopeNote() {
     const ratings=numericCount(listing?.ratingCount) ?? numericCount(source.ratingCount) ?? numericCount(p.ratingCount);
     return `${esc(p.short)}: ${integer(stored)} ulasan tertulis${ratings!==null?` · ${integer(ratings)} penilaian halaman toko`:''} · ${esc(sourceStatusNames[source.status] || 'Status belum tersedia')}`;
   });
-  return `<p class="note-inline scope-note">${icon('info')}<span><strong>${integer(reviews.length)} ulasan tertulis unik</strong> dapat dicari berdasarkan nama atau teks. Seluruh ulasan tersimpan digunakan dalam analisis; kelengkapan seluruh ulasan di internet belum dapat dipastikan. ${rows.join('; ')}. Jumlah penilaian toko bukan jumlah teks ulasan; selisihnya tidak membuktikan penyebab data belum tersedia. Rincian pengambilan tersedia pada menu Platform.</span></p>`;
+  return `<p class="note-inline scope-note">${icon('info')}<span><strong>${integer(reviews.length)} teks ulasan tersimpan</strong> dapat dicari berdasarkan nama atau teks; duplikat dihapus dalam satu kanal, sedangkan teks yang sama pada kanal berbeda tetap dihitung dua kali. Seluruh ulasan tersimpan digunakan dalam analisis; kelengkapan seluruh ulasan di internet belum dapat dipastikan. ${rows.join('; ')}. Jumlah penilaian toko bukan jumlah teks ulasan; selisihnya tidak membuktikan penyebab data belum tersedia. Rincian pengambilan tersedia pada menu Platform.</span></p>`;
 }
 function topicChip(tag, clickable) {
   const label = tags[tag] || tag;
@@ -539,9 +539,9 @@ async function loadData() {
     sync.loading=false; sync.requesting=false; render(); scheduleRefresh();
   }
 }
-const pullStatusNames = { menunggu:'Menunggu giliran', diproses:'Sedang diambil…', selesai:'Selesai diperiksa', gagal:'Gagal', 'belum dikonfigurasi':'Perlu konfigurasi API', 'belum diuji':'Akses belum diuji', 'tidak diambil':'Tidak diambil', 'data tersimpan':'Data tersimpan' };
-const pullFinalStates = new Set(['selesai','gagal','belum dikonfigurasi','belum diuji','tidak diambil','data tersimpan']);
-const pullStateFor = source => ({ success:'selesai', partial:'selesai', error:'gagal', needs_setup:'belum dikonfigurasi', ready:'belum diuji', unsupported:'tidak diambil', snapshot:'data tersimpan' })[source?.status] || 'gagal';
+const pullStatusNames = { menunggu:'Menunggu giliran', diproses:'Sedang diambil…', selesai:'Selesai diperiksa', sebagian:'Selesai sebagian', gagal:'Gagal', 'belum dikonfigurasi':'Perlu konfigurasi API', 'belum diuji':'Akses belum diuji', 'tidak diambil':'Tidak diambil', 'data tersimpan':'Data tersimpan' };
+const pullFinalStates = new Set(['selesai','sebagian','gagal','belum dikonfigurasi','belum diuji','tidak diambil','data tersimpan']);
+const pullStateFor = source => ({ success:'selesai', partial:'sebagian', error:'gagal', needs_setup:'belum dikonfigurasi', ready:'belum diuji', unsupported:'tidak diambil', snapshot:'data tersimpan' })[source?.status] || 'gagal';
 // Baris metadata diisi dari cakupan yang benar-benar dilaporkan sumber, bukan teks tetap,
 // sehingga angka bahasa/actor/batas hasil pada modal dapat ditelusuri ke hasil pengambilan.
 function pullMeta(source) {
@@ -587,11 +587,17 @@ function renderPullDialog() {
   dialog.innerHTML = `<div class="dialog-header"><div><h2 id="pull-heading">Mengambil dan menganalisis</h2><p>Kanal diambil satu per satu. Status di bawah adalah hasil nyata dari kanal tersebut, bukan perkiraan.</p></div><button class="icon-button" data-close="pull-dialog" aria-label="Tutup progres">${icon('close')}</button></div><div class="dialog-body"><div class="pull-progress"><span>Platform</span><strong>${checked} dari ${queue.length} kanal diperiksa${finished?'; riwayat diperbarui':''}</strong></div><ol class="pull-list" aria-live="polite">${queue.map(row => `<li class="pull-row is-${row.status}"><span class="pull-dot" aria-hidden="true"></span>${card(row)}</li>`).join('')}</ol></div><div class="dialog-footer"><small>Kanal yang menjawab tanpa hasil berarti terhubung tetapi tidak mengirim konten; itu bukan nol keluhan.</small></div>`;
   if (!dialog.open) dialog.showModal();
 }
+// Pesan singkat tetap memuat keterangan pemotongan: kalimat pertama saja akan membuat hasil
+// terpotong terbaca seperti pengambilan yang lengkap.
+const truncationMark = /\b(?:belum lengkap|terpotong|terbatas|time_budget|page_limit|run_limit|dibatasi)\b/i;
 function shortMessage(message) {
   const text = String(message || '').trim();
   if (!text) return '';
-  const first = text.split(/(?<=[.!?])\s/)[0] || text;
-  return first.length > 150 ? `${first.slice(0, 147)}…` : first;
+  const sentences = text.split(/(?<=[.!?])\s/).filter(Boolean);
+  const clip = (value, limit) => value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+  const lead = clip(sentences[0] || text, 150);
+  const caveat = sentences.slice(1).find(sentence => truncationMark.test(sentence));
+  return caveat ? `${lead} ${clip(caveat, 130)}` : lead;
 }
 async function analyze() {
   if (isBusy() || sync.requesting) return;

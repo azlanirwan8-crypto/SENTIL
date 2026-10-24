@@ -78,6 +78,24 @@ test('hope clauses and resolved failures are not read as active complaints',()=>
   assert.equal(classifyText('sangat membantu transaksi jadi mudah').sentiment,'positive');
   assert.match(classifyText('Setelah berbulan2 masuk BNI Marchant gak bisa bisa akhirnya ada Wondr Marchant By BNI bisa masuk jg. semoga gak ada gangguan lagi').rationale,/Klausa harapan dan kegagalan yang sudah selesai/);
 });
+test('negation, later complaints and wrong-product text stay honest after the classifier review',()=>{
+  assert.equal(classifyText('aplikasi tak bisa masuk, data ga muncul').sentiment,'negative','negasi tak/kagak bukan keberhasilan');
+  assert.equal(classifyText('aplikasi kagak bisa dibuka sama sekali').sentiment,'negative');
+  assert.equal(classifyText('jelek sekali aplikasinya').sentiment,'negative','kosakata keluhan umum tidak dibiarkan tanpa label');
+  assert.equal(classifyText('akhirnya bisa masuk aplikasi, tapi dana settlement belum masuk').sentiment,'negative','keluhan sesudah klausa penyelesaian tetap dihitung');
+  assert.equal(classifyText('semoga lancar terus ya aplikasinya').sentiment,'unclassified','harapan saja tidak dijadikan pujian');
+  const storeConsumer = classifyReview({ platform:'play', id:'store-consumer', author:'Uji', date:'2026-10-20', text:'BNI Mobile banking saya error terus', sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' });
+  assert.equal(storeConsumer.sentiment,'unclassified','keluhan aplikasi konsumen tidak dihitung sebagai pengalaman merchant');
+  assert.equal(storeConsumer.relevance.status,'uncertain');
+  const storeMerchant = classifyReview({ platform:'play', id:'store-merchant', author:'Uji', date:'2026-10-20', text:'wondr merchant lambat sekali', sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' });
+  assert.equal(storeMerchant.sentiment,'negative');assert.equal(storeMerchant.relevance,undefined,'ulasan toko tidak melewati penyaringan sosial');
+  for (const author of ['BNIOfficial','officialbni46','@BNI 46','wondr merchant']) {
+    assert.equal(classifyReview({ platform:'youtube', id:`official-${author}`, author, date:'2026-10-20', text:'Aplikasi wondr merchant membantu banget', sourceUrl:'https://www.youtube.com/watch?v=abc' }).relevance.status,'excluded',`akun resmi ${author} tidak dihitung sebagai pelanggan`);
+  }
+  assert.equal(classifyReview({ platform:'youtube', id:'fans', author:'bnimerchantfans', date:'2026-10-20', text:'wondr merchant bagus untuk QRIS', sourceUrl:'https://www.youtube.com/watch?v=abc' }).relevance.status,'relevant','nama penggemar bukan akun resmi');
+  const competitor = classifyReview({ platform:'youtube', id:'competitor', author:'Budi', date:'2026-10-20', text:'QRIS merchant saya lambat bang, pakai aplikasi bank lain', sourceUrl:'https://www.youtube.com/watch?v=abc', context:{ product:'wondr-merchant' } });
+  assert.equal(competitor.relevance.status,'uncertain');assert.equal(competitor.sentiment,'unclassified','keluhan aplikasi bank lain tidak masuk NSS');
+});
 test('unknown labels and missing dates are not converted to neutral or current dates',()=>{
   const result=upsertReviews([],[{...sample,date:null,author:'N/A',text:'apa ini',rating:5}],'2026-10-23');
   const r=result.reviews[0];assert.equal(r.date,null);assert.equal(r.author,'N/A');assert.equal(r.sentiment,'unclassified');
@@ -1353,6 +1371,23 @@ test('Linked comment links resolve from dataset URLs and key-value records alike
   assert.equal(broken.failed, 1, 'tautan yang tidak dapat diurai dicatat, tidak silently hilang');
 });
 
+test('Tautan komentar pihak lain tidak pernah menerima token Apify', async () => {
+  // Isi dataset actor adalah data pihak ketiga. Tanpa pemeriksaan host, satu tautan
+  // "https://penyerang/records/x" cukup untuk mengirim token keluar dari server ini.
+  const seen = [];
+  const fetcher = async url => { seen.push(url); return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }); };
+  const hostile = await apifyLinkedDatasetIds([
+    'https://penyerang.example/v2/records/comments',
+    'http://169.254.169.254/latest/meta-data/records/x',
+    'https://apify.com.evil.test/v2/datasets/ds-x/items',
+    'https://api.apify.com@evil.test/v2/datasets/ds-y/items',
+    'https://api.apify.com/v2/datasets/ds-sah/items',
+  ], 'token-rahasia', fetcher);
+  assert.deepEqual(seen, [], 'tidak ada permintaan yang dikirim ke host asing');
+  assert.deepEqual(hostile.ids, ['ds-sah']);
+  assert.equal(hostile.failed, 4);
+});
+
 test('Unknown actor input fields stop the run before any paid request', async () => {
   // Bentuk inilah yang membuat kanal X, Instagram, dan Facebook mengembalikan "tidak ada hasil":
   // field tidak dikenal dibuang Apify, actor berjalan tanpa kueri, dan hasilnya terdengar sah.
@@ -1759,8 +1794,38 @@ test('Local server runs staged pulls and closes the batch on ?finish=1', async (
   }
 });
 
-test('Serverless pull stores results on disk and resumes an unfinished actor run', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'wondr-store-'));
+test('Local server resumes an unfinished actor run instead of paying for a new one', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-resume-http-'));
+  let server;
+  try {
+    await writeFile(join(dir, 'data.json'), JSON.stringify({
+      reviews: [], runs: [], lastRun: null, batch: null,
+      sources: [{ id: 'x', status: 'partial', fetched: 0, message: 'Actor masih berjalan', coverage: { runId: 'run-1', datasetId: 'ds-1', runFinished: false, followUp: { runId: 'run-2', datasetId: 'ds-2', finished: false } } }],
+    }));
+    const received = [];
+    const record = (options) => { received.push(options); };
+    server = await createDashboardServer({
+      storagePath: join(dir, 'data.json'), env: {},
+      collector: async options => { record(options); return []; },
+      collectOne: async (id, options) => { record(options); return { id, status: 'success', fetched: 0, message: 'Tidak ada ulasan baru pada tahap ini.', reviews: [] }; },
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const host = `127.0.0.1:${port}`;
+    assert.equal((await rawRequest(port, '/api/analyze', { method: 'POST', host })).status, 200);
+    assert.equal((await rawRequest(port, '/api/analyze?platform=x', { method: 'POST', host })).status, 200);
+    for (const options of received) {
+      assert.equal(options.resume.get('x').runId, 'run-1', 'run yang belum selesai dilanjutkan, bukan diulang');
+      assert.equal(options.resume.get('x').datasetId, 'ds-1');
+      assert.equal(options.resume.get('x').followUp.runId, 'run-2', 'fase komentar yang belum selesai ikut dilanjutkan');
+    }
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Serverless pull stores results on disk and resumes an unfinished actor run', async () => {  const dir = await mkdtemp(join(tmpdir(), 'wondr-store-'));
   try {
     await useDataPath(dir, async () => {
       const first = await freshStore('pull-1');

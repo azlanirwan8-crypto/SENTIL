@@ -17,14 +17,15 @@ async function mockResults(){
   if(collectorMode==='error')return ['play','appstore'].map(id=>({id,status:'error',fetched:0,message:'Koneksi uji gagal; histori dipertahankan.'}));
   return ['play','appstore'].map(id=>{
     const count=seedReviews.filter(r=>r.platform===id).length;
-    return {id,status:'success',fetched:count,rating:id==='play'?4:4.8,ratingCount:id==='play'?74:17,installs:id==='play'?'10K+':null,
+    const truncated=id==='appstore'&&collectorMode==='truncated';
+    return {id,status:truncated?'partial':'success',fetched:count,rating:id==='play'?4:4.8,ratingCount:id==='play'?74:17,installs:id==='play'?'10K+':null,
       ratingHistogram:id==='play'?[52,3,2,4,14]:[16,0,0,0,1],ratingHistogramTotal:id==='play'?75:17,
       coverage:id==='play'
         ? {pools:[{hl:'id',gl:'ID',label:'kumpulan bahasa Indonesia',pagesRead:1,rows:38,added:38,complete:true,error:null},{hl:'en',gl:'US',label:'kumpulan bahasa Inggris',pagesRead:1,rows:17,added:17,complete:true,error:null}],pagesRead:2,rows:55,sampleLimit:null}
         : {shelfPages:1,feedPages:1,shelfReviews:9,feedReviews:9,sharedReviews:9,feedOnly:0,sampleLimit:null},
       message:id==='play'
         ? `${count} ulasan tertulis unik dibaca dari Google Play sebagai gabungan 38 ulasan kumpulan bahasa Indonesia dan 17 ulasan kumpulan bahasa Inggris. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. Histogram penilaian halaman toko dibaca penuh: 5★=52, 4★=3, 3★=2, 2★=4, 1★=14 (total 75 penilaian). 55 ulasan membawa teks publik dan masuk analisis sentimen; 20 penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya.`
-        : `${count} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi dan feed ulasan pelanggan resmi, masing-masing 9 ulasan dikonfirmasi kedua jalur.`,
+        : `${count} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi dan feed ulasan pelanggan resmi, masing-masing 9 ulasan dikonfirmasi kedua jalur.${truncated?' Hasil belum lengkap; feed resmi masih mengirim penanda halaman lanjutan ketika batas waktu pengambilan tercapai (page_limit). Teks yang sudah terbaca tetap disimpan.':''}`,
       reviews:[...seedReviews.filter(r=>r.platform===id),...(id==='play'&&collectorMode==='new'?[synthetic]:[])]};
   }).concat(collectorMode==='social'?[
     {id:'youtube',status:'success',fetched:socialFixtures.length,message:'Isolated API fixture only',reviews:socialFixtures},
@@ -198,7 +199,7 @@ try {
   await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await evaluate(`new Promise(resolve=>{const check=()=>document.querySelectorAll('tbody tr').length===1?resolve(true):requestAnimationFrame(check);check();})`);
   assert.match(await evaluate(`document.querySelector('tbody').textContent`),/Bos AteQ/);
-  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/64 ulasan tertulis unik/);
+  assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/64 teks ulasan tersimpan/);
   assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/Play Store: 55 ulasan tertulis · 74 penilaian halaman toko/);
   for (const author of seedReviews.map(r=>r.author)) {
     await evaluate(`document.querySelector('#review-search').value=${JSON.stringify(author)};document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
@@ -511,6 +512,13 @@ try {
   await click('[data-view="overview"]');assert.deepEqual(await metricValues(),['4','0,0%','100,0%','-100,0']);
   await click('[data-platform="play"]');assert.equal((await metricValues())[0],'56');
   completed.push('Social fixtures preserve all IDs and context, exclude owner promotion from sentiment, and survive missing API access');
+  // Pengambilan terakhir: hasil partial harus tetap terbaca sebagai sebagian, bukan "selesai".
+  collectorMode='truncated';await pullFromPlatform();
+  assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row.is-sebagian').length`),1,'kanal partial memakai status sendiri');
+  assert.equal(await evaluate(`document.querySelector('#pull-dialog .pull-row.is-sebagian .pull-chip').textContent`),'Selesai sebagian');
+  assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-row.is-sebagian .pull-msg').textContent`),/Hasil belum lengkap; feed resmi masih mengirim penanda halaman lanjutan/,('keterangan pemotongan tidak boleh hilang karena pemenggalan kalimat'));
+  await click('#pull-dialog [data-close="pull-dialog"]');
+  completed.push('Partial pulls are labelled as incomplete and keep their truncation note');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
   console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
   await send('Browser.close',{},null);

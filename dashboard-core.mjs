@@ -39,8 +39,25 @@ export function overlayConfiguration(sources, channelConfig) {
   });
 }
 
-export function buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun = true }) {
-  const merged = upsertReviews(reclassifyDerived(previous.reviews), results.flatMap(r => r.reviews || []), finishedAt);
+// Run actor yang belum selesai dilanjutkan, bukan diulang, agar kuota berbayar tidak
+// terbuang. Fase komentar (run kedua pada kanal yang sama) punya runId sendiri dan ikut
+// dilanjutkan. Dipakai server lokal dan function Vercel supaya keduanya berhenti membayar
+// run ganda dengan cara yang sama.
+export function resumeMap(previous) {
+  return new Map((previous?.sources || [])
+    .filter(source => (source.coverage?.runId && source.coverage.runFinished === false)
+      || (source.coverage?.followUp?.runId && source.coverage.followUp.finished === false))
+    .map(source => [source.id, {
+      runId: source.coverage.runId,
+      datasetId: source.coverage.datasetId,
+      status: 'RUNNING',
+      followUp: source.coverage.followUp?.runId && source.coverage.followUp.finished === false
+        ? { runId: source.coverage.followUp.runId, datasetId: source.coverage.followUp.datasetId, status: 'RUNNING' }
+        : null,
+    }]));
+}
+
+export function buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun = true }) {  const merged = upsertReviews(reclassifyDerived(previous.reviews), results.flatMap(r => r.reviews || []), finishedAt);
   const sources = platforms.map(p => {
     const result = results.find(r => r.id === p.id);
     const before = previous.sources.find(s => s.id === p.id) || { id: p.id };

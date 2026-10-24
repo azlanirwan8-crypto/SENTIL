@@ -511,19 +511,30 @@ export function apifyUnknownInputFields(input, fields) {
 }
 // Komentar TikTok disimpan actor di dataset terpisah yang ditaut dari item video. Tautan bisa
 // berupa URL dataset langsung atau record key-value yang berisi URL itu; keduanya diurai di sini.
+// Isi dataset berasal dari actor pihak ketiga, jadi hanya tautan HTTPS ke apify.com yang boleh
+// dibaca dengan token — mencegah token terkirim ke host lain.
+const apifyDatasetPath = /\/datasets\/([A-Za-z0-9_-]+)/;
+const apifyRecordPath = /\/(key-value-stores|records)\//;
+function apifyHttpsUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && (url.hostname === 'apify.com' || url.hostname.endsWith('.apify.com'));
+  } catch { return false; }
+}
 export async function apifyLinkedDatasetIds(links, token, fetcher = fetch) {
   const ids = new Set();
   let failed = 0;
   for (const link of links) {
     const text = String(link);
-    const direct = text.match(/\/datasets\/([A-Za-z0-9_-]+)/);
+    if (!apifyHttpsUrl(text)) { failed++; continue; }
+    const direct = text.match(apifyDatasetPath);
     if (direct) { ids.add(direct[1]); continue; }
-    if (!/\/(key-value-stores|records)\//.test(text)) { failed++; continue; }
+    if (!apifyRecordPath.test(text)) { failed++; continue; }
     try {
       const response = await fetcher(text, { headers: { authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(20000) });
       if (!response?.ok) { failed++; continue; }
       const body = typeof response.text === 'function' ? await response.text() : '';
-      const matches = [...String(body).matchAll(/\/datasets\/([A-Za-z0-9_-]+)/g)];
+      const matches = [...String(body).matchAll(new RegExp(apifyDatasetPath.source, 'g'))];
       if (!matches.length) failed++;
       for (const match of matches) ids.add(match[1]);
     } catch { failed++; }

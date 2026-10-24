@@ -3080,6 +3080,11 @@ tbody tr:hover {
   color: var(--success-text);
 }
 
+.pull-chip.is-sebagian {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
 .pull-chip.is-gagal {
   background: var(--danger-soft);
   color: var(--danger-text);
@@ -3157,6 +3162,10 @@ tbody tr:hover {
 
 .pull-row.is-selesai .pull-dot {
   background: var(--success);
+}
+
+.pull-row.is-sebagian .pull-dot {
+  background: var(--warning);
 }
 
 .pull-row.is-gagal .pull-dot {

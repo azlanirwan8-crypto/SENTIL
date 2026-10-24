@@ -203,37 +203,59 @@ const topicRules = {
   migration: /migrasi|beralih|aplikasi lama|aplikasi sebelumnya|discontinue/,
   benefit: /membantu|mempermudah|usaha/,
 };
+// Satu daftar kata negasi dipakai bersama semua aturan agar frasa seperti "tak bisa masuk"
+// tidak pernah terbaca sebagai keberhasilan.
+const negation = 'tidak|belum|blum|blm|ga|gak|nggak|ngga|kagak|enggak|tak|tdk';
 // Klausa harapan ("semoga ...", "mudah-mudahan ...") adalah harapan akan perbaikan, bukan
 // keluhan yang sedang terjadi, jadi klausanya sendiri tidak dihitung sebagai negatif.
-const hopeClause = /(?:semoga|smoga|moga[\s-]?2?|mudah[\s-]?2?an|harapannya|insya\s?allah|insyallah|aminn?)\b[^,.!?]*/g;
+const hopeClause = new RegExp(`(?:semoga|smoga|moga[\\s-]?2?|mudah[\\s-]?2?an|harapannya|insya\\s?allah|insyallah|aminn?)\\b[^,.!?]*`,'g');
 // Kegagalan yang sudah selesai ("... akhirnya bisa masuk") adalah riwayat, bukan keluhan aktif.
 // Jeda antar-frasa tidak boleh memuat negasi, supaya "sekarang belum bisa" tetap keluhan.
-const notNegated = /(?:(?!\b(?:tidak|belum|blum|ga|gak|nggak|ngga|tdk)\b)[^.!?]){0,60}/;
+const notNegated = new RegExp(`(?:(?!\\b(?:${negation})\\b)[^.!?]){0,60}`);
 const resolvedHead = `\\b(?:akhirnya|alhamdulillah|alhamdullilah|sekarang|kini)${notNegated.source}\\b(?:bisa|masuk|lancar|berhasil|normal|jalan|oke|enak|bagus)\\b`;
-const resolvedClause = new RegExp(`${resolvedHead}[^.!?]*`, 'g');
-const successMarker = new RegExp(`${resolvedHead}|(?<!\\b(?:tidak|belum|blum|ga|gak|nggak|ngga|tdk)\\s)(?:bisa masuk|sudah bisa|dapat masuk)\\b`);
-const negatedAbility = /\b(?:tidak|belum|blum|ga|gak|nggak|ngga|tdk)\s+(?:bisa\s+bisa|bisa|masuk|acc|selesai)\b/g;
+const resolvedClause = new RegExp(`${resolvedHead}[^,.!?]*`,'g');
+const successMarker = new RegExp(`${resolvedHead}|(?<!\\b(?:${negation})\\s)(?:bisa masuk|sudah bisa|dapat masuk)\\b`);
+const negatedAbility = new RegExp(`\\b(?:${negation})\\s+(?:bisa\\s+bisa|bisa|masuk|acc|selesai)\\b`,'g');
+const reassurancePhrase = new RegExp(`\\b(?:(?:${negation}) ada|${negation}|tanpa) (?:masalah|kendala|hambatan|problem)\\b`,'g');
+// "dana settlement belum masuk" tetap keluhan meskipun kata bendanya dipisah beberapa kata.
+const missingAsset = new RegExp(`\\b(?:dana|uang|settlement|transaksi|laporan|notifikasi|notif)\\b[^.!?]{0,25}?\\b(?:${negation})\\s+masuk\\b`);
+const negativeRule = new RegExp(`gagal|lambat|lemot|ribet|repot|jelek|cacat|rusak|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|\\b(?:${negation})\\s+(?:bisa|ada|update|acc|selesai)\\b|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|${missingAsset.source}|tidak menyelesaikan|bankke`);
+const positiveRule = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|^ok(?:e)?[.! ]*$/;
 export function classifyText(text) {
   const value = text.toLocaleLowerCase('id').replace(/\s+/g,' ');
   const reviewTags = Object.entries(topicRules).filter(([,rule]) => rule.test(value)).map(([tag]) => tag);
   const resolved = successMarker.test(value);
-  const scope = value.replace(/\btidak ada (?:masalah|kendala)\b/g,'').replace(hopeClause,' ');
-  const negativeScope = resolved ? scope.replace(resolvedClause,' ').replace(negatedAbility,' ') : scope;
-  const negative = /gagal|lambat|lemot|ribet|repot|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|(?:tidak|belum|blum|ga|gak|nggak|tdk) (?:bisa|ada|update|acc|selesai)|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|(?:notif|notifikasi|transaksi|dana|uang|laporan)\s+(?:tidak|ga|gak|belum|blum|tdk)\s+masuk|tidak menyelesaikan|bankke/.test(negativeScope);
-  const positive = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|^ok(?:e)?[.! ]*$/.test(value) || (resolved && !negative);
+  const hopeful = value.replace(hopeClause,' ');
+  // Keluhan sebelum kegagalan terselesaikan dihitung sebagai riwayat; teks sesudahnya
+  // (misalnya "tapi dana belum masuk") tetap dinilai sebagai keluhan aktif.
+  const headAt = resolved ? hopeful.search(new RegExp(resolvedHead)) : -1;
+  const negativeScope = resolved && headAt !== -1
+    ? `${hopeful.slice(0,headAt).replace(negatedAbility,' ')} ${hopeful.slice(headAt).replace(resolvedClause,' ')}`
+    : hopeful.replace(reassurancePhrase,' ');
+  const negative = negativeRule.test(negativeScope);
+  const positive = positiveRule.test(hopeful) || (resolved && !negative);
   const neutral = /^(?:[1-5] bintang dulu|terima kasih atas informasinya)[.! ]*$/.test(value);
   const sentiment = negative ? 'negative' : positive ? 'positive' : neutral ? 'neutral' : 'unclassified';
-  return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Klausa harapan dan kegagalan yang sudah selesai ("akhirnya bisa masuk") tidak dihitung sebagai keluhan aktif. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
+  return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Klausa harapan dan kegagalan yang sudah selesai ("akhirnya bisa masuk") tidak dihitung sebagai keluhan aktif, tetapi teks sesudah klausa itu tetap dinilai. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
 }
 export function classifyReview(raw) {
   const label = classifyText(raw.text);
-  if (raw.platform === 'play' || raw.platform === 'appstore') return label;
   const text = raw.text.toLocaleLowerCase('id');
   const merchant = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])/.test(text);
+  const consumer = /\bwondr\s+by\s+bni\b|mobile banking|bni mobile|m[- ]?banking/.test(text);
+  // Keluhan yang jelas ditujukan ke aplikasi lain bukan pengalaman produk ini.
+  const otherApp = /\b(?:aplikasi|qris|mesin)\s+(?:bank\s+)?lain\b|aplikasi\s+sebelah|bukan\s+wondr/.test(text);
   // Akun resmi pemilik produk mengiklankan aplikasinya sendiri. Teks seperti itu
   // disimpan sebagai konteks, tetapi tidak dihitung sebagai sentimen pelanggan.
   const handle = String(raw.author ?? '').replace(/^@+/, '').trim().toLowerCase();
-  const officialAccount = /^(?:bni(?:[\W_]*46)?|official[\W_]*bni|wondr[\W_]*merchant)$/.test(handle);
+  const officialAccount = /^(?:bni(?:[\W_]*46)?|official[\W_]*bni(?:[\W_]*46)?|bni[\W_]*official(?:[\W_]*46)?|wondr[\W_]*merchant(?:[\W_]*by[\W_]*bni)?)$/.test(handle);
+  if (raw.platform === 'play' || raw.platform === 'appstore') {
+    // Ulasan toko dinilai langsung dari teksnya. Teks yang hanya menyebut aplikasi konsumen
+    // BNI tidak boleh dihitung sebagai pengalaman merchant.
+    if (!consumer || merchant) return label;
+    const reason = 'Teks ulasan toko menyebut aplikasi konsumen BNI, bukan wondr merchant; perlu diperiksa manusia sebelum dihitung sebagai pengalaman merchant.';
+    return { ...label, sentiment:'unclassified', tags:['general'], relevance:{ status:'uncertain', reason, method:'merchant-context-v1' }, rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.` };
+  }
   const promotion = /(?:^|[.!?:]|\b(?:ayo|yuk|buruan|segera)\b)\s*(?:download|unduh|install)\b|\bdapatkan\s+(?:cashback|bonus|promo)\b|\binfo\s+promo\b/.test(text);
   const question = /\b(?:apakah|kalau|jika|seandainya|bisakah)\b|\bbelum\s+(?:pernah\s+)?(?:mencoba|coba|pakai|menggunakan)\b/.test(text);
   let status = 'uncertain', reason = 'Komentar pada video terkait belum cukup untuk memastikan pengalaman terhadap aplikasi merchant.';
@@ -243,8 +265,10 @@ export function classifyReview(raw) {
     status = 'excluded'; reason = 'Balasan pemilik video disimpan sebagai konteks, bukan opini pelanggan independen.';
   } else if (promotion) {
     status = 'excluded'; reason = 'Ajakan promosi tidak diperlakukan sebagai pengalaman pelanggan.';
-  } else if (/\bwondr\s+by\s+bni\b|mobile banking|bni mobile/.test(text)) {
+  } else if (consumer) {
     status = 'excluded'; reason = merchant ? 'Teks juga membahas produk konsumen. Target sentimen belum dipisahkan, sehingga teks tidak dinilai otomatis sebagai pengalaman wondr merchant.' : 'Teks menyebut produk konsumen, bukan wondr merchant.';
+  } else if (otherApp) {
+    reason = 'Teks mengarah ke aplikasi atau perangkat milik pihak lain, bukan pengalaman menggunakan wondr merchant.';
   } else if (question) {
     reason = 'Pertanyaan, kondisi hipotetis, atau pernyataan belum mencoba belum cukup untuk menetapkan pengalaman pelanggan; perlu tinjauan konteks.';
   } else if (merchant || (raw.platform === 'youtube' && raw.context?.product === 'wondr-merchant' && /\bqris\b|settlement|pencairan|merchant|toko|usaha/.test(text) && label.tags.some(tag => tag !== 'general'))) {

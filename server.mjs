@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
-import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived } from './dashboard-core.mjs';
+import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
 
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -105,7 +105,10 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       // tanpa keduanya seluruh kanal diambil sekaligus seperti sebelumnya.
       const finish = params.get('finish') === '1';
       try {
-        const results = finish ? [] : platform ? [await collectOne(platform)] : await collector();
+        // Run actor yang masih berjalan dari permintaan sebelumnya dilanjutkan, bukan
+        // diulang, agar penarikan lokal tidak membayar run ganda.
+        const runOptions = { resume: resumeMap(data) };
+        const results = finish ? [] : platform ? [await collectOne(platform, runOptions)] : await collector(runOptions);
         if (platform && !results[0]) { running = false; json(400,{error:'Kanal yang diminta tidak dikenal, sehingga tidak ada permintaan yang dikirim.'}); return; }
         const finishedAt = new Date().toISOString();
         const next = buildDataset({ previous: data, results, startedAt, finishedAt, channelConfig, recordRun: finish || !platform });

@@ -3,7 +3,7 @@
 // dan ditulis ke DATA_PATH agar penarikan berikutnya tetap memakai riwayat yang sama.
 import { readFile, writeFile } from 'node:fs/promises';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
-import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived } from './dashboard-core.mjs';
+import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
 // konfigurasi deployment, bukan nilai saat modul pertama kali diimpor.
@@ -78,18 +78,3 @@ async function runStep(produce, { recordRun }) {
   }
 }
 
-function resumeMap(previous) {
-  // Run actor yang belum selesai dilanjutkan, bukan diulang, agar kuota berbayar tidak terbuang.
-  // Fase komentar (run kedua pada kanal yang sama) punya runId sendiri dan ikut dilanjutkan.
-  return new Map(previous.sources
-    .filter(source => (source.coverage?.runId && source.coverage.runFinished === false)
-      || (source.coverage?.followUp?.runId && source.coverage.followUp.finished === false))
-    .map(source => [source.id, {
-      runId: source.coverage.runId,
-      datasetId: source.coverage.datasetId,
-      status: 'RUNNING',
-      followUp: source.coverage.followUp?.runId && source.coverage.followUp.finished === false
-        ? { runId: source.coverage.followUp.runId, datasetId: source.coverage.followUp.datasetId, status: 'RUNNING' }
-        : null,
-    }]));
-}
