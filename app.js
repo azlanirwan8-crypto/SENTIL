@@ -250,7 +250,9 @@ function complaintChart() {
 }
 function sampleRating(data) {
   const r=ratingSummary(data), max=Math.max(1,...r.distribution.map(d=>d.count));
-  return `<article class="card sample-rating"><div><h2>Penilaian bintang pada ulasan</h2><p><strong>${r.total?`${decimal(r.average)} / 5`:'N/A'}</strong> · ${r.total} dari ${data.length} ulasan menyertakan penilaian bintang</p><small>Hanya ulasan dalam filter ini, bukan seluruh penilaian di halaman toko aplikasi.</small></div><div class="rating-distribution" role="list" aria-label="Distribusi penilaian bintang pada ulasan">${[...r.distribution].reverse().map(d=>`<div class="rating-row" role="listitem" aria-label="${d.stars} bintang: ${d.count} ulasan"><span>${d.stars} ★</span><span class="rating-track" aria-hidden="true"><span style="width:${pct(d.count,max)}%"></span></span><strong>${d.count}</strong></div>`).join('')}</div></article>`;
+  const single=data.length&&data.every(d=>d.platform===data[0].platform)?data[0].platform:null;
+  const storeCount=single?storeRatingCount(single):0, textless=storeCount>r.total?storeCount-r.total:0;
+  return `<article class="card sample-rating"><div><h2>Penilaian bintang pada ulasan</h2><p><strong>${r.total?`${decimal(r.average)} / 5`:'N/A'}</strong> · ${r.total} dari ${data.length} ulasan menyertakan penilaian bintang</p><small>Hanya ulasan dalam filter ini, bukan seluruh penilaian di halaman toko aplikasi.${textless?` Halaman toko memperhitungkan ${integer(storeCount)} penilaian bintang — ${integer(textless)} di antaranya tanpa teks publik, sehingga tidak tampil di sini dan tidak dapat dianalisis sentimennya.`:''}</small></div><div class="rating-distribution" role="list" aria-label="Distribusi penilaian bintang pada ulasan">${[...r.distribution].reverse().map(d=>`<div class="rating-row" role="listitem" aria-label="${d.stars} bintang: ${d.count} ulasan"><span>${d.stars} ★</span><span class="rating-track" aria-hidden="true"><span style="width:${pct(d.count,max)}%"></span></span><strong>${d.count}</strong></div>`).join('')}</div></article>`;
 }
 function featureCard(data) {
   const groups=groupStats(data,featureGroups);
