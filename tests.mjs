@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource } from './model.js';
 import { createDashboardServer, deploymentConfig } from './server.mjs';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -181,6 +181,45 @@ test('stable weekly volume is reported as no measurable direction',()=>{
   assert.ok(Math.abs(result.negative.projected-8)<1e-9);
   assert.ok(Math.abs(result.nssProjected.point-result.nssCurrent)<1e-9);
   assert.equal(projection(projectedFixture({ negative:[2,2,2,2,2,2,2,2], positive:[3,3,3,3,3,3,3,3] }),{ horizonWeeks:2 }).negative.projected>0,true);
+});
+test('ABSA derives aspects, emotion and intent from text and topics',()=>{
+  const bug=absaOf({ sentiment:'negative', tags:['login','performance'], text:'login gagal terus, error setelah update' });
+  assert.deepEqual(bug.aspects.sort(),['access','performance']);
+  assert.equal(bug.intent,'bug_report');assert.equal(bug.emotion,'frustration');
+  const praise=absaOf({ sentiment:'positive', tags:['ux'], text:'bagus dan mudah digunakan' });
+  assert.deepEqual(praise.aspects,['uxui']);assert.equal(praise.intent,'praise');assert.equal(praise.emotion,'satisfaction');
+  assert.equal(absaOf({ sentiment:'negative', tags:['features'], text:'semoga ada fitur hapus toko' }).intent,'feature_request','permintaan fitur bukan keluhan biasa');
+  const angry=absaOf({ sentiment:'negative', tags:['support'], text:'marah saya, cs tidak menyelesaikan masalah' });
+  assert.equal(angry.emotion,'anger');assert.deepEqual(angry.aspects,['service']);
+  const question=absaOf({ sentiment:'unclassified', tags:['general'], text:'apakah bisa daftar tanpa ke cabang?' });
+  assert.equal(question.emotion,'query');assert.equal(question.intent,'other');
+  assert.deepEqual(absaOf({ sentiment:'negative', tags:['general'], text:'qris gagal terus' }).aspects,['payment'],'aspek juga dibaca dari teks bila topik tidak menyebutnya');
+  assert.deepEqual(absaOf({ sentiment:'negative', tags:['general'], text:'lupa pin tidak bisa masuk' }).aspects,['access']);
+});
+test('aspect and cluster statistics count only matching reviews',()=>{
+  const rows=[
+    { sentiment:'negative', tags:['transactions'], text:'qris sering gagal saat pembayaran' },
+    { sentiment:'negative', tags:['settlement'], text:'pencairan dana lambat sekali' },
+    { sentiment:'positive', tags:['ux'], text:'bagus dan mudah digunakan' },
+  ];
+  const payment=aspectStats(rows).find(a=>a.id==='payment');
+  assert.equal(payment.total,2);assert.equal(payment.negative,2);assert.equal(payment.positive,0);
+  assert.deepEqual(clusterStats(rows).map(c=>[c.label,c.total]),[['Gagal QRIS',1],['Settlement lambat',1]]);
+  assert.equal(clusterStats(rows,'positive').length,0,'klaster keluhan tidak menghitung pujian');
+  assert.equal(clusterStats(rows,'all').length,2,'filter "all" menghitung seluruh ulasan');
+  assert.equal(aspectStats(rows,'all').find(a=>a.id==='uxui').total,1);
+});
+test('withAbsa adds structured fields without inventing sentiment',()=>{
+  const source={ id:'absa-1', platform:'play', author:'Uji', date:'2026-10-20', text:'qris gagal', rating:2, sentiment:'negative', tags:['transactions'], labeling:'manual' };
+  const [row]=withAbsa([source]);
+  assert.deepEqual(row.aspects,['payment']);assert.equal(row.intent,'bug_report');assert.equal(row.sentiment,'negative','label sentimen tidak diubah ABSA');
+  assert.deepEqual(Object.keys(source),['id','platform','author','date','text','rating','sentiment','tags','labeling'],'baris sumber tidak ditambah di tempat');
+  assert.equal(withAbsa([row])[0],row,'perhitungan ulang menghasilkan baris yang sama');
+});
+test('CSV export carries the ABSA columns for analysts',()=>{
+  const csv=exportCsv([{ ...seedReviews[0], aspects:['payment'], emotions:['frustration'], emotion:'frustration', intent:'complaint' }]);
+  assert.match(csv.split('\r\n')[0],/^\uFEFFid,platform,author,date,rating,sentiment,aspects,emotions,emotion,intent,text,tags,sourceUrl,rationale,labeling$/);
+  assert.match(csv.split('\r\n')[1],/^"[^"]*","play","[^"]*","[^"]*","[^"]*","negative","payment","frustration","frustration","complaint"/);
 });
 test('sample star averages use only actual ratings',()=>{
   const s=ratingSummary(seedReviews);assert.equal(s.total,64);assert.ok(Math.abs(s.average-245/64)<1e-9);

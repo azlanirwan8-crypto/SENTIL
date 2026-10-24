@@ -1,5 +1,5 @@
 import { platforms, observationDate, seedReviews } from './data.js';
-import { upsertReviews, classifyReview } from './model.js';
+import { upsertReviews, classifyReview, withAbsa } from './model.js';
 
 const connectedSources = new Set(['play', 'appstore']);
 
@@ -57,7 +57,8 @@ export function resumeMap(previous) {
     }]));
 }
 
-export function buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun = true }) {  const merged = upsertReviews(reclassifyDerived(previous.reviews), results.flatMap(r => r.reviews || []), finishedAt);
+export function buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun = true }) {
+  const merged = upsertReviews(reclassifyDerived(previous.reviews), results.flatMap(r => r.reviews || []), finishedAt);
   const sources = platforms.map(p => {
     const result = results.find(r => r.id === p.id);
     const before = previous.sources.find(s => s.id === p.id) || { id: p.id };
@@ -86,7 +87,7 @@ export function buildDataset({ previous, results, startedAt, finishedAt, channel
   // Penarikan bertahap (satu kanal per permintaan) hanya menyimpan hasil per kanal;
   // satu entri run dibuat pada tahap terakhir, dengan waktu mulai dari tahap pertama.
   if (!recordRun) return {
-    reviews: merged.reviews,
+    reviews: withAbsa(merged.reviews),
     sources,
     lastRun: previous.lastRun,
     runs: previous.runs,
@@ -110,5 +111,5 @@ export function buildDataset({ previous, results, startedAt, finishedAt, channel
     unchanged: (previous.batch?.unchanged ?? 0) + merged.unchanged,
     sources: sources.map(s => ({ ...s })),
   };
-  return { reviews: merged.reviews, sources, lastRun: run, runs: [...previous.runs, run], batch: null };
+  return { reviews: withAbsa(merged.reviews), sources, lastRun: run, runs: [...previous.runs, run], batch: null };
 }

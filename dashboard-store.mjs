@@ -4,6 +4,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
+import { withAbsa } from './model.js';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
 // konfigurasi deployment, bukan nilai saat modul pertama kali diimpor.
@@ -37,7 +38,7 @@ async function writeStored(dataset) {
 export async function snapshot() {
   if (!cache) {
     const stored = (await readStored()) ?? initialDataset();
-    cache = { ...stored, reviews: reclassifyDerived(stored.reviews), sources: overlayConfiguration(stored.sources, channelConfigurations()) };
+    cache = { ...stored, reviews: withAbsa(reclassifyDerived(stored.reviews)), sources: overlayConfiguration(stored.sources, channelConfigurations()) };
   }
   return { ...cache, running };
 }

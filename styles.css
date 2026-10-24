@@ -1314,6 +1314,199 @@ main {
   line-height: 1.6;
 }
 
+/* Kartu ringkasan eksekutif di puncak dasbor. */
+.summary-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(0, 240px);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 24px;
+  padding: 18px 16px;
+  border-left: 3px solid var(--primary);
+}
+
+.summary-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.summary-main h2 {
+  font-size: 15px;
+}
+
+.summary-main > p {
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.summary-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip-intent {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chip-intent.bug {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.chip-intent.wish {
+  background: var(--info-soft);
+  color: var(--info-text);
+}
+
+.chip-intent.anger {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.summary-note {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.summary-side {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.summary-side > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.summary-side span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.summary-side strong {
+  color: var(--heading);
+  font-size: 19px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-side small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.cluster-list,
+.aspect-list {
+  padding: 16px;
+}
+
+.absa-mixes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0 16px 8px;
+}
+
+.absa-mixes h3 {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sov-card .distribution-list {
+  padding-bottom: 0;
+}
+
+/* Bilur kemajuan pada modal pengambilan. */
+.pull-meter {
+  height: 8px;
+  margin: 10px 0 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.pull-meter span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width .3s ease;
+}
+
+.detail-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-tag {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning-text);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.detail-section .btn-primary {
+  margin-top: 12px;
+}
+
+.detail-plain {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.detail-audit {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.detail-audit summary {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.detail-audit .source-facts dt,
+.detail-audit .source-facts dd {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-audit .source-facts dd {
+  overflow-wrap: anywhere;
+}
+
 .chart-notes {
   margin: 0 16px 16px;
   padding-top: 12px;
@@ -2770,6 +2963,18 @@ tbody tr:hover {
   .analysis-grid,
   .method-grid,
   .coverage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summary-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summary-side {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .absa-mixes {
     grid-template-columns: minmax(0, 1fr);
   }
 

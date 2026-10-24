@@ -192,7 +192,7 @@ export function validDate(value) {
 }
 const topicRules = {
   onboarding: /daftar|pendaftaran|registrasi|verifikasi|approval|approve|pengajuan|ngajuin/,
-  login: /login|log in|masuk|password|pasword|sidik jari|fingerprint|biometrik/,
+  login: /login|log in|masuk|password|pasword|sidik jari|fingerprint|biometrik|\b(?:otp|pin)\b/,
   transactions: /qris|transaksi|pembayaran/,
   notifications: /notif|notifikasi|suara nominal/,
   settlement: /settlement|settelment|pencairan|laporan/,
@@ -203,6 +203,90 @@ const topicRules = {
   migration: /migrasi|beralih|aplikasi lama|aplikasi sebelumnya|discontinue/,
   benefit: /membantu|mempermudah|usaha/,
 };
+// ABSA: topik yang sudah ada dipetakan ke lima aspek pengalaman aplikasi keuangan.
+// Aspek diturunkan dari topik + teks, bukan dari penilaian bintang, dan dapat dihitung
+// ulang kapan pun karena fungsinya murni.
+export const aspectGroups = [
+  { id: 'payment', name: 'Pembayaran, QRIS & pencairan', tags: ['transactions', 'settlement', 'notifications'] },
+  { id: 'access', name: 'Masuk, OTP & keamanan akun', tags: ['login', 'onboarding', 'migration'] },
+  { id: 'performance', name: 'Performa & gangguan teknis', tags: ['performance'] },
+  { id: 'uxui', name: 'Kemudahan tampilan & navigasi', tags: ['ux', 'features', 'benefit'] },
+  { id: 'service', name: 'Layanan pelanggan', tags: ['support'] },
+];
+export const aspectNames = Object.fromEntries(aspectGroups.map(group => [group.id, group.name]));
+export const emotionNames = { anger: 'Marah', frustration: 'Frustrasi', satisfaction: 'Puas', query: 'Bertanya', neutral: 'Netral' };
+export const intentNames = { bug_report: 'Laporan bug', feature_request: 'Permintaan fitur', praise: 'Pujian', complaint: 'Keluhan umum', other: 'Lainnya' };
+const emotionRules = {
+  anger: /marah|kesel|emosi|bodoh|sialan|ampun|hancur|parah banget|kecewa berat/,
+  frustration: /kecewa|ribet|repot|bingung|pusing|sia-sia|mubazir|lelet|lambat|lemot|gagal|error|crash|rusak|jelek|menyesal|berkali[- ]kali|berulang|berhari[- ]hari|tidak menyelesaikan|belum selesai|belum (?:ada|di)?(?:respon|respons)|harus (?:lama|ulang)|menunggu lama|(?:tidak|belum|blum|blm|ga|gak|nggak|ngga|kagak|enggak|tak|tdk) bisa/,
+  satisfaction: /bagus|mantap|mantp|keren|membantu|mempermudah|memudahkan|puas|senang|rekomendasi|mudah|lancar|akurat|terima kasih|nice|love/,
+  query: /\?|\b(?:apakah|bagaimana|gimana|kenapa|mengapa|kapan|tolong|cara|info)\b/,
+};
+const intentRules = {
+  feature_request: /semoga (?:ada|ditambah|dibuat|muncul|dikembali)|tolong tambah|minta tambah|harapannya (?:ada|ditambah)|sebaiknya (?:ada|ditambah)|fitur .{0,20}(?:diharapkan|nanti|ke depan)/,
+  bug_report: /error|crash|gagal|hang|loading lama|rusak|tidak muncul|belum muncul|(?:tidak|belum|blum|blm|ga|gak|nggak|ngga|kagak|enggak|tak|tdk) bisa|tdk bisa/,
+};
+export function absaOf(review) {
+  const text = String(review.text || '').toLocaleLowerCase('id');
+  const tags = Array.isArray(review.tags) ? review.tags : [];
+  const aspects = aspectGroups.filter(group => tags.some(tag => group.tags.includes(tag))
+    || group.id === 'payment' && /\b(?:qris|settlement|pencairan)\b/.test(text)
+    || group.id === 'access' && /\b(?:otp|pin|login|verifikasi)\b/.test(text)).map(group => group.id);
+  const emotions = Object.entries(emotionRules).filter(([, rule]) => rule.test(text)).map(([key]) => key);
+  const sentiment = review.sentiment;
+  const intent = intentRules.feature_request.test(text) ? 'feature_request'
+    : sentiment === 'negative' && intentRules.bug_report.test(text) ? 'bug_report'
+    : sentiment === 'positive' ? 'praise'
+    : sentiment === 'negative' ? 'complaint' : 'other';
+  const emotion = sentiment === 'negative' ? (emotions.includes('anger') ? 'anger' : emotions.includes('frustration') ? 'frustration' : 'neutral')
+    : sentiment === 'positive' ? (emotions.includes('satisfaction') ? 'satisfaction' : 'neutral')
+    : emotions.includes('query') ? 'query' : 'neutral';
+  return { aspects, emotions, emotion, intent };
+}
+// Isi fields ABSA pada setiap baris agar JSON yang keluar dari API terstruktur, bukan
+// hanya dihitung di peramban.
+export function withAbsa(reviews) {
+  return reviews.map(review => {
+    const { aspects, emotions, emotion, intent } = absaOf(review);
+    return review.aspects?.length === aspects.length && review.emotions?.length === emotions.length && review.emotion === emotion && review.intent === intent
+      ? review : { ...review, aspects, emotions, emotion, intent };
+  });
+}
+export function aspectStats(reviews, sentiment) {
+  const wanted = value => !sentiment || sentiment === 'all' || value === sentiment;
+  return aspectGroups.map(group => {
+    const matches = reviews.filter(r => wanted(r.sentiment) && absaOf(r).aspects.includes(group.id));
+    return { ...group, ...summary(matches), reviews: matches };
+  }).sort((a, b) => b.negative - a.negative || b.total - a.total);
+}
+export function countBy(reviews, pick) {
+  const counts = new Map();
+  for (const review of reviews) {
+    const keys = pick(review);
+    for (const key of [].concat(keys)) counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return [...counts].map(([id, total]) => ({ id, total })).sort((a, b) => b.total - a.total || String(a.id).localeCompare(String(b.id)));
+}
+// Klaster kata kunci dihitung dari kamus frasa yang dapat diperiksa, bukan dari n-gram
+// otomatis, sehingga setiap label klaster punya arti yang jelas dan jumlahnya dapat ditelusuri.
+export const painClusters = [
+  { id: 'qris-fail', label: 'Gagal QRIS', rule: /\bqris\b[^.!?]{0,30}?\b(?:gagal|tidak|belum|error|bermasalah|ditolak)\b|\b(?:gagal|tidak bisa|belum bisa)\b[^.!?]{0,20}?\bqris\b/i },
+  { id: 'settlement-late', label: 'Settlement lambat', rule: /\b(?:settlement|pencairan|dana|settelment)\b[^.!?]{0,30}?\b(?:lambat|telat|terlambat|tidak masuk|belum masuk|hilang|mampet|macet)\b/i },
+  { id: 'login-blocked', label: 'Tidak bisa masuk', rule: /\b(?:login|masuk)\b[^.!?]{0,20}?\b(?:gagal|tidak bisa|belum bisa|kagak bisa|tak bisa|tdk bisa)\b|\b(?:tidak|belum|kagak|tak|ga|gak|nggak|tdk|blm) bisa (?:login|masuk)\b/i },
+  { id: 'verify-slow', label: 'Verifikasi & pengajuan lama', rule: /\b(?:verifikasi|pengajuan|daftar|pendaftaran|acc|approval)\b[^.!?]{0,30}?\b(?:lama|lamat|telat|terlambat|belum|tidak|gantung|ditolak)\b/i },
+  { id: 'otp-pin', label: 'OTP & PIN bermasalah', rule: /\b(?:otp|pin|password|pasword)\b[^.!?]{0,30}?\b(?:lupa|tidak masuk|belum masuk|gagal|error|salah|macet|hilang)\b|\blupa (?:pin|password|pasword)\b/i },
+  { id: 'update-error', label: 'Error setelah pembaruan', rule: /\b(?:update|pembaruan|versi baru)\b[^.!?]{0,30}?\b(?:error|gagal|rusak|hang|crash|hilang|bermasalah|lemot)\b|\b(?:error|crash|hang|force close)\b/i },
+  { id: 'slow-loading', label: 'Loading lambat & lemot', rule: /\b(?:loading|lemot|lelet)\b|\b(?:aplikasi|halaman|masuk|login|transaksi|pembayaran|sistem|memuat)\b[^.!?]{0,20}?\blambat\b/i },
+  { id: 'notif-missing', label: 'Notifikasi tidak masuk', rule: /\b(?:notif|notifikasi|suara nominal)\b[^.!?]{0,30}?\b(?:tidak|belum|hilang|mati|telat|lambat)\b|\b(?:tidak|belum) ada notifikasi\b/i },
+  { id: 'support-slow', label: 'Layanan pelanggan lambat', rule: /\b(?:cs|customer service|pelayanan|layanan pelanggan|komplain|tiket)\b[^.!?]{0,30}?\b(?:lambat|lama|telat|tidak|belum|buruk|jelek|berbelit)\b/i },
+];
+export function clusterStats(reviews, sentiment = 'negative') {
+  const wanted = value => !sentiment || sentiment === 'all' || value === sentiment;
+  return painClusters.map(cluster => {
+    const matches = reviews.filter(r => wanted(r.sentiment) && cluster.rule.test(String(r.text || '')));
+    return { ...cluster, total: matches.length, reviews: matches };
+  }).filter(cluster => cluster.total > 0).sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, 'id'));
+}
 // Satu daftar kata negasi dipakai bersama semua aturan agar frasa seperti "tak bisa masuk"
 // tidak pernah terbaca sebagai keberhasilan.
 const negation = 'tidak|belum|blum|blm|ga|gak|nggak|ngga|kagak|enggak|tak|tdk';
@@ -307,11 +391,14 @@ export function upsertReviews(existing, incoming, observedAt) {
   return { reviews, added, updated, unchanged };
 }
 export function exportCsv(reviews) {
-  const columns = ['id','platform','author','date','rating','sentiment','text','tags','sourceUrl','rationale','labeling'];
+  const columns = ['id','platform','author','date','rating','sentiment','aspects','emotions','emotion','intent','text','tags','sourceUrl','rationale','labeling'];
   const cell = value => {
-    let text = String(value ?? '');
+    let text = Array.isArray(value) ? value.join(';') : String(value ?? '');
     if (/^[\s]*[=+\-@]/.test(text) || /^[\t\r]/.test(text)) text = "'" + text;
     return '"' + text.replaceAll('"','""') + '"';
   };
-  return '\uFEFF' + [columns.join(','), ...reviews.map(r => columns.map(k => cell(k === 'tags' ? r.tags.join(';') : r[k])).join(','))].join('\r\n');
+  return '\uFEFF' + [columns.join(','), ...reviews.map(r => {
+    const row = { ...absaOf(r), ...r };
+    return columns.map(k => cell(k === 'tags' ? (r.tags || []).join(';') : row[k])).join(',');
+  })].join('\r\n');
 }

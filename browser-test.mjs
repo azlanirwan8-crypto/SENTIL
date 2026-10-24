@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { createDashboardServer } from './server.mjs';
 import { seedReviews } from './data.js';
+import { clusterStats } from './model.js';
 
 const profile = await mkdtemp(join(tmpdir(),'wondr-browser-test-'));
 let collectorMode='baseline', releasePull, pulls=0, waited=false;
@@ -148,9 +149,16 @@ try {
   await click('[data-driver="Pendaftaran belum tuntas"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
   await click('[data-review]');assert.equal(await evaluate(`document.querySelector('#detail-dialog').open`),true);
   assert.match(await evaluate(`document.querySelector('.detail-section p').textContent`),/pendaftaran|pengajuan/i);
-  // Rincian disusun sebagai kartu metadata dua kolom dengan judul berikon.
+  // Rincian disusun sebagai kartu metadata dua kolom dengan judul berikon; jejak teknis di footer.
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#detail-dialog .detail-grid')).display`),'grid','rincian memakai kartu metadata dua kolom');
-  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .detail-section h3 .icon').length>=4`),true,'setiap bagian rincian diberi ikon');
+  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .detail-section h3 .icon').length>=3`),true,'setiap bagian rincian diberi ikon');
+  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .detail-author .badge').length`),1,'satu badge sentimen pada kepala');
+  assert.equal(await evaluate(`document.querySelector('#detail-dialog .detail-author .platform-label')!==null`),true,'badge platform pada kepala');
+  assert.match(await evaluate(`document.querySelector('#detail-dialog .detail-author').textContent`),/★/,'penilaian bintang tampil di kepala');
+  assert.match(await evaluate(`document.querySelector('#detail-dialog .action-tag').textContent`),/Perlu (eskalasi layanan pelanggan|penelusuran teknis|ditindaklanjuti)|Masukan untuk produk/,'tag tindakan hasil ABSA');
+  assert.match(await evaluate(`[...document.querySelectorAll('#detail-dialog .source-facts dt')].map(e=>e.textContent).join(' | ')`),/Aspek pengalaman/,'aspek target ditampilkan sebagai metadata');
+  assert.equal(await evaluate(`document.querySelector('#detail-dialog .detail-section .btn-primary')!==null`),true,'tombol utama membuka sumber asli');
+  assert.equal(await evaluate(`/ID ulasan/.test(document.querySelector('#detail-dialog .detail-audit').textContent)`),true,'ID teknis disembunyikan di jejak audit');
   assert.ok((await evaluate(`new Set([...document.querySelectorAll('#detail-dialog .tag')].map(t=>t.getAttribute('style'))).size`))>=2,'chip rincian memakai tinta berbeda');
   await screenshot('review-detail.png',false);
   await click('[data-close="detail-dialog"]');await click('[data-action="clear-group"]');await click('[data-sentiment="all"]');
@@ -310,6 +318,28 @@ try {
   assert.match(await evaluate(`document.querySelector('.projection-card .empty-state p').textContent`),/pekan memuat ulasan bertanggal|masih sedikit|belum ada ulasan bertanggal/);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.sample-rating > .rating-distribution .rating-row')].filter(e=>e.querySelector('strong').textContent==='0').map(e=>e.querySelector('.rating-track span').getBoundingClientRect().width)`),[0,0,0],'tiga bintang kosong App Store berukuran nol');
   await click('[data-platform="all"]');completed.push('Complaint chart reusing the topic bar grammar, projection card with Poisson range, exact drilldown and zero-value bars');
+  assert.equal(await evaluate(`document.querySelector('.summary-card h2').textContent`),'Ringkasan eksekutif');
+  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Dari 64 ulasan berlabel pada pilihan ini, 64,1% bernada positif dan 34,4% negatif dengan skor sentimen neto \+29,7 poin\./,'kalimat ringkasan memakai angka hasil perhitungan');
+  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Masuk, OTP & keamanan akun \(63,6% dari 22 ulasan negatif\)/);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.summary-chips .chip-intent')].map(e=>e.textContent)`),['Laporan bug 5','Permintaan fitur 0','Marah 0','Frustrasi 10','5 klaster keluhan berulang']);
+  assert.match(await evaluate(`document.querySelector('.summary-note').textContent`),/bukan model bahasa/,'sumber ringkasan dinyatakan terbuka');
+  const expectedClusters=clusterStats(seedReviews,'negative').map(c=>c.id);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.cluster-row [data-cluster]')].map(b=>b.dataset.cluster)`),expectedClusters,'klaster hanya menampilkan frasa yang benar-benar cocok');
+  assert.match(await evaluate(`document.querySelector('.cluster-row').textContent`),/\d+ negatif · \d+ teks/);
+  await click('[data-cluster="login-blocked"]');
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),1,'drill-down klaster membuka ulasan sumber');
+  assert.match(await evaluate(`document.querySelector('.active-filter').textContent`),/Klaster keluhan: Tidak bisa masuk/);
+  await click('[data-view="overview"]');
+  assert.equal(await evaluate(`document.querySelectorAll('.sov-card .distribution-item').length`),2,'pangsa kanal hanya menampilkan kanal berisi data');
+  assert.match(await evaluate(`document.querySelector('.sov-card').textContent`),/85,9%/);
+  assert.match(await evaluate(`document.querySelector('.sov-card .note-inline').textContent`),/bukan perbandingan popularitas aplikasi|bukan pangsa seluruh percakapan/,'pangsa kanal diberi batas baca');
+  await evaluate(`(() => { const s=document.querySelector('#trend-mode'); s.value='line'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
+  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg path').length`),1,'garis skor sentimen digambar');
+  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg circle').length`)>0,true,'titik per periode tersedia dengan nilai pada title');
+  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg text').length>=5`),true,'sumbu nilai ditandai');
+  await evaluate(`(() => { const s=document.querySelector('#trend-mode'); s.value='week'; s.dispatchEvent(new Event('change',{bubbles:true})); })()`);
+  assert.equal(await evaluate(`document.querySelectorAll('.chart-body .trend-svg rect').length>0`),true,'mode batangan kembali tersedia');
+  completed.push('Executive summary, keyword clusters with drilldown, share of voice, and NSS line mode');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
   await click('[data-view="overview"]');
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
@@ -479,6 +509,8 @@ try {
   assert.doesNotMatch(await evaluate(`document.querySelector('.scope-note').textContent`),/Seluruh teks publik yang dapat diakses telah dimuat/);
   completed.push('Online batch deduplication, server persistence, missing metadata, XSS escaping and persistent failed-refresh status');
   collectorMode='social';await pullFromPlatform();
+  assert.doesNotMatch(await evaluate(`document.querySelector('#pull-dialog').textContent`),/facebook-pages-scraper|apidojo|run [A-Za-z0-9]{8,}/,'nama actor dan ID run tidak muncul di modal progres');
+  assert.match(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-meta')].map(e=>e.textContent).join(' ')`),/Sumber\s*Hasil kueri publik via Apify/,'metadata kanal memakai label sumber yang dapat dibaca');
   await click('[data-view="overview"]');await click('[data-platform="youtube"]');
   assert.deepEqual(await metricValues(),['4','0,0%','100,0%','-100,0']);
   assert.match(await evaluate(`document.querySelector('.classification-note').textContent`),/1 teks di luar penilaian pelanggan/);

@@ -5,6 +5,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 import { initialDataset, overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
+import { withAbsa } from './model.js';
 
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
@@ -49,7 +50,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     if (!Array.isArray(saved.reviews) || !Array.isArray(saved.sources) || !Array.isArray(saved.runs)) throw new Error('Format data tersimpan tidak valid. Berkas tidak diubah.');
     data = saved;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  data.reviews = reclassifyDerived(data.reviews);
+  data.reviews = withAbsa(reclassifyDerived(data.reviews));
   // Pengujian menyuntik env sendiri; tanpa env, berkas .env lokal dimuat lebih dulu.
   const environment = env ?? await loadLocalEnv().then(() => process.env);
   const channelConfig = channelConfigurations(environment);
