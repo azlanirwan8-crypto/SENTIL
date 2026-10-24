@@ -38,6 +38,8 @@ Tanpa kredensial, kanal-kanal itu berstatus **perlu konfigurasi API** dan tidak 
 
 Aplikasi ini memakai satu proses Node yang berjalan terus, jadi host-nya harus mendukung proses berkelanjutan (Render, Railway, Fly.io, atau VPS). Platform serverless dengan function berbatas waktu dan disk hanya-baca tidak cocok tanpa penataan ulang penyimpanan dan pembatas waktu.
 
+Cara tercepat di Render: sambungkan repo ini ke akun Anda, lalu pilih service dari `render.yaml` yang sudah tersedia. Render akan meminta nilai `DASHBOARD_USER`, `DASHBOARD_PASSWORD`, `GOOGLE_API_KEY`, dan `APIFY_API_TOKEN` saat pembuatan — nilai itu tidak pernah tersimpan di repository. Setelah service dibuat, salin domain yang diberikan Render ke variabel `ALLOWED_HOSTS` lalu redeploy.
+
 | Variabel | Fungsi |
 | --- | --- |
 | `PORT` | Port yang disediakan host. |

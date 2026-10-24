@@ -1,0 +1,34 @@
+# Blueprint deployment Render. Hubungkan repo, Render membaca berkas ini.
+# Nilai rahasia sengaja tidak ditulis di sini: sync:false membuat Render
+# memintanya saat pembuatan service, sehingga kunci tidak pernah masuk git.
+services:
+  - type: web
+    name: wondr-merchant-sentiment
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: ""
+    startCommand: node server.mjs
+    # /api/status sengaja terbuka tanpa login agar Render bisa memeriksa kesehatan.
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: BIND_HOST
+        value: 0.0.0.0
+      - key: ALLOWED_HOSTS
+        # Ganti dengan domain asli yang diberikan Render setelah service dibuat,
+        # misalnya nama-service-anda.onrender.com, lalu redeploy.
+        value: ganti-dengan-domain-anda.onrender.com
+      - key: DASHBOARD_USER
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: APIFY_API_TOKEN
+        sync: false
+      # Plan gratis tidak punya disk permanen; path ini dipakai ulang saat start.
+      # Bila memakai plan berdisk, arahkan ke mount permanen lewat DATA_PATH.
+      - key: DATA_PATH
+        value: /tmp/online-data.json
