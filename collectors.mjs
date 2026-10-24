@@ -318,13 +318,17 @@ export async function collectYouTube(fetcher = fetch, config = youtubeConfigurat
 }
 // Apify adalah layanan pengambilan data pihak ketiga yang sah. Token hanya dibaca dari environment
 // server dan dikirim sebagai header Authorization; tidak pernah masuk URL, browser, atau pesan galat.
-// Nama actor dan bentuk input di bawah sudah diperiksa terhadap API Apify: actor dan field yang
-// tidak dikenal akan mengembalikan galat validasi, bukan data kosong.
+//
+// Field input di bawah diverifikasi ulang pada 24 Oktober 2026 terhadap schema actor yang dipublikasikan
+// Apify (GET /v2/acts/<actor>/builds/default?expand=inputSchema). Bentuk sebelumnya memakai field yang
+// sudah tidak ada (query/queryType, type/keywords, searchTerms/maxResult), sehingga actor berjalan
+// dengan input kosong dan mengembalikan "tidak ada hasil" — bukan karena kontennya tidak ada, melainkan
+// karena pencariannya tidak pernah terjadi. Lihat apifyInputFields untuk penjaga pra-jalan.
 export const apifyChannels = {
-  x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: () => ({ query: '"wondr merchant" OR "wondr merchant by BNI"', maxItems: 100, queryType: 1 }) },
-  instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: () => ({ type: 'hashtag', keywords: ['wondrmerchant', 'wondrmerchantbni'], resultsLimit: 100 }) },
-  tiktok: { label: 'TikTok', actor: 'clockworks/tiktok-scraper', input: () => ({ searchQueries: ['"wondr merchant"'], resultsPerPage: 100 }) },
-  facebook: { label: 'Facebook', actor: 'apify/facebook-pages-scraper', input: () => ({ searchTerms: ['wondr merchant bni'], maxResult: 20 }) },
+  x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: () => ({ searchTerms: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant'], sort: 'Latest + Top' }) },
+  instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: () => ({ resultsType: 'posts', searchType: 'hashtag', search: 'wondrmerchant, wondrmerchantbni, wondrmerchantbybni', searchLimit: 250, resultsLimit: 250 }) },
+  tiktok: { label: 'TikTok', actor: 'clockworks/tiktok-scraper', input: () => ({ searchQueries: ['"wondr merchant"', '"wondr merchant by BNI"'], resultsPerPage: 1000, videoSearchSorting: 'LATEST' }) },
+  facebook: { label: 'Facebook', actor: 'apify/facebook-search-scraper', input: () => ({ categories: ['wondr merchant', 'wondr merchant by BNI'], searchType: 'posts', resultsLimit: 250 }) },
 };
 const apifyTextFields = ['text', 'fullText', 'caption', 'content', 'body', 'reviewText', 'comment', 'shortText'];
 // Actor menerima batas jumlah hasil dari namanya sendiri. Nilai ini bukan batas milik kolektor,
@@ -428,11 +432,44 @@ async function apifyJson(path, token, fetcher, options = {}) {
   return payload?.data ?? payload;
 }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Daftar field yang diterima actor, dibaca dari schema publik actor (permintaan GET gratis, tidak
+// menjalankan actor). Null berarti schema tidak terbaca; pemakaian field asing tidak boleh membuat
+// penarikan berhenti total, tetapi tetap dicatat pada coverage.
+const apifySchemaCache = new Map();
+export async function apifyInputFields(actor, token, fetcher = fetch) {
+  if (apifySchemaCache.has(actor)) return apifySchemaCache.get(actor);
+  const build = await apifyJson(`acts/${encodeURIComponent(actor)}/builds/default?expand=inputSchema`, token, fetcher);
+  let schema = build?.inputSchema;
+  if (typeof schema === 'string') { try { schema = JSON.parse(schema); } catch { schema = null; } }
+  const properties = schema?.properties ?? schema?.schema?.properties;
+  const fields = properties && typeof properties === 'object' ? Object.keys(properties) : null;
+  if (fields) apifySchemaCache.set(actor, fields);
+  return fields;
+}
+export function apifyUnknownInputFields(input, fields) {
+  if (!fields) return [];
+  const known = new Set(fields);
+  return Object.keys(input ?? {}).filter(key => key !== 'cleanInputs' && !known.has(key));
+}
 export async function collectApify(id, fetcher = fetch, config = apifyConfiguration(), { waitMs = 180000, pollMs = 5000, pageLimit = 1000, resume = null } = {}) {
   const channel = config.channels[id];
   if (config.status === 'needs_setup') return { id, status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
   if (channel.inputError) return { id, status: 'error', fetched: null, message: `${channel.inputError} Belum ada permintaan dikirim; data tersimpan tetap dipertahankan.`, reviews: [] };
   const issues = [];
+  // Penjaga pra-jalan: field input yang tidak dikenal actor membuat actor berjalan dengan input
+  // kosong dan mengembalikan "tidak ada hasil" yang terdengar sah padahal pencariannya tidak pernah
+  // terjadi. Bila ini terdeteksi, actor tidak dijalankan sehingga tidak ada biaya yang timbul.
+  let schemaFields = null;
+  if (!resume?.runId) {
+    try { schemaFields = await apifyInputFields(channel.actor, config.token, fetcher); }
+    catch (error) { issues.push(`schema input actor tidak dapat dibaca: ${error.message}`); }
+    const unknown = apifyUnknownInputFields(channel.input, schemaFields);
+    if (unknown.length) return {
+      id, status: 'error', fetched: null, reviews: [],
+      coverage: { actor: channel.actor, unknownInputFields: unknown, inputChecked: true, sampleLimit: apifyResultCap(channel.input)?.value ?? null, sampleLimitField: apifyResultCap(channel.input)?.field ?? null },
+      message: `Input untuk ${channel.label} memakai field yang tidak dikenal actor ${channel.actor}: ${unknown.join(', ')}. Actor tidak dijalankan, sehingga tidak ada biaya yang timbul dan data tersimpan tetap dipertahankan. Field yang diterima actor: ${schemaFields.slice(0, 14).join(', ')}${schemaFields.length > 14 ? ` (+${schemaFields.length - 14} lainnya)` : ''}.`,
+    };
+  }
   let run;
   if (resume?.runId) {
     // Lanjut membaca run yang sudah dimulai; actor berbayar tidak dijalankan dua kali.
@@ -491,7 +528,7 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
   // Dataset yang mencapai batas actor tetap bukti kanal menjawab (partial), bukan kegagalan,
   // dan bukan pula "tidak ada percakapan".
   return { id, status: complete ? 'success' : reviews.size || truncated ? 'partial' : 'error', fetched: reviews.size, reviews: [...reviews.values()],
-    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, emptyResultMarkers: markers, identityFiltered: offIdentity, sampleLimit: cap?.value ?? null, sampleLimitField: cap?.field ?? null, possiblyTruncated: truncated, runFinished: status === 'SUCCEEDED' },
+    coverage: { actor: channel.actor, runId: run.id, datasetId: datasetId ?? null, itemsRead: items, nestedRecords: expanded, emptyResultMarkers: markers, identityFiltered: offIdentity, sampleLimit: cap?.value ?? null, sampleLimitField: cap?.field ?? null, possiblyTruncated: truncated, inputChecked: Boolean(schemaFields), unknownInputFields: [], runFinished: status === 'SUCCEEDED' },
     message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${run.id}); ${items} item dataset diperiksa dan ${expanded} di antaranya berasal dari komentar/ulasan bersarang.${emptyEvidence}${identityEvidence}${capEvidence} ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set([...(truncated && cap ? [`item dataset mencapai ${cap.field}=${cap.value}`] : []), ...issues.map(String)])].join(' ')}`} Teks disimpan apa adanya dari actor. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
 }
 // Google Places API (New) adalah jalur resmi untuk ulasan di Google Maps. Kunci hanya dikirim
