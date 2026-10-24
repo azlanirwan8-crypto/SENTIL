@@ -7,7 +7,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
-import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed } from './collectors.mjs';
+import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
@@ -1528,6 +1528,27 @@ test('Apify social text is only scored when it names the merchant app', () => {
   assert.equal(store.relevance, undefined, 'ulasan toko tidak melewati penyaringan sosial');
 });
 
+test('Raw markup from feeds and actors never reaches stored text', async () => {
+  assert.equal(sanitizeText('<p>Halo&nbsp;BNI</p><br>quota &quot;x&quot; &amp; y'), 'Halo BNI quota "x" & y');
+  assert.equal(sanitizeText('<![CDATA[wondr merchant <script>alert(1)</script>]]>'), 'wondr merchant alert(1)', 'CDATA dan tag dibuang, teksnya tetap utuh');
+  assert.equal(sanitizeText('&#10;baris dua&#9;tab'), 'baris dua tab');
+  const { fetcher } = socialRoutes([{ text: '<b>QRIS</b> &amp; settlement lambat di wondr merchant', url: 'https://x.com/1', id: 'tw-markup', date: '2026-10-20T00:00:00.000Z' }]);
+  const result = await collectApify('x', fetcher, apifyConfig({ APIFY_API_TOKEN: apifyToken }), { pollMs: 0 });
+  assert.equal(result.reviews.length, 1);
+  assert.equal(result.reviews[0].text, 'QRIS & settlement lambat di wondr merchant');
+  assert.doesNotMatch(JSON.stringify(result.reviews), /<b>|&amp;/, 'tidak ada markup mentah yang tersimpan');
+});
+test('Merchant keyword without product identity is counted, never stored as ours', async () => {
+  const { fetcher } = socialRoutes([
+    { text: 'wondr merchant login gagal', url: 'https://x.com/1', id: 'tw-mine', date: '2026-10-20T00:00:00.000Z' },
+    { text: 'qris merchant bank lain lambat sekali', url: 'https://x.com/2', id: 'tw-other', date: '2026-10-20T00:00:00.000Z' },
+  ]);
+  const result = await collectApify('x', fetcher, apifyConfig({ APIFY_API_TOKEN: apifyToken }), { pollMs: 0 });
+  assert.equal(result.reviews.length, 1, 'hanya teks yang menyebut identitas produk yang disimpan');
+  assert.equal(result.coverage.identityFiltered, 1);
+  assert.equal(result.coverage.contextMentions, 1, 'yang dibuang karena hanya menyebut kata konteks merchant dicatat');
+  assert.match(result.message, /1 teks menyebut kata konteks merchant .* tanpa menyebut produk ini/);
+});
 test('News RSS connector stays unconfigured until the operator supplies real feeds', async () => {
   const empty = newsConfiguration({});
   assert.equal(empty.status, 'needs_setup');
@@ -2054,6 +2075,7 @@ test('Serverless API functions refuse other methods, other origins, and unknown 
   assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', origin: 'http://situs.example.com' }), false, 'skema http pada host yang sama diterima');
   assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', 'sec-fetch-site': 'cross-site' }), true);
   assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com' }), false, 'permintaan tanpa header Origin tetap dilayani selama host dikenal');
+  assert.equal(analyze.config.maxDuration, 60, 'function diberi batas waktu lebih panjang daripada anggaran tunggu actor');
   const data = await import('./api/data.js');
   const postRes = mockResponse();
   await data.default(mockRequest('POST', '/api/data'), postRes);

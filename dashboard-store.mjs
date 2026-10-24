@@ -9,12 +9,14 @@ import { withAbsa } from './model.js';
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
 // konfigurasi deployment, bukan nilai saat modul pertama kali diimpor.
 const storagePath = () => process.env.DATA_PATH?.trim() || '/tmp/online-data.json';
-// Actor Apify dapat berjalan beberapa menit. Batas tunggu dijaga di bawah maxDuration
-// function agar run yang belum selesai sempat dicatat dan dilanjutkan pada penarikan
-// berikutnya, bukan dimulai ulang dari nol.
+// Actor Apify dapat berjalan beberapa menit. Anggaran tunggu serverless dipotong hingga di
+// bawah maxDuration function (60 detik, lihat api/analyze.js) supaya run yang belum selesai
+// sempat dicatat dan dilanjutkan pada penarikan berikutnya, bukan dipotong di tengah jalan.
+const serverlessBudgetMs = 45000;
 const apifyWaitMs = () => {
   const configured = Number(process.env.APIFY_WAIT_MS);
-  return Number.isFinite(configured) && configured > 0 ? configured : 120000;
+  const value = Number.isFinite(configured) && configured > 0 ? configured : 120000;
+  return Math.min(value, serverlessBudgetMs);
 };
 
 let cache = null;

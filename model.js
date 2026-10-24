@@ -322,6 +322,13 @@ export function classifyText(text) {
   const sentiment = negative ? 'negative' : positive ? 'positive' : neutral ? 'neutral' : 'unclassified';
   return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Klausa harapan dan kegagalan yang sudah selesai ("akhirnya bisa masuk") tidak dihitung sebagai keluhan aktif, tetapi teks sesudah klausa itu tetap dinilai. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
 }
+// Satu daftar kata konteks merchant, dipakai bersama oleh kolektor dan penyaring relevansi.
+// Daftarnya sengaja tidak dipakai sendirian untuk menerima teks: "qris" atau "toko" saja juga
+// dimiliki bank lain, jadi identitas produk tetap syarat utama dan yang dibuang dicatat.
+export const merchantKeywords = ['wondr merchant', 'merchant', 'qris', 'edc', 'settlement', 'pencairan', 'toko', 'kasir'];
+const merchantContext = new RegExp(`\\b(?:${merchantKeywords.join('|')})\\b`, 'i');
+const productIdentity = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])|\b(?:id)?6741567238\b/i;
+export const hasMerchantContext = value => productIdentity.test(String(value || '')) || merchantContext.test(String(value || ''));
 export function classifyReview(raw) {
   const label = classifyText(raw.text);
   const text = raw.text.toLocaleLowerCase('id');
@@ -357,7 +364,7 @@ export function classifyReview(raw) {
     reason = 'Teks mengarah ke aplikasi atau perangkat milik pihak lain, bukan pengalaman menggunakan wondr merchant.';
   } else if (question) {
     reason = 'Pertanyaan, kondisi hipotetis, atau pernyataan belum mencoba belum cukup untuk menetapkan pengalaman pelanggan; perlu tinjauan konteks.';
-  } else if (merchant || (raw.platform === 'youtube' && raw.context?.product === 'wondr-merchant' && /\bqris\b|settlement|pencairan|merchant|toko|usaha/.test(text) && label.tags.some(tag => tag !== 'general'))) {
+  } else if (merchant || (raw.platform === 'youtube' && raw.context?.product === 'wondr-merchant' && merchantContext.test(text) && label.tags.some(tag => tag !== 'general'))) {
     status = 'relevant'; reason = 'Teks menyebut aplikasi merchant atau aspek usaha pada video dengan identitas produk yang sesuai; penentuan otomatis masih perlu pemeriksaan manusia.';
   }
   const relevance = {status,reason,method:'merchant-context-v1'};

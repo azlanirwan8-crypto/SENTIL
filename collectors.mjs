@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { playUrl } from './data.js';
-import { validDate, validSource } from './model.js';
+import { validDate, validSource, hasMerchantContext, merchantKeywords } from './model.js';
 
 const appleId = '6741567238';
 const appleUrl = `https://apps.apple.com/id/app/wondr-merchant-by-bni/id${appleId}?see-all=reviews&platform=iphone`;
@@ -220,6 +220,20 @@ export async function collectApple(fetcher = fetch) {
     message:`${reviews.size} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi (${shelf.reviews.size} ulasan pada ${shelf.pages} halaman) dan feed ulasan pelanggan resmi (${feed.reviews.size} ulasan pada ${feed.pages} halaman); ${shared} ulasan dikonfirmasi oleh kedua jalur dan ${feedOnly.length} hanya dikembalikan salah satu jalur. Paginasi kedua jalur diikuti sampai sumber tidak memberi halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. ${complete?'Kedua jalur selesai dibaca.':`Hasil belum lengkap; ${issues.join('; ')}.`} ${Number.isInteger(shelf.ratingCount)?histogramNote:'Nilai halaman toko tidak terbaca pada pemeriksaan ini.'} Apple tidak mempublikasikan jumlah unduhan.`};
 }
 const merchantIdentity = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])|\b(?:id)?6741567238\b/i;
+// Teks dari RSS/actor dapat membawa markup atau entitas mentah. Entitas didekode lebih dulu
+// lalu semua tag dibuang, sehingga tidak ada HTML yang ikut tersimpan atau tampil.
+export function sanitizeText(value) {
+  return String(value ?? '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)) || ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)) || ' ')
+    .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&apos;', "'")
+    .replaceAll('&nbsp;', ' ')
+    .replaceAll('&amp;', '&')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 export function youtubeConfiguration(env = process.env) {
   const apiKey = env.YOUTUBE_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim() || '';
   const videoIds = [...new Set((env.YOUTUBE_VIDEO_IDS || '').split(/[\s,]+/).filter(Boolean))];
@@ -429,18 +443,18 @@ function apifyItems(value) {
 }
 function apifyRecords(item, platform, actor, runId, retrievedAt) {
   const found = [];
-  let offIdentity = 0;
+  let offIdentity = 0, contextOnly = 0;
   const parentId = pickField(item, apifyIdFields);
   const postUrl = pickField(item, apifyUrlFields);
-  const postText = pickField(item, apifyTextFields) || '';
+  const postText = sanitizeText(pickField(item, apifyTextFields));
   // Actor pencarian sosial mengembalikan hasil longgar (mis. "wandering merchant",
   // "Natalie Merchant wonder"). Teks yang tidak menyebut identitas produk dibuang di
   // sini, tetapi jumlahnya dilaporkan agar tidak ada yang hilang tanpa tercatat.
   const postRelevant = merchantIdentity.test(postText);
   const collect = (source, parent) => {
-    const text = pickField(source, apifyTextFields);
+    const text = sanitizeText(pickField(source, apifyTextFields));
     if (!text) return;
-    if (!(postRelevant || merchantIdentity.test(text))) { offIdentity++; return; }
+    if (!(postRelevant || merchantIdentity.test(text))) { offIdentity++; if (hasMerchantContext(text) || hasMerchantContext(postText)) contextOnly++; return; }
     const sourceId = pickField(source, apifyIdFields);
     // Item tanpa identitas sumber tetap disimpan sebagai teks nyata, tetapi ID lokal dibuat dari
     // hash isinya dan hal itu dicatat pada provenance agar tidak disangka ID dari platform.
@@ -449,16 +463,16 @@ function apifyRecords(item, platform, actor, runId, retrievedAt) {
     const url = pickField(source, apifyUrlFields) ?? (parent ? postUrl : null);
     const when = apifyDate(source.date ?? source.createdAt ?? source.createTimeISO ?? source.createTime ?? source.timestamp ?? source.time ?? source.postedAt ?? source.publishedAt ?? source.creationDate ?? source.reviewDate);
     found.push({
-      id, platform, author: pickField(source, apifyAuthorFields) || 'N/A', text, rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,
+      id, platform, author: sanitizeText(pickField(source, apifyAuthorFields)) || 'N/A', text, rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,
       date: when?.slice(0, 10) ?? null, publishedAt: when,
       sourceUrl: url && validSource(url, platform) ? url : null, retrievedAt, parentId: parent ?? null,
       context: parent ? { postId: parent, postUrl: postUrl && validSource(postUrl, platform) ? postUrl : null, product: 'wondr-merchant' } : undefined,
-      provenance: `Diambil melalui Apify actor ${actor} (run ${runId}); teks disimpan apa adanya dari item dataset. ${sourceId ? 'ID ulasan berasal dari item sumber.' : 'Item sumber tidak membawa ID, sehingga identitas di bawah adalah hash lokal dari teks ini, bukan ID dari platform.'} Waktu memakai nilai yang dikembalikan actor; tanggal yang tidak dapat dibaca dibiarkan kosong.`,
+      provenance: `Diambil melalui Apify actor ${actor} (run ${runId}); teks disimpan apa adanya dari item dataset setelah markup dibersihkan. ${sourceId ? 'ID ulasan berasal dari item sumber.' : 'Item sumber tidak membawa ID, sehingga identitas di bawah adalah hash lokal dari teks ini, bukan ID dari platform.'} Waktu memakai nilai yang dikembalikan actor; tanggal yang tidak dapat dibaca dibiarkan kosong.`,
     });
   };
   collect(item, null);
   for (const key of ['comments', 'reviews']) if (Array.isArray(item[key])) for (const child of item[key]) if (child && typeof child === 'object') collect(child, parentId);
-  return { records: found, offIdentity };
+  return { records: found, offIdentity, contextOnly };
 }
 export function apifyConfiguration(env = process.env) {
   const token = env.APIFY_API_TOKEN?.trim() || '';
@@ -551,7 +565,7 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
   const commentLinks = new Set();
   const mainUrls = [];
   const mainConversations = [];
-  const stats = { items: 0, nested: 0, markers: 0, offIdentity: 0, commentItems: 0, commentRecords: 0 };
+  const stats = { items: 0, nested: 0, markers: 0, offIdentity: 0, contextOnly: 0, commentItems: 0, commentRecords: 0 };
 
   const readDataset = async (datasetId, runId, actor, phase) => {
     if (typeof datasetId !== 'string' || !datasetId) { issues.push(`${phase}: Apify tidak mengembalikan identitas dataset untuk run ini`); return; }
@@ -576,6 +590,7 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
           const before = reviews.size;
           const parsed = apifyRecords(item, id, actor, runId, new Date().toISOString());
           stats.offIdentity += parsed.offIdentity;
+          stats.contextOnly += parsed.contextOnly;
           for (const record of parsed.records) if (!reviews.has(record.id)) { reviews.set(record.id, record); if (record.parentId) stats.nested++; }
           if (comments) stats.commentRecords += reviews.size - before;
         }
@@ -659,7 +674,7 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
   const followTruncated = Boolean(followCap && follow?.datasetId && stats.commentItems >= followCap.value);
 
   const emptyEvidence = stats.markers ? ` Actor mengembalikan ${stats.markers} penanda tidak ada hasil${markerNotes.size ? ` (${[...markerNotes].join('; ')})` : ''} untuk kueri ini, artinya kanal dapat dihubungi tetapi tidak ada konten publik yang cocok.` : '';
-  const identityEvidence = stats.offIdentity ? ` ${stats.offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas wondr merchant, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.` : '';
+  const identityEvidence = stats.offIdentity ? ` ${stats.offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas wondr merchant, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.${stats.contextOnly ? ` Dari jumlah itu, ${stats.contextOnly} teks menyebut kata konteks merchant (${merchantKeywords.slice(1).join(', ')}) tanpa menyebut produk ini — kemungkinan milik aplikasi merchant bank lain, sehingga tetap tidak dihitung.` : ''}` : '';
   // Batas hasil pada input actor dilaporkan apa adanya: jika jumlah item yang dikembalikan
   // mencapai batas itu, masih ada konten yang belum terbaca dan itu tidak boleh disebut lengkap.
   const cap = apifyResultCap(channel.input);
@@ -684,7 +699,7 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
   // Dataset yang mencapai batas actor tetap bukti kanal menjawab (partial), bukan kegagalan,
   // dan bukan pula "tidak ada percakapan".
   return { id, status: complete ? 'success' : reviews.size || truncated ? 'partial' : 'error', fetched: reviews.size, reviews: [...reviews.values()],
-    coverage: { actor: channel.actor, runId: main.runId, datasetId: main.datasetId ?? null, itemsRead: stats.items, nestedRecords: stats.nested, emptyResultMarkers: stats.markers, identityFiltered: stats.offIdentity, sampleLimit: cap?.value ?? null, sampleLimitField: cap?.field ?? null, possiblyTruncated: truncated, inputChecked: Boolean(main.fields) || Boolean(resume?.runId), unknownInputFields: [], runFinished: main.finished === true,
+    coverage: { actor: channel.actor, runId: main.runId, datasetId: main.datasetId ?? null, itemsRead: stats.items, nestedRecords: stats.nested, emptyResultMarkers: stats.markers, identityFiltered: stats.offIdentity, contextMentions: stats.contextOnly, sampleLimit: cap?.value ?? null, sampleLimitField: cap?.field ?? null, possiblyTruncated: truncated, inputChecked: Boolean(main.fields) || Boolean(resume?.runId), unknownInputFields: [], runFinished: main.finished === true,
       commentItemsRead: stats.commentItems, commentRecords: stats.commentRecords, commentDatasets: linked.ids.length,
       followUp: followSpec ? { actor: channel.actor, runId: follow?.runId ?? null, datasetId: follow?.datasetId ?? null, finished: follow?.finished === true, skipped: follow?.skipped ?? null, unknownInputFields: follow?.unknown ?? [], sampleLimit: followCap?.value ?? null, sampleLimitField: followCap?.field ?? null, possiblyTruncated: followTruncated } : null },
     message: `${reviews.size} teks unik dibaca dari ${channel.label} melalui Apify actor ${channel.actor} (run ${main.runId}); ${stats.items} item dataset diperiksa dan ${stats.nested} di antaranya berasal dari komentar/ulasan bersarang.${emptyEvidence}${identityEvidence}${capEvidence}${commentEvidence} ${complete ? 'Seluruh dataset run ini telah dibaca.' : `Hasil belum lengkap: ${[...new Set([...(truncated && cap ? [`item dataset mencapai ${cap.field}=${cap.value}`] : []), ...(followTruncated && followCap ? [`komentar mencapai ${followCap.field}=${followCap.value}`] : []), ...issues.map(String)])].join(' ')}`} Teks disimpan apa adanya dari actor. Ini adalah hasil kueri actor, bukan seluruh percakapan ${channel.label} di platform tersebut.` };
@@ -809,13 +824,7 @@ export function newsConfiguration(env = process.env) {
       : 'Konektor RSS tersedia, tetapi NEWS_RSS_URLS belum diisi. Daftarkan URL suaka RSS resmi melalui environment server atau berkas .env lokal, bukan kolom browser atau chat. Belum ada permintaan yang dikirim.',
   };
 }
-const decodeEntities = value => String(value || '')
-  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-  .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)) || ' ')
-  .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)) || ' ')
-  .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&apos;', "'")
-  .replaceAll('&nbsp;', ' ').replaceAll('&amp;', '&');
-const plainText = value => decodeEntities(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
 export function parseFeed(xml) {
   const text = String(xml || '');
   const blocks = [...text.matchAll(/<(item|entry)\b[\s\S]*?<\/\1>/gi)].map(match => match[0]);
@@ -830,14 +839,14 @@ export function parseFeed(xml) {
     const href = /<link[^>]*href\s*=\s*["']([^"']+)["']/i.exec(block);
     const link = (href?.[1] || field(['link'])).trim();
     const rawDate = field(['pubDate', 'published', 'updated', 'dc:date', 'date']);
-    const title = plainText(field(['title', 'media:title']));
+    const title = sanitizeText(field(['title', 'media:title']));
     return {
       title,
-      summary: plainText(field(['description', 'summary', 'content:encoded', 'content'])),
+      summary: sanitizeText(field(['description', 'summary', 'content:encoded', 'content'])),
       link: httpsFeed(link) ? link : '',
       stamp: Number.isFinite(Date.parse(rawDate)) ? new Date(rawDate).toISOString() : null,
-      author: plainText(field(['author', 'dc:creator'])),
-      key: plainText(field(['guid', 'id'])) || link || `${title}|${index}`,
+      author: sanitizeText(field(['author', 'dc:creator'])),
+      key: sanitizeText(field(['guid', 'id'])) || link || `${title}|${index}`,
     };
   });
 }
@@ -918,5 +927,11 @@ export async function collectPlatform(id, options = {}) {
   }
 }
 export async function collectOnline(options = {}) {
-  return Promise.all([...onlineCollectors(options).keys()].map(id => collectPlatform(id, options)));
+  // Semua kanal dijalankan bersamaan tetapi tidak boleh saling menjatuhkan: satu kanal yang
+  // menolak atau habis waktu tidak boleh membuat seluruh penarikan gagal (HTTP 500/504).
+  const jobs = [...onlineCollectors(options).keys()];
+  const settled = await Promise.allSettled(jobs.map(id => collectPlatform(id, options)));
+  return settled.map((result, index) => result.status === 'fulfilled' && result.value
+    ? result.value
+    : { id: jobs[index], status: 'error', fetched: 0, message: `Kanal ini selesai tanpa hasil yang dapat dipakai${result.status === 'rejected' ? ` (${String(result.reason?.message || 'kesalahan tidak dikenal')})` : ''}. Data sebelumnya tetap dipertahankan.`, reviews: [] });
 }

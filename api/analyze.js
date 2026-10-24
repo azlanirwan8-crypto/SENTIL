@@ -1,3 +1,9 @@
+// Batas waktu function dinyatakan di sini agar cocok dengan anggaran tunggu actor:
+// dashboard-store memotong APIFY_WAIT_MS di bawah nilai ini sehingga run yang belum selesai
+// sempat dicatat dan dilanjutkan pada penarikan berikutnya, bukan dipotong Vercel di tengah
+// jalan (yang meninggalkan run berbayar tanpa catatan).
+export const config = { maxDuration: 60 };
+
 // Memicu penarikan ulasan dari sumber publik. Tanpa login atas permintaan pemilik akun:
 // yang tersisa hanya penolakan permintaan lintas situs dan kunci satu-penarikan-per-waktu.
 import { pull, pullPlatform, finishPull } from '../dashboard-store.mjs';
