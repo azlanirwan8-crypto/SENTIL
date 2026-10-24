@@ -67,4 +67,5 @@ function decide(request) {
   return unauthorized('Kredensial diperlukan.');
 }
 
-export const config = { matcher: '/:path*' };
+// Bentuk array adalah format yang dipakai dokumentasi Vercel untuk matcher.
+export const config = { matcher: ['/:path*'] };
