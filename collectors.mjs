@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { defaultTarget, appleReviewsUrl, appleFeedUrl, playDetailsUrl, identityPattern } from './target.mjs';
+import { defaultTarget, appleReviewsUrl, appleFeedUrl, playDetailsUrl, identityPattern, isWondrTarget } from './target.mjs';
 import { validDate, validSource, hasMerchantContext, merchantKeywords } from './model.js';
 // Batas keamanan jumlah tautan lanjutan, bukan pembatas jumlah sampel.
 const applePageLimit = 30;
@@ -922,7 +922,7 @@ export function onlineCollectors({ apifyWaitMs = 180000, resume = new Map(), tar
     ['news', () => collectNews(fetch, news)],
   ]);
   for (const id of Object.keys(apifyChannels)) jobs.set(id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id) }));
-  if (target.id !== defaultTarget.id) for (const id of [...jobs.keys()]) if (!targetReadyChannels.has(id)) {
+  if (!isWondrTarget(target)) for (const id of [...jobs.keys()]) if (!targetReadyChannels.has(id)) {
     jobs.set(id, () => ({ id, status: 'unsupported', fetched: 0, reviews: [], message: `Kanal ini belum dapat diarahkan ke target "${target.name}"; penarikan dijalankan pada kanal yang sudah mendukung target project.` }));
   }
   return jobs;

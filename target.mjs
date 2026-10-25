@@ -46,7 +46,13 @@ export function normalizeTarget(input = {}) {
   if (entityName.length < 2) throw new Error('target_invalid: nama entitas wajib diisi');
   if (playAppId && !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(playAppId)) throw new Error('target_invalid: ID paket Google Play tidak sesuai bentuk paket aplikasi');
   if (appleAppId && !/^\d{4,12}$/.test(appleAppId)) throw new Error('target_invalid: ID App Store harus angka');
-  const playUrl = input.playUrl || (playAppId ? playDetailsUrl({ play: { appId: playAppId } }) : null);
+  // Bentuk kiriman klien tidak dipercaya: URL halaman toko hanya diterima bila HTTPS tanpa
+  // kredensial. Selain itu, alamatnya dibangun dari ID paket yang sudah divalidasi di atas.
+  const httpsPageUrl = value => {
+    try { const parsed = new URL(String(value)); return parsed.protocol === 'https:' && !parsed.username && !parsed.password ? parsed.toString() : null; }
+    catch { return null; }
+  };
+  const playUrl = httpsPageUrl(input.playUrl) || (playAppId ? playDetailsUrl({ play: { appId: playAppId } }) : null);
   return {
     id: String(input.id || entityName.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')),
     name: String(input.name || entityName).trim(),
@@ -79,3 +85,14 @@ export const targetStoreIds = target => [
   target?.play?.appId ? `Google Play: ${target.play.appId}` : 'Google Play: tidak terpasang',
   target?.appstore?.appId ? `App Store: ${target.appstore.appId}` : 'App Store: tidak terpasang',
 ].join(' | ');
+
+// Penanda "aplikasi ini" untuk aturan merek dan kanal khusus merek. Kuncinya adalah ID toko yang
+// dikonfirmasi saat project dibuat, BUKAN id project yang diturunkan dari nama: project bernama
+// "wondr merchant" yang menunjuk ke paket lain bukan aplikasi ini, sedangkan project bernama lain
+// yang menunjuk ke id.bni.wfb memang aplikasi ini. Tanpa target, aturan lama tetap dipakai.
+export function isWondrTarget(target) {
+  if (!target) return true;
+  const play = target.play?.appId, appstore = target.appstore?.appId;
+  if (!play && !appstore) return target.id === defaultTarget.id;
+  return play === defaultTarget.play.appId || appstore === defaultTarget.appstore.appId;
+}

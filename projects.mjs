@@ -32,9 +32,15 @@ export function emptyDataset() {
 const nowIso = () => new Date().toISOString();
 // Dataset yang dibaca dari berkas harus membawa tiga kunci array. Berkas hasil potongan atau
 // suntingan tangan dapat kehilangan salah satunya, dan pemetakan berikutnya akan melempar
-// TypeError saat awal — dasbor mati total tanpa pesan. Isi yang cacat dilengkapi, bukan dibuang.
-function repairDataset(value) {
+// TypeError saat awal — dasbor mati total tanpa pesan. Kunci yang HILANG dilengkapi; kunci yang
+// ADA tetapi bentuknya salah tidak boleh diganti daftar kosong, karena itu akan membuang baris
+// ulasan pada penulisan berikutnya.
+function repairDataset(value, id) {
   const base = value && typeof value === 'object' ? value : {};
+  for (const key of ['reviews', 'sources', 'runs']) {
+    if (base[key] !== undefined && !Array.isArray(base[key]))
+      throw new Error(`data_unreadable: dataset project "${id}" memiliki kunci ${key} yang bukan daftar; penulisan dihentikan agar isinya tidak diganti`);
+  }
   return {
     ...base,
     reviews: Array.isArray(base.reviews) ? base.reviews : [],
@@ -79,22 +85,37 @@ export function legacyProject(now = nowIso()) {
 // lama disalin utuh; tidak ada penyaringan, penomoran ulang, atau penghapusan baris. Dataset tanpa
 // entri project juga tetap disimpan (tidak dapat dibaca ulang oleh project mana pun, tetapi tidak
 // hilang) karena menghapus data ulasan bukan cara yang sah untuk menyembuhkan berkas.
+// Berkas yang berbentuk v2 tetapi kehilangan daftar project/datasetnya BERBAHAYA bila dianggap
+// kosong: penulisan berikutnya akan menimpa berkas berisi ulasan dengan penyimpanan kosong.
 export function migrateStore(saved) {
-  if (saved && saved.version === storeVersion && Array.isArray(saved.projects)) {
+  if (!saved || typeof saved !== 'object') return initialStore();
+  if (saved.version === storeVersion) {
+    // Daftar project yang hilang berarti dataset berisi ulasan tidak lagi milik siapa pun: bila
+    // dianggap kosong, penulisan berikutnya menimpa berkas itu dengan penyimpanan kosong. Kunci
+    // datasets yang belum ada sama sekali tidak berbahaya (tidak ada baris yang bisa hilang).
+    if (!Array.isArray(saved.projects))
+      throw new Error('data_unreadable: berkas data versi 2 kehilangan daftar project; isi berkas tidak diganti menjadi penyimpanan kosong');
+    if (saved.datasets !== undefined && (typeof saved.datasets !== 'object' || saved.datasets === null || Array.isArray(saved.datasets)))
+      throw new Error('data_unreadable: kunci datasets pada berkas versi 2 bukan daftar berisi; penulisan dihentikan agar isinya tidak diganti');
     // 'builtIn' adalah sifat lama; project hasil baca berkas selalu dapat dihapus pemiliknya.
-    const projects = saved.projects.map(({ builtIn, ...project }) => project);
+    // 'entity' yang hilang dipulihkan dari nama project: tanpanya projectTarget menolak dan
+    // seluruh /api.data gagal, sehingga pemilik tidak bisa menghapus project rusak itu.
+    const projects = saved.projects.map(({ builtIn, ...project }) => ({ ...project, entity: project.entity || project.name }));
     const known = new Set(projects.map(project => project.id));
-    const datasets = Object.fromEntries(Object.entries(saved.datasets && typeof saved.datasets === 'object' ? saved.datasets : {})
-      .map(([id, value]) => [id, repairDataset(value)]));
+    const datasets = Object.fromEntries(Object.entries(saved.datasets ?? {})
+      .map(([id, value]) => [id, repairDataset(value, id)]));
     for (const project of projects) if (!datasets[project.id]) datasets[project.id] = emptyDataset();
     const activeProject = known.has(saved.activeProject) ? saved.activeProject : (projects[0]?.id || '');
     return { ...saved, version: storeVersion, projects, datasets, activeProject };
   }
-  if (saved && Array.isArray(saved.reviews) && Array.isArray(saved.sources) && Array.isArray(saved.runs)) {
+  if (Array.isArray(saved.reviews) && Array.isArray(saved.sources) && Array.isArray(saved.runs)) {
     const project = legacyProject();
     const dataset = { reviews: saved.reviews, sources: saved.sources, runs: saved.runs, lastRun: saved.lastRun ?? null, batch: saved.batch ?? null };
     return { version: storeVersion, projects: [project], activeProject: project.id, datasets: { [project.id]: dataset } };
   }
+  // Objek tak dikenal yang berisi data juga tidak boleh dianggap penyimpanan baru.
+  if (Object.keys(saved).length)
+    throw new Error('data_unreadable: bentuk berkas data tidak dikenal dan berisi data; isi berkas tidak diganti menjadi penyimpanan kosong');
   return initialStore();
 }
 
@@ -145,6 +166,13 @@ export function projectTarget(store, id) {
   const project = findProject(store, id);
   if (!project) throw new Error('project_unknown: project yang diminta tidak terdaftar');
   return normalizeTarget({ ...project.target, entityName: project.target?.entityName || project.entity });
+}
+
+// Versi lunak untuk pembacaan: satu entri rusak (misalnya berkas hasil suntingan tangan) tidak boleh
+// membuat seluruh /api.data gagal, karena itu mengunci pemilik dari menu Kelola — satu-satunya jalan
+// menghapus entri rusak tersebut. Penarikan data tetap memakai projectTarget yang keras.
+export function safeProjectTarget(store, id) {
+  try { return projectTarget(store, id); } catch { return null; }
 }
 
 // Aksi menghancurkan data tidak boleh memakai project aktif sebagai nilai bawaan: permintaan

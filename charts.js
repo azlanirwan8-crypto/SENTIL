@@ -4,7 +4,9 @@
 import { esc, number, integer, pct, signed, colors, sentimentKeys, severityColors, severityNames, clamp } from './format.js';
 import { sentimentNames } from './model.js';
 export { severityColors };
-const axisLabel = (x, y, text, anchor = 'middle') => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" font-size="10" fill="#878a99">${esc(text)}</text>`;
+// #878a99 di atas putih hanya 3,4:1 — di bawah batas 4,5:1 untuk teks sekecil ini. Kelas
+// dipakai agar warnanya ikut token teks --text-muted (4,96:1) seperti bagian antarmuka lain.
+const axisLabel = (x, y, text, anchor = 'middle') => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" font-size="10" class="chart-axis">${esc(text)}</text>`;
 
 // Grafik 1 — volume harian bertumpuk + garis NSS + penanda lonjakan.
 export function comboChart({ days, badges = [], caption = '' }) {
@@ -65,7 +67,7 @@ export function nestedDonut({ inner, outer, total }) {
     return `<path d="${ringArc(108, from, Math.max(from + 0.001, outerAngle - 0.012))}" stroke="${slice.color || innerColor.get(slice.aspect)}" stroke-opacity=".85" stroke-width="22" fill="none"><title>${esc(`${slice.aspectName} · ${slice.name}: ${slice.value} ulasan`)}</title></path>`;
   }).join('');
   const list = inner.map((slice, index) => `<div class="distribution-item donut-item"><span class="legend-item"><span class="donut-swatch" style="background:${innerColor.get(slice.id)}"></span>${esc(slice.name)}</span><strong>${integer(slice.value)}<small>${number(pct(slice.value, total))}%</small></strong></div>`).join('');
-  return `<div class="donut-grid"><div class="donut-wrap"><svg viewBox="0 0 320 320" role="img" aria-label="${esc(`Donut berjenjang: ${inner.length} aspek pada cincin dalam dan ${outer.length} potongan kanal pada cincin luar.`)}">${innerArcs}${outerArcs}<text x="160" y="154" text-anchor="middle" font-size="26" font-weight="600" fill="#2f3842">${integer(total)}</text><text x="160" y="174" text-anchor="middle" font-size="11" fill="#878a99">keanggotaan aspek</text></svg></div><div class="distribution-list donut-list">${list}</div></div>`;
+  return `<div class="donut-grid"><div class="donut-wrap"><svg viewBox="0 0 320 320" role="img" aria-label="${esc(`Donut berjenjang: ${inner.length} aspek pada cincin dalam dan ${outer.length} potongan kanal pada cincin luar.`)}">${innerArcs}${outerArcs}<text x="160" y="154" text-anchor="middle" font-size="26" font-weight="600" fill="#2f3842">${integer(total)}</text><text x="160" y="174" text-anchor="middle" font-size="11" class="chart-axis">keanggotaan aspek</text></svg></div><div class="distribution-list donut-list">${list}</div></div>`;
 }
 
 // Grafik 3 — peta kotak klaster keluhan.

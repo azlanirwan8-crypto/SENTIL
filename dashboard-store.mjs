@@ -11,7 +11,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
+  projectTarget, safeProjectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
@@ -88,7 +88,7 @@ async function writeOnce(store) {
 function datasetTarget(store, id) {
   // Dataset peninggalan berkas lama dapat tidak memiliki entri project; labelnya dinilai
   // dengan aturan bawaan, bukan membuat project asing muncul secara diam-diam.
-  return findProject(store, id) ? projectTarget(store, id) : null;
+  return findProject(store, id) ? safeProjectTarget(store, id) : null;
 }
 
 function readyDataset(dataset, target = null) {
@@ -122,7 +122,7 @@ async function view(project) {
     ...(id ? datasetFor(store, id) : emptyView()),
     projects: projectList(store),
     activeProject: id,
-    target: id ? projectTarget(store, id) : null,
+    target: id ? safeProjectTarget(store, id) : null,
     running,
     storageWarning,
   };

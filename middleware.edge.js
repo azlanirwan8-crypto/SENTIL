@@ -1,7 +1,9 @@
 // Gerbang masuk opsional untuk hosting Vercel. Berkas ini tidak aktif selama namanya masih
 // middleware.edge.js — Vercel hanya memproses berkas bernama tepat `middleware.js` di akar
-// proyek. Ganti namanya bila ingin browser meminta login sebelum halaman terbuka; tanpa itu
-// pun penarikan data tetap tertutup karena api/analyze.js memeriksa kredensial di dalam function.
+// proyek. Ganti namanya bila ingin browser meminta login sebelum halaman terbuka.
+// Tanpa berkas ini, penarikan data TIDAK dilindungi kredensial: yang menahan permintaan adalah
+// pemeriksaan header peramban di api/analyze.js dan api/project.js, dan itu bukan pengganti login
+// (lihat batasnya di README). Nama file ini sengaja tidak diubah selama dasbor dipakai tanpa akun.
 // Middleware Vercel berjalan di Edge Runtime: hanya API Web yang boleh dipakai di sini
 // (atob, TextDecoder, Response, URL). Buffer, node:crypto, dan fs tidak tersedia dan pernah membuat
 // seluruh situs gagal dengan 500 MIDDLEWARE_INVOCATION_FAILED.

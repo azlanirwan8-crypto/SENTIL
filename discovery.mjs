@@ -27,6 +27,9 @@ const normalize = value => String(value ?? '').normalize('NFKD').toLowerCase().r
 // Kemiripan judul, dari bukti terkuat ke terlemah:
 //   1,0  sama persis setelah normalisasi (spasi diabaikan)
 //   0,9  nama entitas muncul sebagai frasa utuh di dalam judul toko
+//   0,85 frasa yang sama muncul di judul toko tanpa spasi — toko menuliskan namanya rapat
+//        ("BukaToko: Aplikasi Kasir" untuk kueri "buka toko"), jadi tanpa tingkatan ini
+//        aplikasinya benar-benar ada tetapi dinilai tidak mirip sama sekali
 //   0,75 × cakupan kata + 0,25 bila judul toko termuat dalam nama entitas
 // Angka ini hanya dipakai untuk mengurutkan kandidat dan memutuskan apakah sistem boleh
 // memilih sendiri; bukan klaim identitas. Bukti identitas yang sebenarnya adalah halaman
@@ -34,14 +37,18 @@ const normalize = value => String(value ?? '').normalize('NFKD').toLowerCase().r
 export function titleSimilarity(entityName, title) {
   const entity = normalize(entityName), shop = normalize(title);
   if (!entity || !shop) return 0;
-  if (entity === shop || entity.replace(/\s/g, '') === shop.replace(/\s/g, '')) return 1;
+  const entityFlat = entity.replace(/\s/g, ''), shopFlat = shop.replace(/\s/g, '');
+  if (entity === shop || entityFlat === shopFlat) return 1;
   if (shop.includes(entity)) return .9;
   const wanted = [...new Set(entity.split(' ').filter(token => token.length > 1))];
   const have = new Set(shop.split(' '));
   if (!wanted.length) return 0;
+  // Frasa rapat hanya dianggap bila nama entitas memang terdiri dari beberapa kata; untuk satu
+  // kata, pengujian di atas sudah cukup dan penambahan tingkat ini hanya melonggarkan aturan.
+  const flat = wanted.length > 1 && entityFlat.length >= 6 && shopFlat.includes(entityFlat) ? .85 : 0;
   const coverage = wanted.filter(token => have.has(token)).length / wanted.length;
-  const reverse = entity.includes(shop.replace(/\s/g, '')) ? .25 : 0;
-  return Math.min(1, coverage * .75 + reverse);
+  const reverse = entity.includes(shopFlat) ? .25 : 0;
+  return Math.min(1, Math.max(flat, coverage * .75 + reverse));
 }
 
 // Variasi kueri: nama apa adanya, versi tanpa spasi (sering merupakan nama komersial),
@@ -52,20 +59,50 @@ export function queryVariants(entityName) {
   return [...new Set(variants.filter(value => value.length >= 2))];
 }
 
-// Kartu hasil pencarian Play: tautan `/store/apps/details?id=…` disertai `aria-label` berisi
-// judul aplikasi. Judul diambil dari label terdekat pada anchor yang sama atau sesudahnya.
+// Kartu hasil pencarian Play: tautan `/store/apps/details?id=…` diikuti judul di dalam
+// <span class="DdYX5">, penerbit di <span class="wMUdtb">, dan rating di <span class="w2kbF">.
+// Sebagian tata letak hanya memberi judul pada aria-label, jadi keduanya dibaca.
+// Jendela baca harus lebih panjang dari satu kartu penuh (terukur 1.456 karakter pada
+// storefront Indonesia): dengan jendela yang terlalu pendek judul tidak ikut terbaca dan
+// pencarian tampak "tidak menemukan apa pun" padahal halamannya berisi puluhan aplikasi.
+const playCardWindow = 4000;
+const decodeEntities = value => String(value ?? '')
+  .replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+  .replace(/&#(\d+);/g, (match, code) => String.fromCodePoint(Number(code)))
+  .replace(/\s+/g, ' ').trim();
+
+const playCardTitle = inner => decodeEntities(/class="DdYX5"[^>]*>([^<]{2,160})</i.exec(inner)?.[1]);
+// Label rating ("Diberi rating 3,8 bintang dari 5 bintang") pernah diambil sebagai judul aplikasi
+// pada tata letak lama. Frasa semacam ini bukan nama aplikasi, jadi ditolak.
+const ratingLikeLabel = /bintang|rating|penilaian|stars?\b/i;
+const playLabelTitle = source => {
+  const label = decodeEntities(/aria-label="([^"]{2,160})"/i.exec(source)?.[1]);
+  return label && !ratingLikeLabel.test(label) ? label : '';
+};
+// Jumlah tautan aplikasi pada halaman, terpisah dari jumlah judul yang terbaca: selisihnya
+// membedakan "aplikasinya memang tidak ada" dari "halamannya terbaca tetapi tidak terurai".
+export const countPlayLinks = html => [...String(html || '').matchAll(/href="\/store\/apps\/details\?id=([^"&]+)"/gi)].length;
+
 export function parsePlaySearchResults(html, { limit = 12 } = {}) {
   const text = String(html || '');
   const found = new Map();
-  for (const match of text.matchAll(/href="\/store\/apps\/details\?id=([^"&]+)"([^>]*)>([\s\S]{0,1200}?)(?:<\/a>|class="Y4A2mc")/gi)) {
+  for (const match of text.matchAll(new RegExp(`<a\\b[^>]*href="\\/store\\/apps\\/details\\?id=([^"&]+)"[^>]*>([\\s\\S]{0,${playCardWindow}}?)<\\/a>`, 'gi'))) {
     const appId = decodeURIComponent(match[1]);
     if (!/^[a-zA-Z0-9._-]{3,120}$/.test(appId)) continue;
-    const label = /aria-label="([^"]{2,120})"/i.exec(match[2])?.[1] || /aria-label="([^"]{2,120})"/i.exec(match[3])?.[1] || '';
-    const title = label.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
-    if (!found.has(appId)) found.set(appId, { appId, title, sourceUrl: playAppUrl(appId) });
-    else if (!found.get(appId).title && title) found.set(appId, { ...found.get(appId), title });
+    const inner = match[2];
+    const title = playCardTitle(inner) || playLabelTitle(match[0]) || playLabelTitle(inner);
+    if (!title) continue;
+    const artist = decodeEntities(/class="wMUdtb"[^>]*>([^<]{2,160})</i.exec(inner)?.[1]);
+    const rating = Number(decodeEntities(/class="w2kbF"[^>]*>([\d.,]+)</i.exec(inner)?.[1]).replace(',', '.'));
+    if (!found.has(appId)) found.set(appId, {
+      appId, title, artist: artist || null,
+      averageRating: Number.isFinite(rating) && rating > 0 && rating <= 5 ? rating : null,
+      sourceUrl: playAppUrl(appId),
+    });
+    else if (!found.get(appId).artist && artist) found.set(appId, { ...found.get(appId), artist });
   }
-  return [...found.values()].filter(candidate => candidate.title).slice(0, limit);
+  return [...found.values()].slice(0, limit);
 }
 
 export function parseItunesResults(payload) {
@@ -133,6 +170,10 @@ export function buildDiscovery({ entityName, playHtml = [], itunes = null, now =
   }
   const play = ranked([...seen.values()], entityName);
   const apple = ranked(parseItunesResults(itunes), entityName);
+  // Tautan yang terlihat di halaman Play tetapi tidak menghasilkan judul = pembacaan gagal,
+  // bukan aplikasi yang tidak ada. Tanpa pembeda ini, keduanya tampil sama kosong.
+  const playLinks = playHtml.reduce((sum, html) => sum + countPlayLinks(html), 0);
+  const playDegraded = playLinks > 0 && play.length === 0;
   const pool = [...play.map(candidate => ({ ...candidate, store: 'play' })), ...apple.map(candidate => ({ ...candidate, store: 'appstore' }))];
   const category = detectCategory(pool);
   const agreement = play[0] && apple[0] && normalize(play[0].title).replace(/\s/g, '') === normalize(apple[0].title).replace(/\s/g, '');
@@ -140,15 +181,17 @@ export function buildDiscovery({ entityName, playHtml = [], itunes = null, now =
   const appleStatus = decideStatus(apple);
   return {
     entityName: String(entityName || '').trim(), resolvedAt: now, method: discoveryMethod, country,
-    play: { status, candidates: play, chosen: status === 'confirmed' ? play[0] : null },
+    play: { status: playDegraded ? 'unreadable' : status, candidates: play, chosen: status === 'confirmed' ? play[0] : null, links: playLinks },
     appstore: { status: appleStatus, candidates: apple, chosen: appleStatus === 'confirmed' ? apple[0] : null },
     category, keywords: deriveKeywords(entityName), titleAgreement: Boolean(agreement),
     needsConfirmation: status !== 'confirmed' || appleStatus !== 'confirmed',
-    note: status === 'confirmed'
-      ? 'Kandidat Google Play unggul cukup jauh untuk dipilih otomatis; tetap periksa sebelum penarikan penuh.'
-      : status === 'not-found'
-        ? 'Pencarian Google Play tidak mengembalikan satu pun judul yang dapat dibaca. Tidak ada ID yang dikarang — isi sendiri bila perlu.'
-        : 'Beberapa judul hasil pencarian sama-sama mirip dengan nama aplikasi. Pilih salah satu; sistem tidak menebak.',
+    note: playDegraded
+      ? `Halaman pencarian Google Play terbaca dan memuat ${playLinks} tautan aplikasi, tetapi tidak satu pun judulnya dapat diurai. Ini kegagalan pembacaan halaman, bukan bukti aplikasinya tidak ada — isi nama paketnya di kolom manual bila Anda mengetahuinya.`
+      : status === 'confirmed'
+        ? 'Kandidat Google Play unggul cukup jauh untuk dipilih otomatis; tetap periksa sebelum penarikan penuh.'
+        : status === 'not-found'
+          ? 'Pencarian Google Play tidak mengembalikan satu pun judul yang dapat dibaca. Tidak ada ID yang dikarang — isi sendiri bila perlu.'
+          : 'Beberapa judul hasil pencarian sama-sama mirip dengan nama aplikasi. Pilih salah satu; sistem tidak menebak.',
   };
 }
 
@@ -156,25 +199,53 @@ const httpsOnly = url => { try { const parsed = new URL(url); return parsed.prot
 
 // Satu-satunya tempat modul ini menyentuh jaringan. Fetcher disuntuk agar pengujian
 // tidak pernah memanggil Google atau Apple.
+//
+// Hasil pencarian disimpan sebentar (targetCacheTtlMs): halaman Play membatasi alamat keluar
+// function serverless, jadi mengetik satu nama lalu menekan "Cari ulang" tidak boleh membayar
+// ulang seluruh permintaan. Cache hanya menyimpan hasil pencarian, bukan pilihan pengguna.
+const discoveryCache = new Map();
+export function clearDiscoveryCache() { discoveryCache.clear(); }
+
 export async function discoverTarget({ entityName, fetcher = fetch, country = 'id', locale = { hl: 'id', gl: 'id' }, timeoutMs = 20000 } = {}) {
   const name = String(entityName || '').trim();
-  if (name.length < 2) return { ok: false, error: 'Nama entitas minimal 2 karakter; tidak ada permintaan yang dikirim.' };
+  if (name.length < 2) return { ok: false, error: 'Nama aplikasi minimal 2 karakter; tidak ada permintaan yang dikirim.' };
+  const cacheKey = `${country}|${locale.hl}|${locale.gl}|${name.toLowerCase()}`;
+  // Cache hanya dipakai untuk permintaan nyata. Fetcher suntikan (pengujian, atau panggilan ulang
+  // dengan sumber berbeda) harus selalu menjalankan permintaannya sendiri.
+  const useCache = fetcher === fetch;
+  const cached = useCache ? discoveryCache.get(cacheKey) : null;
+  if (cached && Date.now() - cached.at < targetCacheTtlMs) return { ...cached.result, cached: true };
   const queries = queryVariants(name).slice(0, 3);
   const urls = [
     ...queries.map(query => playSearchUrl(query, locale)),
-    itunesSearchUrl(queries[0], country),
+    // Apple dan Google menulis nama aplikasi dengan cara berbeda; satu variasi saja membuat
+    // aplikasi bernama rapat ("wondrmerchant") tidak pernah terkirim ke iTunes.
+    ...[queries[0], queries[1]].filter(Boolean).map(query => itunesSearchUrl(query, country)),
   ].filter(httpsOnly);
   const settled = await Promise.allSettled(urls.map(async url => {
     const response = await fetcher(url, { headers: url.includes('itunes.apple.com') ? { accept: 'application/json' } : { 'user-agent': 'Mozilla/5.0', 'accept-language': `${locale.hl}-ID,${locale.hl};q=0.9` }, redirect: 'error', signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return url.includes('itunes.apple.com') ? { kind: 'itunes', value: await response.json() } : { kind: 'play', value: await response.text() };
   }));
-  const playHtml = [], itunes = settled.find(result => result.status === 'fulfilled' && result.value.kind === 'itunes')?.value?.value ?? null;
+  const playHtml = [];
+  // Beberapa variasi kueri digabung sebelum diparsing: toko dapat menulis namanya rapat
+  // ("wondrmerchant") atau berjarak ("wondr merchant"), dan masing-masing mengembalikan set
+  // aplikasi yang tidak identik. Bentuk mentahnya yang disimpan agar penafsir hanya sekali.
+  const rawItunes = new Map();
+  for (const result of settled) if (result.status === 'fulfilled' && result.value.kind === 'itunes')
+    for (const item of Array.isArray(result.value.value?.results) ? result.value.value.results : [])
+      if (!rawItunes.has(item?.trackId)) rawItunes.set(item?.trackId, item);
+  const itunes = rawItunes.size ? { results: [...rawItunes.values()] } : null;
   settled.forEach((result, index) => {
     if (result.status === 'fulfilled' && result.value.kind === 'play') playHtml.push(result.value.value);
     else if (result.status === 'rejected' && urls[index].includes('itunes') === false) playHtml.push('');
   });
   const failures = settled.filter(result => result.status === 'rejected').length;
   const discovery = buildDiscovery({ entityName: name, playHtml, itunes, country });
-  return { ok: true, discovery, queries, partial: failures > 0 ? `${failures} dari ${urls.length} permintaan pencarian tidak terjawab; kandidat yang ada tetap ditampilkan.` : null };
+  const result = { ok: true, discovery, queries, partial: failures > 0 ? `${failures} dari ${urls.length} permintaan pencarian tidak terjawab; kandidat yang ada tetap ditampilkan.` : null };
+  // Hasil yang PARAH (sebagian permintaan tidak terjawab) tidak disimpan: membekukannya selama
+  // satu jam akan mengubah gangguan sesaat menjadi "aplikasinya tidak ada".
+  if (useCache && failures === 0 && (discovery.play.candidates.length || discovery.appstore.candidates.length))
+    discoveryCache.set(cacheKey, { at: Date.now(), result });
+  return result;
 }

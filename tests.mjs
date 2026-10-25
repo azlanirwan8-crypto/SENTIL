@@ -8,14 +8,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
 import { connect } from 'node:net';
-import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText, onlineCollectors } from './collectors.mjs';
+import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText, onlineCollectors, targetReadyChannels } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 import { initialDataset } from './dashboard-core.mjs';
-import { parsePlaySearchResults, parseItunesResults, buildDiscovery, discoverTarget, detectCategory, deriveKeywords, titleSimilarity, queryVariants, decideStatus, playSearchUrl, itunesSearchUrl } from './discovery.mjs';
-import { defaultTarget, normalizeTarget, identityPattern, targetFromDiscovery } from './target.mjs';
+import { parsePlaySearchResults, parseItunesResults, countPlayLinks, buildDiscovery, discoverTarget, detectCategory, deriveKeywords, titleSimilarity, queryVariants, decideStatus, playSearchUrl, itunesSearchUrl } from './discovery.mjs';
+import { defaultTarget, normalizeTarget, identityPattern, targetFromDiscovery, isWondrTarget } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, emptyDataset, projectList, resolveProjectId,
-  projectTarget, createProject, projectIdFrom, defaultProjectId, legacyProject, removeProject, renameProject, strictProjectId,
+  projectTarget, safeProjectTarget, createProject, projectIdFrom, defaultProjectId, legacyProject, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 
 // Berkas lama dengan satu dataset dipindahkan menjadi project biasa; pemeriksaan lama cukup membuka dataset project aktif.
@@ -97,6 +97,14 @@ test('hope clauses and resolved failures are not read as active complaints',()=>
     'bagus tapi notif tidak masuk',
   ]) assert.equal(classifyText(text).sentiment,'negative',`keluhan aktif tidak boleh ikut dilunakkan: ${text}`);
   assert.equal(classifyText('notif tidak masuk padahal transaksi banyak').sentiment,'negative','aset atau notifikasi yang tidak masuk dihitung keluhan');
+  // Klausa penyelesaian hanya melunakkan kegagalan AKSES. "laporan/notifikasi belum masuk" punya
+  // subjek sendiri dan tidak diperbaiki oleh "sudah bisa login", jadi tetap keluhan aktif.
+  assert.equal(classifyText('laporan delay dan notifikasi belum masuk, tapi sekarang sudah bisa login').sentiment,'negative',
+    'keluhan yang belum selesai tidak berubah menjadi kepuasan');
+  // Pujian singkat yang sudah dinilai manusia pada dataset dasar harus dikenal pula oleh aturan.
+  for (const praise of ['Mantab banget aplikasinya','okee banget nih aplikasi nya','terbaik','Suka bgt sama appsnya'])
+    assert.equal(classifyText(praise).sentiment,'positive',`pujian nyata tidak boleh jatuh ke "perlu tinjauan": ${praise}`);
+  assert.equal(classifyText('tidak puas dengan layanannya').sentiment,'negative','pujian yang disangkal tetap keluhan');
   assert.equal(classifyText('transaksi tidak masuk ke laporan').sentiment,'negative');
   assert.equal(classifyText('sangat membantu transaksi jadi mudah').sentiment,'positive');
   assert.match(classifyText('Setelah berbulan2 masuk BNI Marchant gak bisa bisa akhirnya ada Wondr Marchant By BNI bisa masuk jg. semoga gak ada gangguan lagi').rationale,/Klausa harapan dan kegagalan yang sudah selesai/);
@@ -244,6 +252,38 @@ test('Play search page is read as a ranked candidate list, never a silent top hi
   assert.equal(discovery.needsConfirmation, true, 'App Store tanpa kandidat tetap harus dikonfirmasi');
   assert.equal(discovery.play.chosen.appId, 'id.bni.wfb');
   assert.match(discovery.play.candidates[0].sourceUrl, /^https:\/\/play\.google\.com\/store\/apps\/details\?id=id\.bni\.wfb/);
+});
+// Regresi nyata (25 Oktober 2026): halaman pencarian Play untuk "buka toko" memuat 50 tautan
+// aplikasi, tetapi penafsir lama hanya membaca 1.200 karakter pertama sebuah kartu — sedangkan
+// satu kartu penuh berukuran ~1.456 karakter — sehingga hasilnya nol kandidat dan pengguna
+// melihat "aplikasinya tidak ketemu" padahal aplikasinya ada.
+test('Kartu pencarian Play yang sebenarnya terbaca walau judulnya berada setelah 1.200 karakter', () => {
+  const padding = 'x'.repeat(1300);
+  const card = (appId, title, artist, rating) => `<a class="Si6A0c Gy4nib" href="/store/apps/details?id=${appId}" jslog="38003; 1:${padding}"><div class="Shbxxd"><img src="https://play-lh.googleusercontent.com/x" alt="Gambar screenshot"></div></div><div class="j2FCNc"><img src="https://play-lh.googleusercontent.com/y" alt="Gambar thumbnail"><div class="cXFu1"><div class="ubGTjb"><span class="DdYX5">${title}</span></div><div class="ubGTjb"><span class="wMUdtb">${artist}</span></div><div class="ubGTjb"><span class="w2kbF">${rating}</span></div></div></div></a>`;
+  const html = card('com.bukatoko.app', 'BukaToko: Aplikasi Kasir Online', 'PT Buka Toko', '4,6')
+    + card('com.toko.lain', 'Toko Lain &amp; Kemitraan', 'PT Toko Lain', '3,8');
+  const parsed = parsePlaySearchResults(html);
+  assert.deepEqual(parsed.map(candidate => candidate.appId), ['com.bukatoko.app', 'com.toko.lain'], 'setiap kartu terbaca, bukan hanya kartu pertama');
+  assert.equal(parsed[0].title, 'BukaToko: Aplikasi Kasir Online', 'judul diambil walau letaknya melewati 1.200 karakter');
+  assert.equal(parsed[0].artist, 'PT Buka Toko', 'penerbit terbaca agar pengguna bisa memastikan aplikasinya');
+  assert.equal(parsed[0].averageRating, 4.6, 'rating dengan koma Indonesia dinormalisasi');
+  assert.equal(parsed[1].title, 'Toko Lain & Kemitraan', 'entitas HTML pada judul dilepas');
+  const discovery = buildDiscovery({ entityName: 'buka toko', playHtml: [html], itunes: null });
+  assert.equal(discovery.play.candidates[0].similarity, 0.85, 'nama toko yang ditulis rapat tetap dinilai mirip');
+  assert.equal(discovery.play.candidates[0].appId, 'com.bukatoko.app', 'aplikasinya tidak dibuang sebagai tidak mirip');
+  assert.equal(discovery.play.status, 'ambiguous', 'kemiripan 0,85 tidak cukup untuk memilih sendiri');
+  assert.equal(discovery.play.chosen, null);
+  // Halaman yang menautkan aplikasi tetapi tidak memberi satu pun judul yang terbaca adalah
+  // kegagalan pembacaan, dan harus dikatakan begitu — bukan "aplikasinya tidak ada".
+  const linksOnly = '<a href="/store/apps/details?id=com.tanpa.judul" jslog="38003"><div class="Shbxxd"></div></a>';
+  assert.equal(countPlayLinks(linksOnly), 1);
+  assert.equal(parsePlaySearchResults(linksOnly).length, 0, 'tautan tanpa judul tidak dikarang judulnya');
+  const degraded = buildDiscovery({ entityName: 'aplikasi contoh', playHtml: [linksOnly], itunes: null });
+  assert.equal(degraded.play.status, 'unreadable', 'halaman terbaca tetapi judulnya tidak terurai');
+  assert.equal(degraded.play.links, 1, 'jumlah tautan yang terlihat ikut dilaporkan');
+  assert.match(degraded.note, /kegagalan pembacaan/);
+  // Label rating bukan nama aplikasi; pernah diambil sebagai judul pada tata letak lama.
+  assert.equal(parsePlaySearchResults('<a href="/store/apps/details?id=com.b.c" aria-label="Diberi rating 4,6 bintang dari 5 bintang"></a>').length, 0);
 });
 test('Discovery refuses to guess when two store titles are equally close', () => {
   const html = ['Wondr Merchant Beta', 'Wondr Merchant Alpha']
@@ -611,6 +651,36 @@ test('local Poppins fonts retain their license and use the explicit asset allowl
     assert.equal((await fetch(url+'/assets/fonts/unlisted.woff2')).status,404);
     assert.equal((await fetch(url+'/online-data.json')).status,404);
   }finally{await new Promise(resolve=>server.close(resolve));await rm(dir,{recursive:true,force:true});}
+});
+// Regresi nyata: model.js pernah mengimpor target.mjs yang tidak ikut disajikan, sehingga
+// seluruh graf modul peramban gagal dimuat dan dasbor tidak render sama sekali — tanpa satu pun
+// angka yang salah di log server. Pemeriksaannya berjalan dari index.html ke seluruh impor.
+test('setiap modul yang diimpor peramban benar-benar disajikan dengan tipe MIME JavaScript', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-graph-'));
+  const server = await createDashboardServer({ storagePath: join(dir, 'data.json'), env: {} });
+  try {
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const entry = /<script[^>]+type="module"[^>]+src="([^"]+)"/.exec(await readFile('index.html', 'utf8'))?.[1];
+    assert.ok(entry, 'index.html memuat satu skrip modul');
+    const seen = new Set();
+    const queue = [entry.replace(/^\//, '')];
+    while (queue.length) {
+      const file = queue.shift();
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const source = await readFile(file, 'utf8');
+      for (const match of source.matchAll(/^\s*import[^;]*?from\s+['"](\.\/[^'"]+)['"]/gms))
+        queue.push(match[1].replace('./', ''));
+      const response = await fetch(`${url}/${file}`);
+      assert.equal(response.status, 200, `${file} tidak disajikan ke peramban`);
+      assert.match(response.headers.get('content-type') || '', /^text\/javascript/, `${file} disajikan dengan tipe MIME yang salah`);
+    }
+    assert.ok(seen.has('model.js') && seen.has('target.mjs'), `graf modul peramban tidak lengkap: ${[...seen].join(', ')}`);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 const rpcFixture = (reviews,cursor=null) => `)]}'\n\n${JSON.stringify([['wrb.fr','oCPfdb',JSON.stringify([reviews,cursor?[null,cursor]:null])]])}\n`;
 const googleRow=['unit-test-only',['Fixture'],2,null,'Login gagal',[1792713600,0]];
@@ -2502,6 +2572,20 @@ test('Berkas v2 diperbaiki tanpa menghapus dataset dan tanpa menambah project', 
   const none = migrateStore({ version: storeVersion, activeProject: 'tidak-dikenal', projects: [], datasets: {} });
   assert.deepEqual(none.projects, [], 'project tidak muncul sendiri saat berkas dibaca');
   assert.equal(none.activeProject, '');
+  // Berkas v2 yang kehilangan kunci `projects` masih menyimpan dataset berisi ulasan. Menganggapnya
+  // kosong akan membuat penulisan berikutnya menimpa data itu dengan penyimpanan kosong.
+  assert.throws(() => migrateStore({ version: storeVersion, activeProject: 'a', datasets: { a: { reviews: seedReviews, sources: [], runs: [] } } }),
+    /data_unreadable/, 'daftar project yang hilang tidak dianggap belum ada project');
+  assert.throws(() => migrateStore({ version: storeVersion, projects: [{ id: 'a', name: 'A', entity: 'A' }], datasets: { a: { reviews: null, sources: [], runs: [] } } }),
+    /data_unreadable/, 'kunci reviews yang ada tetapi bukan daftar tidak diganti daftar kosong');
+  assert.equal(migrateStore({ version: storeVersion, projects: [{ id: 'a', name: 'A', entity: 'A', target: defaultTarget }] }).datasets.a.reviews.length, 0,
+    'dataset yang belum ada sama sekali memang boleh dibuat kosong');
+  // Project tanpa `entity` dulu membuat projectTarget melempar, sehingga /api/data gagal dan
+  // pemilik tidak dapat menghapus entri rusak itu lewat menu Kelola.
+  const tanpaEntity = migrateStore({ version: storeVersion, activeProject: 'a', projects: [{ id: 'a', name: 'Aplikasi Saya', target: { ...defaultTarget, id: 'a' } }], datasets: { a: { reviews: [], sources: [], runs: [] } } });
+  assert.equal(tanpaEntity.projects[0].entity, 'Aplikasi Saya', 'nama project dipakai sebagai identitas aplikasi bila kunci entity hilang');
+  assert.equal(projectTarget(tanpaEntity, 'a').play.appId, defaultTarget.play.appId, 'project yang rusak entrihnya tetap dapat dibaca dan dihapus');
+  assert.equal(safeProjectTarget(tanpaEntity, 'tidak-ada'), null, 'pembacaan lunak mengembalikan tanpa target, bukan melempar');
   // Dataset tanpa kunci reviews (berkas hasil potongan) dulu membuat pemetakan berikutnya
   // melempar TypeError saat awal, sehingga dasbor mati total tanpa pesan.
   const shapeless = migrateStore({ version: storeVersion, activeProject: defaultProjectId, projects: [legacyProject()], datasets: { [defaultProjectId]: { sources: [], note: 'peninggalan' } } });
@@ -2761,6 +2845,20 @@ test('Penilaian relevansi mengikuti target project, bukan satu merek tetap', asy
   assert.equal(merged.reviews[0].relevance.status, 'relevant', 'ulasan baru yang dimasukkan memakai target project');
   const { reclassifyDerived } = await import('./dashboard-core.mjs');
   assert.equal(reclassifyDerived([{ ...video, labeling: 'rules-v1' }], other)[0].relevance.status, 'relevant', 'pelabelan ulang memakai target project');
+});
+
+test('Penanda aplikasi utama mengikuti ID toko, bukan nama project', () => {
+  const wondr = normalizeTarget({ id: 'merchant-bni', name: 'Merchant BNI', entityName: 'wondr merchant', playAppId: 'id.bni.wfb' });
+  assert.equal(isWondrTarget(wondr), true, 'project bernama lain yang menunjuk ke paket ini tetap aplikasi utama');
+  const clone = normalizeTarget({ id: 'wondr-merchant', name: 'wondr merchant', entityName: 'wondr merchant', playAppId: 'id.co.bni.merchant' });
+  assert.equal(isWondrTarget(clone), false, 'project bernama seperti aplikasi utama tetapi menunjuk ke paket lain bukan aplikasi utama');
+  assert.equal(rulesFor(clone).productKey, 'wondr-merchant', 'aturan merek hanya dipakai oleh aplikasi yang benar-benar itu');
+  assert.notEqual(rulesFor(clone), rulesFor(null), 'project lain menurunkan aturannya sendiri');
+  const jobs = onlineCollectors({ target: clone });
+  assert.equal(jobs.get('youtube')() instanceof Promise, false, 'kanal yang belum mendukung target tidak dijalankan untuk project lain');
+  assert.equal(jobs.get('youtube')().status, 'unsupported', 'kanal merek dilaporkan ditolak, bukan diisi teks aplikasi utama');
+  assert.equal(jobs.get('news')().status ?? 'partial', 'unsupported', 'kanal berita ikut ditolak untuk target yang belum didukung');
+  assert.equal(targetReadyChannels.has('play') && targetReadyChannels.has('appstore'), true, 'kanal toko memang sudah menerima target project');
 });
 
 test('Kegagalan menyimpan data dilaporkan, dan penulisan sukses tidak meninggalkan berkas sementara', async () => {

@@ -9,7 +9,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
+  projectTarget, safeProjectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 import { withAbsa } from './model.js';
 
@@ -22,6 +22,11 @@ const files = new Map([
   ['/model.js', ['model.js', 'text/javascript; charset=utf-8']],
   ['/format.js', ['format.js', 'text/javascript; charset=utf-8']],
   ['/charts.js', ['charts.js', 'text/javascript; charset=utf-8']],
+  // model.js mengimpor identitas target (isWondrTarget), dan target.mjs mengimpor penurunan kata
+  // kunci dari discovery.mjs. Keduanya fungsi murni tanpa rahasia dan tanpa API Node: kalau salah
+  // satu tidak ikut disajikan, seluruh graf modul peramban gagal dimuat dan dasbor tidak render.
+  ['/target.mjs', ['target.mjs', 'text/javascript; charset=utf-8']],
+  ['/discovery.mjs', ['discovery.mjs', 'text/javascript; charset=utf-8']],
   ...[400,500,600,700].map(weight => {
     const file = `assets/fonts/poppins-latin-${weight}-normal.woff2`;
     return [`/${file}`, [file, 'font/woff2']];
@@ -67,7 +72,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     reviews: withAbsa(reclassifyDerived(dataset.reviews, target)),
     sources: overlayConfiguration(dataset.sources, channelConfig),
   });
-  const datasetTarget = (source, id) => (findProject(source, id) ? projectTarget(source, id) : null);
+  const datasetTarget = (source, id) => (findProject(source, id) ? safeProjectTarget(source, id) : null);
   store = { ...store, datasets: Object.fromEntries(Object.entries(store.datasets).map(([id, dataset]) => [id, readyDataset(dataset, datasetTarget(store, id))])) };
   let running = false;
   // Dataset yang dikirim selalu milik satu project, disertai daftar project agar antarmuka dapat
@@ -77,7 +82,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     const id = resolveProjectId(store, project);
     // Belum ada project: tidak ada dataset dan tidak ada target, jadi antarmuka menampilkan
     // layar awal alih-alih angka nol yang bisa disalahartikan sebagai "tidak ada keluhan".
-    return { ...(id ? datasetFor(store, id) : emptyView()), projects: projectList(store), activeProject: id, target: id ? projectTarget(store, id) : null, running };
+    return { ...(id ? datasetFor(store, id) : emptyView()), projects: projectList(store), activeProject: id, target: id ? safeProjectTarget(store, id) : null, running };
   };
   // rename() di Windows sering gagal sesaat (EBUSY/EPERM/EACCES) ketika antivirus atau
   // indexer masih memegang berkas target, jadi penulisan diulang beberapa kali sebelum
@@ -158,8 +163,8 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     if (running) throw new Error('busy');
     const next = { ...store, projects: store.projects.map(item => ({ ...item })), datasets: { ...store.datasets } };
     const renamed = renameProject(next, strictProjectId(next, project), name);
-    await persist(next);
     store = next;
+    await persist(next);
     return view(renamed.id);
   };
   // Menghapus project beserta datasetnya; project aktif berpindah ke project yang tersisa, dan
@@ -168,8 +173,8 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     if (running) throw new Error('busy');
     const next = { ...store, projects: [...store.projects], datasets: { ...store.datasets } };
     removeProject(next, strictProjectId(next, project));
-    await persist(next);
     store = next;
+    await persist(next);
     return view(next.activeProject);
   };
   const server = http.createServer(async (req, res) => {

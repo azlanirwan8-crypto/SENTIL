@@ -3985,6 +3985,9 @@ th[aria-sort='descending'] .th-sort.active .icon {
 
 .aspect-pill.active .count { color: #fff; }
 
+/* Teks sumbu dan keterangan kecil di dalam SVG memakai warna token yang sama dengan teks
+   pendukung lainnya, bukan abu-abu keras yang hanya 3,4:1 di atas putih. */
+.chart-axis { fill: var(--text-muted); }
 .chart-card { margin-bottom: var(--gutter); }
 
 /* Isi kartu grafik mendapat jarak yang sama dengan kepala kartu; hanya kanvas yang boleh bergulir. */
@@ -4461,7 +4464,9 @@ th[aria-sort='descending'] .th-sort.active .icon {
 }
 
 .project-bar .project-select option { color: var(--heading); background: var(--surface); }
-.project-bar .project-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* Biru fokus (#3577f1) hanya ~1,8:1 di atas biru sidebar, di bawah batas 3:1 untuk indikator
+   fokus (WCAG 1.4.11). Sama seperti .nav-item, cincinya dibuat putih. */
+.project-bar .project-select:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .project-bar .project-select:disabled { opacity: .55; cursor: not-allowed; }
 
 /* Tombol ikon bilah project: tambah dan kelola. Nama aksinya ada di aria-label/title. */
@@ -4481,7 +4486,7 @@ th[aria-sort='descending'] .th-sort.active .icon {
 }
 
 .project-button:hover { background: rgba(255, 255, 255, .22); }
-.project-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.project-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .project-button:disabled { opacity: .45; cursor: not-allowed; }
 .project-button .icon { width: 15px; height: 15px; }
 
@@ -4496,6 +4501,7 @@ th[aria-sort='descending'] .th-sort.active .icon {
 .first-run-mark .icon { width: 24px; height: 24px; }
 .first-run h1 { margin: 0 0 8px; font-size: 22px; }
 .first-run p { max-width: 52ch; margin: 0 auto 18px; color: var(--ink); line-height: 1.7; }
+.first-run-view { margin: 14px auto 0; color: var(--text-muted); font-size: 12.5px; }
 .first-run-steps { display: grid; gap: 10px; margin: 0 0 22px; padding: 0; list-style: none; text-align: left; counter-reset: langkah; }
 .first-run-steps li { position: relative; padding: 10px 12px 10px 40px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); font-size: 13px; line-height: 1.6; counter-increment: langkah; }
 .first-run-steps li::before { content: counter(langkah); position: absolute; top: 10px; left: 12px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; }
@@ -4632,10 +4638,17 @@ th[aria-sort='descending'] .th-sort.active .icon {
   .project-bar { padding: 0 8px 12px; justify-items: center; }
   .project-bar .project-pick { display: none; }
   /* Rail sidebar hanya 70px: dua tombol 34px berdampingan (74px) keluar jalur sehingga tombol
-     kelola tidak dapat disentuh. Disusun vertikal dengan sasaran sentuh yang lebih besar. */
-  .project-actions { flex-direction: column; align-items: center; gap: 4px; }
-  .project-button, .project-button-manage { width: 44px; height: 34px; padding: 0; }
-  .project-button-label { display: none; }
-  .topbar-project { display: block; }
+     kelola tidak dapat disentuh. Disusun vertikal dengan sasaran sentuh 44px. Label "Kelola"
+     sengaja TETAP tampil — pemilik dasbor menanyakan tempat mengubah nama dan menghapus project,
+     dan ikon pensil saja tidak menjawab pertanyaan itu. */
+  .project-actions { flex-direction: column; align-items: center; gap: 6px; }
+  .project-button, .project-button-manage { width: 46px; height: 44px; padding: 3px 2px; flex-direction: column; gap: 1px; }
+  .project-button-label { font-size: 9.5px; font-weight: 600; line-height: 1.2; }
+  .topbar-project { display: block; max-width: 46vw; }
   .topbar-brand { display: none; }
+  /* Nama menu dan pemilih project berebut ruang yang sama di layar sempit: tanpa pemotongan,
+     teks "Dashboard" menutupi dropdown sehingga satu-satunya pemilih project tidak tersentuh. */
+  .breadcrumb { overflow: hidden; }
+  .breadcrumb strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar-project .project-select { max-width: 100%; }
 }

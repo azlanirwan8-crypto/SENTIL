@@ -1,4 +1,5 @@
 import { tags } from './data.js';
+import { isWondrTarget } from './target.mjs';
 
 export const sentimentNames = { positive: 'Positif', negative: 'Negatif', neutral: 'Netral', unclassified: 'Perlu tinjauan' };
 export const complaintGroups = Object.entries(tags).map(([id, name]) => ({ id, name, tags: [id] }));
@@ -215,11 +216,18 @@ export function anomalyScan(reviews, options = {}) {
   const stamp = r => hourly ? Date.parse(r.publishedAt) : Date.parse(`${r.date}T00:00:00Z`);
   const starts = used.map(r => Math.floor(stamp(r) / size) * size);
   const first = Math.min(...starts), last = Math.max(...starts);
-  const count = Math.min(settings.maxBuckets, Math.floor((last - first) / size) + 1);
+  const spanBuckets = Math.floor((last - first) / size) + 1;
+  const count = Math.min(settings.maxBuckets, spanBuckets);
+  // Pagar jendela dihitung mundur dari jendela TERAKHIR. Memotong dari yang terlama berarti
+  // ulasan terbaru — yang dicari pemantauan lonjakan — dibuang diam-diam sementara antarmuka
+  // tetap menyatakan seluruh baris diuji.
+  const windowStart = last - (count - 1) * size;
   const negative = new Array(count).fill(0), total = new Array(count).fill(0), members = Array.from({ length: count }, () => []);
+  let scanned = 0;
   for (let i = 0; i < used.length; i++) {
-    const index = Math.floor((starts[i] - first) / size);
+    const index = Math.floor((starts[i] - windowStart) / size);
     if (index < 0 || index >= count) continue;
+    scanned++;
     total[index]++;
     if (used[i].sentiment === 'negative') { negative[index]++; members[index].push(used[i]); }
   }
@@ -233,12 +241,13 @@ export function anomalyScan(reviews, options = {}) {
     // adanya, bukan sebagai kelipatan yang tidak dapat dihitung.
     const increasePct = baseline > 0 ? (negative[index] - baseline) / baseline * 100 : Number.POSITIVE_INFINITY;
     if (!(increasePct > settings.thresholdPct)) continue;
-    findings.push({ start: first + index * size, end: first + (index + 1) * size, negative: negative[index], total: total[index], baseline, increasePct, reviews: members[index] });
+    findings.push({ start: windowStart + index * size, end: windowStart + (index + 1) * size, negative: negative[index], total: total[index], baseline, increasePct, reviews: members[index] });
   }
   findings.sort((a, b) => b.increasePct - a.increasePct || b.start - a.start);
+  const cut = scanned < used.length;
   const reason = findings.length ? null
-    : `Tidak ada satu pun jendela ${anomalyWindowNames[base.window]} dengan ${settings.minCurrent}+ ulasan negatif yang melampaui ${settings.thresholdPct}% di atas rata-rata ${baselineWindows} jendela sebelumnya (rentang ${count} jendela diperiksa).`;
-  return { ...base, ok: findings.length > 0, findings, peak: findings[0] || null, buckets: count, span: { first, last }, reason };
+    : `Tidak ada satu pun jendela ${anomalyWindowNames[base.window]} dengan ${settings.minCurrent}+ ulasan negatif yang melampaui ${settings.thresholdPct}% di atas rata-rata ${baselineWindows} jendela sebelumnya (${count} jendela terbaru diperiksa${cut ? `, ${used.length - scanned} baris terlama di luar jendela itu` : ''}).`;
+  return { ...base, ok: findings.length > 0, findings, peak: findings[0] || null, buckets: count, scanned, truncated: cut, span: { first: Math.max(first, windowStart), last }, reason };
 }
 // Pita NSS hanya label interpretasi di atas angka yang sudah dihitung; ambangnya ditulis
 // agar dapat diperdebatkan, bukan ditutup sebagai kebenaran ilmiah.
@@ -268,9 +277,14 @@ export function dailySeries(reviews, options = {}) {
   if (!dated.length) return { days: [], truncated: false, undated: reviews.length };
   const first = dated[0].date, last = dated.at(-1).date;
   const span = Math.floor((Date.parse(`${last}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86400000) + 1;
+  // Pagar memori diambil dari sisi TERBARU. Deret ini dipakai untuk melihat lonjakan terbaru:
+  // memotong dari tanggal pertama berarti hari-hari terakhir — yang paling perlu diperiksa —
+  // hilang tanpa terlihat, dan lencana lonjakan lalu menyatakan "tidak ada lonjakan".
+  const keep = Math.min(maxDays, span);
+  const windowStart = new Date(Date.parse(`${last}T00:00:00Z`) - (keep - 1) * 86400000).toISOString().slice(0, 10);
   const days = [];
-  const cursor = new Date(`${first}T00:00:00Z`);
-  while (days.length < maxDays && days.length < span) {
+  const cursor = new Date(`${windowStart}T00:00:00Z`);
+  while (days.length < keep) {
     days.push({ date: cursor.toISOString().slice(0, 10), positive: 0, negative: 0, neutral: 0, unclassified: 0, total: 0 });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
@@ -504,12 +518,12 @@ const reassurancePhrase = new RegExp(`\\b(?:(?:${negation}) ada|${negation}|tanp
 // "dana settlement belum masuk" tetap keluhan meskipun kata bendanya dipisah beberapa kata.
 const missingAsset = new RegExp(`\\b(?:dana|uang|settlement|transaksi|laporan|notifikasi|notif)\\b[^.!?]{0,25}?\\b(?:${negation})\\s+masuk\\b`);
 const negativeRule = new RegExp(`gagal|lambat|lemot|ribet|repot|jelek|cacat|rusak|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|\\b(?:${negation})\\s+(?:bisa|ada|update|acc|selesai)\\b|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|${missingAsset.source}|tidak menyelesaikan|bankke`);
-const positiveRule = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|\b(?:ok|oke|okok)\b/;
+const positiveRule = /bagus|mantap|mantp|mantab|mantul|terbaik|kereen|keren|luar biasa|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|recommended|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|suka banget|suka bgt|\b(?:ok|oke|okee|okey|okok)\b/;
 // Negasi dapat menempel pada kata penilaian: "gak ribet" bukan keluhan, "tidak ok" bukan pujian.
 // Pujian yang disangkal diubah menjadi kata keluhan baku (buruk), sedangkan kata keluhan yang
 // disangkal dihapus. Jendela satu kata membatasi pembersihan agar frasa seperti "tidak masalah,
 // semua lancar" tidak ikut tersapu.
-const praiseWords = 'bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|mudah dipakai|lancar|memuaskan|akurat|rekomendasi|puas|enak|simpel|lengkap|good|love|nice|ok|oke|okok';
+const praiseWords = 'bagus|mantap|mantp|mantab|mantul|terbaik|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|mudah dipakai|lancar|memuaskan|akurat|rekomendasi|recommended|puas|enak|simpel|lengkap|good|love|nice|ok|oke|okee|okok';
 const complaintWords = 'jelek|cacat|rusak|lemot|lambat|ribet|repot|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|error|crash|gagal';
 const negatedPraise = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${praiseWords})\\b`,'g');
 const negatedComplaint = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${complaintWords})\\b`,'g');
@@ -520,10 +534,14 @@ export function classifyText(text) {
   const resolved = successMarker.test(value);
   const hopeful = value.replace(hopeClause,' ');
   // Keluhan sebelum kegagalan terselesaikan dihitung sebagai riwayat; teks sesudahnya
-  // (misalnya "tapi dana belum masuk") tetap dinilai sebagai keluhan aktif.
+  // (misalnya "tapi dana belum masuk") tetap dinilai sebagai keluhan aktif. Riwayat yang
+  // dilunakkan hanya kegagalan akses ("gak bisa masuk" yang lalu "akhirnya bisa masuk").
+  // Keluhan dengan subjek sendiri — dana, laporan, notifikasi yang belum masuk — TIDAK ikut
+  // terlunaskan oleh klausa penyelesaian, karena klausa itu tidak memperbaikinya.
   const headAt = resolved ? hopeful.search(new RegExp(resolvedHead)) : -1;
+  const headResolved = headAt !== -1 && !missingAsset.test(hopeful.slice(0, headAt));
   const negativeScope = resolved && headAt !== -1
-    ? `${hopeful.slice(0,headAt).replace(negatedAbility,' ')} ${hopeful.slice(headAt).replace(resolvedClause,' ')}`
+    ? `${headResolved ? hopeful.slice(0,headAt).replace(negatedAbility,' ') : hopeful.slice(0,headAt)} ${hopeful.slice(headAt).replace(resolvedClause,' ')}`
     : hopeful.replace(reassurancePhrase,' ');
   const negative = negativeRule.test(scrubNegatedPolarity(negativeScope));
   const positive = positiveRule.test(scrubNegatedPolarity(hopeful)) || (resolved && !negative);
@@ -568,7 +586,7 @@ const targetWords = target => String(target?.entityName || target?.name || '')
 // sentimen hanya karena teksnya menyebut aplikasinya sendiri, bukan wondr merchant. Target lain
 // juga tidak menyaring teks karena merek saudara yang tidak dikenalnya.
 export function rulesFor(target) {
-  if (!target || target.id === builtInTargetId) return builtInRules;
+  if (!target || isWondrTarget(target)) return builtInRules;
   const words = targetWords(target);
   const label = target.name || target.entityName || 'project ini';
   const identityParts = [];
