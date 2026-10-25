@@ -489,7 +489,7 @@ export function clusterStats(reviews, sentiment = 'negative') {
 }
 // Satu daftar kata negasi dipakai bersama semua aturan agar frasa seperti "tak bisa masuk"
 // tidak pernah terbaca sebagai keberhasilan.
-const negation = 'tidak|belum|blum|blm|ga|gak|nggak|ngga|kagak|enggak|tak|tdk';
+const negation = 'tidak|bukan|belum|blum|blm|ga|gak|nggak|ngga|kagak|enggak|tak|tdk';
 // Klausa harapan ("semoga ...", "mudah-mudahan ...") adalah harapan akan perbaikan, bukan
 // keluhan yang sedang terjadi, jadi klausanya sendiri tidak dihitung sebagai negatif.
 const hopeClause = new RegExp(`(?:semoga|smoga|moga[\\s-]?2?|mudah[\\s-]?2?an|harapannya|insya\\s?allah|insyallah|aminn?)\\b[^,.!?]*`,'g');
@@ -509,7 +509,7 @@ const positiveRule = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memud
 // Pujian yang disangkal diubah menjadi kata keluhan baku (buruk), sedangkan kata keluhan yang
 // disangkal dihapus. Jendela satu kata membatasi pembersihan agar frasa seperti "tidak masalah,
 // semua lancar" tidak ikut tersapu.
-const praiseWords = 'bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|lancar|memuaskan|akurat|rekomendasi|puas|enak|simpel|good|love|nice|ok|oke|okok';
+const praiseWords = 'bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|mudah dipakai|lancar|memuaskan|akurat|rekomendasi|puas|enak|simpel|lengkap|good|love|nice|ok|oke|okok';
 const complaintWords = 'jelek|cacat|rusak|lemot|lambat|ribet|repot|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|error|crash|gagal';
 const negatedPraise = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${praiseWords})\\b`,'g');
 const negatedComplaint = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${complaintWords})\\b`,'g');

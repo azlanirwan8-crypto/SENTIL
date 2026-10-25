@@ -14,7 +14,7 @@ import { parsePlaySearchResults, parseItunesResults, buildDiscovery, discoverTar
 import { defaultTarget, normalizeTarget, identityPattern, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, emptyDataset, projectList, resolveProjectId,
-  projectTarget, createProject, projectIdFrom, defaultProjectId, defaultProject, removeProject,
+  projectTarget, createProject, projectIdFrom, defaultProjectId, defaultProject, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 
 // Berkas tersimpan kini memuat beberapa project; pemeriksaan lama cukup membuka dataset project aktif.
@@ -91,6 +91,10 @@ test('hope clauses and resolved failures are not read as active complaints',()=>
 test('negation, later complaints and wrong-product text stay honest after the classifier review',()=>{
   assert.equal(classifyText('aplikasi tak bisa masuk, data ga muncul').sentiment,'negative','negasi tak/kagak bukan keberhasilan');
   assert.equal(classifyText('aplikasi kagak bisa dibuka sama sekali').sentiment,'negative');
+  assert.equal(classifyText('tidak mudah digunakan').sentiment,'negative','pujian yang disangkal ("mudah digunakan") dibalik menjadi keluhan');
+  assert.equal(classifyText('fiturnya tidak lengkap').sentiment,'negative');
+  assert.equal(classifyText('bukan aplikasi bagus').sentiment,'negative','"bukan" ikut sebagai penyangkal');
+  assert.equal(classifyText('aplikasi ini bagus dan lengkap').sentiment,'positive','penyangkalan tidak mengubah pujian yang tidak disangkal');
   assert.equal(classifyText('jelek sekali aplikasinya').sentiment,'negative','kosakata keluhan umum tidak dibiarkan tanpa label');
   assert.equal(classifyText('akhirnya bisa masuk aplikasi, tapi dana settlement belum masuk').sentiment,'negative','keluhan sesudah klausa penyelesaian tetap dihitung');
   assert.equal(classifyText('semoga lancar terus ya aplikasinya').sentiment,'unclassified','harapan saja tidak dijadikan pujian');
@@ -2317,6 +2321,30 @@ test('The pull endpoint runs without any login, but still refuses other sites', 
   }
 });
 
+test('Fungsi serverless menolak perubahan project tanpa header peramban', async () => {
+  const project = await import('./api/project.js');
+  let calls = 0;
+  const run = async body => { calls += 1; return { ok: true, action: body.action }; };
+  const request = headers => ({
+    method: 'POST', url: '/api/project', headers,
+    async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ action: 'delete', project: 'kasir-toko' })); },
+  });
+  const anonymous = mockResponse();
+  await project.default(request({ host: 'situs.example.com' }), anonymous, run);
+  assert.equal(anonymous.status, 403, 'tanpa Origin dan Sec-Fetch-Site, permintaan dianggap skrip');
+  const curlLike = mockResponse();
+  await project.default(request({ host: 'situs.example.com', 'sec-fetch-site': 'none' }), curlLike, run);
+  assert.equal(curlLike.status, 403, 'curl tanpa Origin tidak dapat menghapus project');
+  const forged = mockResponse();
+  await project.default(request({ host: 'situs.example.com', origin: 'https://pengiklan.example' }), forged, run);
+  assert.equal(forged.status, 403);
+  assert.equal(calls, 0, 'semua penolakan terjadi sebelum penyimpanan disentuh');
+  const browser = mockResponse();
+  await project.default(request({ host: 'situs.example.com', 'sec-fetch-site': 'same-origin' }), browser, run);
+  assert.equal(browser.status, 200, 'peramban pada halaman yang sama tetap dilayani tanpa akun');
+  assert.equal(calls, 1);
+});
+
 test('Middleware requires Basic credentials on every path once they are configured', async () => {
   process.env.DASHBOARD_USER = 'pemilik';
   process.env.DASHBOARD_PASSWORD = 'sandi-panjang';
@@ -2415,10 +2443,18 @@ test('Berkas v2 yang cacat diperbaiki tanpa menghapus dataset yang tidak dikenal
   assert.equal(repaired.datasets[defaultProjectId].reviews.length, seedReviews.length);
   const missing = migrateStore({ version: storeVersion, activeProject: defaultProjectId, projects: [defaultProject(), { id: 'kosong', name: 'Kosong', entity: 'Kosong', target: defaultTarget }] });
   assert.equal(missing.datasets.kosong.reviews.length, 0, 'project tanpa dataset dibuatkan dataset kosong');
+  // Project bawaan disisipkan setelah dataset disemaikan. Urutan itu meninggalkan project aktif
+  // tanpa dataset sama sekali, sehingga `/api/data` menjawab tanpa kunci reviews.
+  const orphan = migrateStore({ version: storeVersion, activeProject: 'tidak-dikenal', projects: [{ id: 'peninggalan', name: 'Peninggalan', entity: 'Peninggalan', target: defaultTarget }], datasets: { peninggalan: { reviews: seedReviews, sources: [], runs: [], lastRun: null, batch: null } } });
+  assert.equal(orphan.activeProject, defaultProjectId);
+  assert.equal(orphan.datasets[defaultProjectId].reviews.length, 0, 'project bawaan yang disisipkan ikut mendapat dataset');
+  assert.equal(orphan.datasets.peninggalan.reviews.length, seedReviews.length, 'dataset peninggalan tidak dibuang');
 });
 
-const projectFetch = async (base, path, options) => {
-  const response = await fetch(base + path, options);
+// Header Sec-Fetch-Site hanya dipasang peramban; jalur perubahan project menolaknya bila tidak
+// ada, jadi permintaan uji menyertakannya. Uji penolakan memakai fetch langsung.
+const projectFetch = async (base, path, options = {}) => {
+  const response = await fetch(base + path, { ...options, headers: { 'sec-fetch-site': 'same-origin', ...(options.headers || {}) } });
   return { status: response.status, body: await response.json().catch(() => null) };
 };
 test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengikuti target project', async () => {
@@ -2479,12 +2515,48 @@ test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengiku
     assert.equal(saved.datasets['kasir-toko'].reviews.length, 1);
     assert.equal(saved.datasets[defaultProjectId].reviews.length, seedReviews.length);
 
+    // Ganti nama hanya mengubah label: ID, dataset, dan project aktif tidak boleh bergerak.
+    const renamed = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rename', project: 'kasir-toko', name: 'Kasir Toko Baru' }) });
+    assert.equal(renamed.status, 200);
+    assert.deepEqual(renamed.body.projects.map(project => project.name), ['wondr merchant by BNI', 'Kasir Toko Baru'], 'project bawaan tetap di urutan pertama');
+    assert.equal(renamed.body.activeProject, 'kasir-toko', 'ganti nama tidak memindahkan project aktif');
+    assert.equal(renamed.body.reviews.length, 1, 'dataset project tetap terbaca di bawah nama barunya');
+    const renamedFile = JSON.parse(await readFile(storagePath, 'utf8'));
+    assert.equal(renamedFile.datasets['kasir-toko'].reviews.length, 1, 'ganti nama tidak menulis ulang atau memindahkan dataset');
+    assert.equal(renamedFile.datasets[defaultProjectId].reviews.length, seedReviews.length);
+    assert.equal(renamedFile.projects.find(project => project.id === 'kasir-toko').target.play.appId, 'com.toko.kasir', 'identitas toko tidak ikut berubah');
+    const renameShort = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rename', project: 'kasir-toko', name: ' K ' }) });
+    assert.equal(renameShort.status, 400);
+    assert.match(renameShort.body.error, /project_name/);
+    const renameClash = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rename', project: 'kasir-toko', name: 'WONDR MERCHANT BY BNI' }) });
+    assert.equal(renameClash.status, 400);
+    assert.match(renameClash.body.error, /project_exists/, 'nama harus unik tanpa bergantung pada huruf besar');
+    assert.equal((await projectFetch(base, '/api/data')).body.projects.map(project => project.name).join('|'), 'wondr merchant by BNI|Kasir Toko Baru', 'nama tetap yang lama setelah rename gagal');
+    const renameBlind = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rename', name: 'Tanpa ID' }) });
+    assert.equal(renameBlind.status, 400);
+    assert.match(renameBlind.body.error, /project_required/);
+    const renameUnknown = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'rename', project: 'tidak-ada', name: 'Entitas Baru' }) });
+    assert.equal(renameUnknown.status, 400);
+    assert.match(renameUnknown.body.error, /project_unknown/);
+
     // Penghapusan tanpa ID eksplisit harus ditolak: bawaan "project aktif" akan menghapus
     // dataset yang sedang dibuka pengguna.
     const blindDelete = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete' }) });
     assert.equal(blindDelete.status, 400);
     assert.match(blindDelete.body.error, /project_required/);
     assert.equal((await projectFetch(base, '/api/data')).body.projects.length, 2, 'percobaan hapus tanpa ID tidak menghapus apa pun');
+
+    // ID project yang tidak menghasilkan slug sah tidak boleh jatuh kembali ke project aktif:
+    // "###" adalah permintaan hapus yang menyamar, bukan permintaan terhadap project bawaan.
+    const junkId = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', project: '###' }) });
+    assert.equal(junkId.status, 400);
+    assert.match(junkId.body.error, /project_unknown/, 'ID project tanpa huruf dan angka ditolak, tidak menghapus project aktif');
+    assert.equal((await projectFetch(base, '/api/data')).body.projects.length, 2, 'dataset project aktif tidak tersentuh ID palsu');
+
+    // Permintaan tanpa header peramban (misalnya curl anonim) tidak boleh mengubah project.
+    const anonymous = await fetch(`${base}/api/project`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', project: 'kasir-toko' }) });
+    assert.equal(anonymous.status, 403, 'tanpa Sec-Fetch-Site/Origin dari peramban, perubahan project ditolak');
+    assert.equal((await projectFetch(base, '/api/data')).body.projects.length, 2, 'percobaan anonim tidak menghapus project');
 
     const removed = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', project: 'kasir-toko' }) });    assert.equal(removed.status, 200);
     assert.equal(removed.body.projects.length, 1, 'daftar project berkurang satu');
@@ -2502,6 +2574,43 @@ test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengiku
     await new Promise(resolve => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('Pemeriksa ID tindakan merusak tidak pernah jatuh ke project aktif', () => {
+  const store = initialStore();
+  store.projects.push(createProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }));
+  store.datasets['kasir-toko'] = emptyDataset();
+  store.activeProject = 'kasir-toko';
+  assert.equal(strictProjectId(store, 'kasir-toko'), 'kasir-toko');
+  assert.equal(strictProjectId(store, 'Kasir Toko'), 'kasir-toko', 'nama project boleh dipakai sebagai ID');
+  assert.throws(() => strictProjectId(store, '###'), /project_unknown/, 'ID yang dilicinkan menjadi kosong tidak menyentuh project aktif');
+  assert.throws(() => strictProjectId(store, '   '), /project_required/);
+  assert.throws(() => strictProjectId(store, undefined), /project_required/);
+  assert.throws(() => strictProjectId(store, ''), /project_required/);
+  assert.throws(() => strictProjectId(store, 'tidak-ada'), /project_unknown/);
+  assert.equal(store.activeProject, 'kasir-toko', 'penolakan tidak memindahkan project aktif');
+});
+
+test('Ganti nama project hanya mengubah label dan menolak nama duplikat', () => {
+  const store = initialStore();
+  store.projects.push(createProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }));
+  store.datasets['kasir-toko'] = emptyDataset();
+  store.activeProject = 'kasir-toko';
+  const datasetRef = store.datasets['kasir-toko'];
+  const targetBefore = store.projects[1].target;
+  const renamed = renameProject(store, 'kasir-toko', '  Kasir Toko Baru  ');
+  assert.equal(renamed.name, 'Kasir Toko Baru', 'spasi di tepi nama dibuang');
+  assert.equal(renamed.id, 'kasir-toko');
+  assert.equal(renamed.target, targetBefore, 'identitas toko tidak ikut berubah');
+  assert.equal(store.activeProject, 'kasir-toko');
+  assert.equal(store.datasets['kasir-toko'], datasetRef, 'dataset tetap pada ID yang sama');
+  assert.equal(store.projects[0].name, 'wondr merchant by BNI', 'project lain tidak tersentuh');
+  assert.throws(() => renameProject(store, 'kasir-toko', 'B'), /project_name/);
+  assert.throws(() => renameProject(store, 'kasir-toko', 'x'.repeat(81)), /project_name/);
+  assert.throws(() => renameProject(store, 'kasir-toko', 'WONDR MERCHANT BY BNI'), /project_exists/);
+  assert.throws(() => renameProject(store, 'tidak-ada', 'Nama Baru'), /project_unknown/);
+  assert.equal(renameProject(store, defaultProjectId, 'Wondr Merchant').name, 'Wondr Merchant', 'project bawaan boleh diberi nama tampilan lain');
+  assert.equal(projectTarget(store, defaultProjectId).play.appId, defaultTarget.play.appId, 'target bawaan tidak bergantung pada nama');
 });
 
 test('Penghapusan project hanya menerima project yang terdaftar dan bukan bawaan', () => {

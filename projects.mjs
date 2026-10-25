@@ -72,8 +72,10 @@ export function migrateStore(saved) {
   if (saved && saved.version === storeVersion && Array.isArray(saved.projects)) {
     const datasets = saved.datasets && typeof saved.datasets === 'object' ? saved.datasets : {};
     const known = new Set(saved.projects.map(project => project.id));
-    for (const project of saved.projects) if (!datasets[project.id]) datasets[project.id] = emptyDataset();
     const projects = saved.projects.some(project => project.id === defaultProjectId) ? saved.projects : [defaultProject(), ...saved.projects];
+    // Dataset disemaikan setelah daftar project lengkap: project bawaan yang disisipkan di baris
+    // sebelumnya harus ikut punya dataset, jika tidak `/api/data` menjawab tanpa kunci reviews.
+    for (const project of projects) if (!datasets[project.id]) datasets[project.id] = emptyDataset();
     const activeProject = known.has(saved.activeProject) ? saved.activeProject : defaultProjectId;
     return { ...saved, version: storeVersion, projects, datasets, activeProject };
   }
@@ -96,7 +98,10 @@ export function projectList(store) {
       stores: [project.target?.play?.appId ? `Google Play ${project.target.play.appId}` : null,
         project.target?.appstore?.appId ? `App Store ${project.target.appstore.appId}` : null].filter(Boolean).join(' · ') || 'identitas toko belum lengkap',
     };
-  }).sort((a, b) => (a.createdAt || '9999').localeCompare(b.createdAt || '9999') || a.name.localeCompare(b.name));
+  // Project bawaan selalu di atas, sisanya menurut waktu dibuat lalu nama. Nama tidak boleh
+  // menjadi penentu utama: mengganti nama project tidak boleh memindahkan posisinya di pemilih.
+  }).sort((a, b) => Number(b.builtIn) - Number(a.builtIn)
+    || (a.createdAt || '9999').localeCompare(b.createdAt || '9999') || a.name.localeCompare(b.name));
 }
 
 export function findProject(store, id) {
@@ -134,6 +139,31 @@ export function requiredProjectId(value) {
   const id = String(value ?? '').trim();
   if (!id) throw new Error('project_required: tindakan ini wajib menyertakan ID project secara eksplisit');
   return id;
+}
+
+// Penghapus dan pengganti nama memakai pemeriksa ketat ini, bukan resolveProjectId: nilai yang
+// tidak menghasilkan ID sah (misalnya "###") akan jatuh kembali ke project aktif dan justru
+// menghapus dataset yang sedang dibuka pengguna.
+export function strictProjectId(store, value) {
+  const id = projectIdFrom(requiredProjectId(value));
+  if (!id) throw new Error('project_unknown: ID project tidak menghasilkan nama yang dapat dipakai');
+  if (!findProject(store, id)) throw new Error('project_unknown: project yang diminta tidak terdaftar');
+  return id;
+}
+
+// Mengganti nama tampilan sebuah project. ID, entitas, dan identitas toko tidak ikut berubah:
+// nama hanyalah label, sedangkan data yang tersimpan terikat pada identitas toko.
+export function renameProject(store, id, name) {
+  const project = findProject(store, id);
+  if (!project) throw new Error('project_unknown: project yang diminta tidak terdaftar');
+  const projectName = String(name || '').trim();
+  if (projectName.length < 2) throw new Error('project_name: nama project minimal dua karakter');
+  if (projectName.length > 80) throw new Error('project_name: nama project maksimal 80 karakter');
+  if (store.projects.some(other => other.id !== project.id && other.name.toLowerCase() === projectName.toLowerCase()))
+    throw new Error('project_exists: nama itu sudah dipakai project lain');
+  project.name = projectName;
+  project.updatedAt = new Date().toISOString();
+  return project;
 }
 
 // Menghapus project beserta datasetnya. Ini satu-satunya jalur yang membuang baris ulasan, jadi

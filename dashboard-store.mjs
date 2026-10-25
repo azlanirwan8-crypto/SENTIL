@@ -3,6 +3,7 @@
 // dan ditulis ke DATA_PATH agar penarikan berikutnya tetap memakai riwayat yang sama.
 // Berkas yang sama memuat beberapa project; setiap project punya dataset sendiri.
 import { readFile, writeFile, rename, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
 import { withAbsa } from './model.js';
@@ -10,7 +11,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, requiredProjectId,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
@@ -59,9 +60,20 @@ async function renameWithRetry(from, to) {
 
 // Ditulis ke berkas sementara lalu dipindahkan agar pembaca berikutnya tidak pernah melihat
 // berkas setengah tertulis, dan kegagalan dilaporkan, tidak ditelan diam-diam.
-async function writeStored(store) {
+// Satu instance dapat menangani beberapa permintaan sekaligus: antrean membuat setiap pemindahan
+// selesai sebelum yang berikutnya mulai, dan nama sementara yang unik membuat dua penulisan tidak
+// saling menimpa — berkas data yang tidak dapat dibaca ulang berarti seluruh ulasan hilang.
+let writeQueue = Promise.resolve();
+
+function writeStored(store) {
+  const task = writeQueue.then(() => writeOnce(store));
+  writeQueue = task.catch(() => {});
+  return task;
+}
+
+async function writeOnce(store) {
   const path = storagePath();
-  const temporary = `${path}.${process.pid}.tmp`;
+  const temporary = `${path}.${randomUUID()}.tmp`;
   try {
     await writeFile(temporary, JSON.stringify(store, null, 2), 'utf8');
     await renameWithRetry(temporary, path);
@@ -133,12 +145,16 @@ export async function discover({ entity, fetcher = fetch }) {
 // Membuat project baru dari hasil penemuan yang sudah dikonfirmasi, atau dari ID toko yang
 // diisi manual. Dataset baru dimulai kosong; data awal hanya milik project bawaan.
 export async function addProject({ name, entity, discovery, playAppId, appleAppId }) {
+  if (running) throw new Error('busy');
   const store = await loadStore();
   const target = discovery
     ? targetFromDiscovery({ discovery, name, id: projectIdFrom(name || entity) })
     : normalizeTarget({ name, entityName: entity, playAppId, appleAppId });
   const project = createProject({ name: name || entity, entity, target });
   if (findProject(store, project.id)) throw new Error('project_exists: project dengan nama itu sudah ada');
+  // Dataset yatim tidak boleh ditimpa: hanya penghapusan yang disengaja yang boleh membuang baris.
+  if ((store.datasets[project.id]?.reviews?.length || 0) > 0)
+    throw new Error('project_data_exists: data lama dengan nama itu masih tersimpan, pakai nama lain');
   store.projects.push(project);
   store.datasets[project.id] = readyDataset(emptyDataset(), projectTarget(store, project.id));
   store.activeProject = project.id;
@@ -148,9 +164,21 @@ export async function addProject({ name, entity, discovery, playAppId, appleAppI
 }
 
 export async function activateProject(project) {
+  if (running) throw new Error('busy');
   const store = await loadStore();
   const id = resolveProjectId(store, project);
   store.activeProject = id;
+  await writeStored(store);
+  return view(id);
+}
+
+// Mengganti nama project tanpa menyentuh dataset maupun identitas tokonya.
+export async function editProject({ project, name }) {
+  if (running) throw new Error('busy');
+  const store = await loadStore();
+  const id = strictProjectId(store, project);
+  renameProject(store, id, name);
+  cache = store;
   await writeStored(store);
   return view(id);
 }
@@ -160,7 +188,7 @@ export async function activateProject(project) {
 export async function dropProject(project) {
   if (running) throw new Error('busy');
   const store = await loadStore();
-  const id = resolveProjectId(store, requiredProjectId(project));
+  const id = strictProjectId(store, project);
   removeProject(store, id);
   cache = store;
   await writeStored(store);

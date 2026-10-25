@@ -9,7 +9,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, requiredProjectId,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 import { withAbsa } from './model.js';
 
@@ -114,6 +114,10 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       : normalizeTarget({ name, entityName: entity, playAppId, appleAppId });
     const project = createProject({ name: name || entity, entity, target });
     if (findProject(store, project.id)) throw new Error('project_exists: project dengan nama itu sudah ada');
+    // Dataset yatim (ID masih ada di berkas, project-nya tidak) tidak boleh ditimpa: itu satu-satunya
+    // jalan yang bisa menghilangkan baris ulasan selain penghapusan yang disengaja.
+    if ((store.datasets[project.id]?.reviews?.length || 0) > 0)
+      throw new Error('project_data_exists: data lama dengan nama itu masih tersimpan, pakai nama lain');
     // Dataset baru langsung dibaca dengan status konfigurasi terkini: kanal tanpa kunci tampil
     // "perlu konfigurasi", kanal toko diberi keterangan "belum diambil pada project ini".
     const next = { ...store, projects: [...store.projects, project] };
@@ -127,10 +131,18 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     await persist(store);
     return view(id);
   };
+  // Mengganti nama project; dataset dan identitas toko tidak disentuh.
+  const editProject = async ({ project, name }) => {
+    const next = { ...store, projects: store.projects.map(item => ({ ...item })), datasets: { ...store.datasets } };
+    const renamed = renameProject(next, strictProjectId(next, project), name);
+    await persist(next);
+    store = next;
+    return view(renamed.id);
+  };
   // Menghapus project non-bawaan beserta datasetnya; project aktif dikembalikan ke bawaan.
   const dropProject = async project => {
     const next = { ...store, projects: [...store.projects], datasets: { ...store.datasets } };
-    removeProject(next, resolveProjectId(next, requiredProjectId(project)));
+    removeProject(next, strictProjectId(next, project));
     await persist(next);
     store = next;
     return view(next.activeProject);
@@ -152,6 +164,13 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     catch { json(400,{error:'Alamat permintaan tidak dapat dibaca.'}); return; }
     const path = url.pathname;
     const sameSite = !((req.headers.origin && req.headers.origin !== `${String(req.headers['x-forwarded-proto'] || config.scheme).split(',')[0].trim()}://${req.headers.host}`) || req.headers['sec-fetch-site'] === 'cross-site');
+    // Aksi yang mengubah project (buat, ganti nama, aktifkan, hapus) memakai pemeriksaan lebih
+    // ketat: tanpa Origin dan tanpa Sec-Fetch-Site sama sekali, permintaan dianggap skrip. Kedua
+    // header hanya dipasang peramban sehingga dasbor tetap terbuka tanpa akun.
+    const site = String(req.headers['sec-fetch-site'] || '');
+    const fromPage = site !== 'cross-site' && site !== 'none' && (req.headers.origin
+      ? req.headers.origin === `${String(req.headers['x-forwarded-proto'] || config.scheme).split(',')[0].trim()}://${req.headers.host}`
+      : site === 'same-origin');
     // /api/status dibiarkan tanpa kredensial karena host memakai endpoint itu untuk pemeriksaan kesehatan.
     if (config.user && path !== '/api/status') {
       const [method, encoded = ''] = String(req.headers.authorization || '').split(' ');
@@ -175,11 +194,12 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       return;
     }
     if (path === '/api/project' && req.method === 'POST') {
-      if (!sameSite) { json(403,{error:'Permintaan lintas situs ditolak.'}); return; }
+      if (!sameSite || !fromPage) { json(403,{error:'Permintaan dari luar halaman ini ditolak.'}); return; }
       try {
         const body = await readJsonBody(req);
         const action = String(body.action || 'create');
         if (action === 'activate') { json(200, await activateProject(body.project)); return; }
+        if (action === 'rename') { json(200, await editProject(body)); return; }
         if (action === 'delete') {
           if (running) { json(409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
           json(200, await dropProject(body.project));

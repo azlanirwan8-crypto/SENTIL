@@ -140,12 +140,16 @@ function notify(text, kind) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('visible'),failure?9000:4500);
 }
+// Satu penyaring untuk semua angka dasbor: filterReviews hanya mengenal platform, tanggal,
+// sentimen, teks, dan topik, jadi aspek (yang diturunkan dari baris) ditutup di sini. Baris yang
+// dipakai grafik, tabel, dan jumlah setiap pilihan selalu berasal dari fungsi yang sama.
+function scopedRows({ platform = 'all', from = '', to = '', sentiment = 'all', query = '', tag = '', aspect = '' } = {}) {
+  const rows = filterReviews(reviews, { platform, from, to, sentiment, query, tag });
+  return aspect ? rows.filter(r => absaOf(r).aspects.includes(aspect)) : rows;
+}
 function analyticalReviews() {
   // Seluruh filter berlaku untuk seluruh grafik dan tabel, bukan hanya tabel ulasan.
-  const rows = filterReviews(reviews,{ platform:state.platform, from:state.from, to:state.to, sentiment:state.sentiment, query:state.query, tag:state.tag });
-  // Filter aspek berlaku untuk seluruh grafik dan tabel: aspek diturunkan dari barisnya,
-  // jadi angka yang tampil selalu berasal dari teks yang sama.
-  return state.aspect ? rows.filter(r => absaOf(r).aspects.includes(state.aspect)) : rows;
+  return scopedRows({ platform: state.platform, from: state.from, to: state.to, sentiment: state.sentiment, query: state.query, tag: state.tag, aspect: state.aspect });
 }
 function visibleReviews() {
   if (state.complaint) {
@@ -193,22 +197,23 @@ const fetchedCount = source => numericCount(source?.fetched);
 function wasFetched(source) {
   return source && !awaitingSource(source) && source.status !== 'snapshot' && (source.fetched === true || fetchedCount(source) > 0 || (['success','partial'].includes(source.status) && source.fetched !== false));
 }
-// Bilah project di atas menu: jumlah project, pemilih project aktif, dan tombol tambah.
-// Semua angka pada baris ini dihitung dari daftar project yang dikirim server, bukan
-// perkiraan, sehingga "3 project" selalu berarti tiga dataset yang benar-benar tersimpan.
+// Bilah project: hanya pemilih project aktif dan dua tombol ikon — tambah project, dan
+// kelola project (ubah nama / hapus). Identitas toko tidak ditampilkan di sini supaya bilah
+// tetap fokus; rincian itu ada di dialog kelola dan menu Platform.
 const projectOptions = () => projects.list.map(project => `<option value="${esc(project.id)}" ${project.id === projects.active ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
 function projectBar() {
-  const count = projects.list.length;
   const active = projects.list.find(project => project.id === projects.active) || null;
+  // Tombol project ikut dikunci selama ada permintaan berjalan (memindahkan project, menarik
+  // data): klik di tengah permintaan akan menghasilkan notifikasi "tunggu", bukan tindakan.
+  const busy = isBusy() || sync.requesting;
+  const idle = busy ? ' disabled' : '';
   return `<section class="project-bar" aria-label="Project analisis">
-    <div class="project-count"><strong>${sync.loaded ? integer(count) : '—'}</strong><span>project dibuat</span></div>
     <label class="project-pick"><span class="sr-only">Project aktif</span>
-      <select class="project-select" aria-label="Pilih project aktif">${projectOptions()}</select>
-      <span class="project-entity">${esc(active ? `${active.entity} · ${active.stores}` : 'Belum ada project terbuka')}</span>
+      <select class="project-select" aria-label="Pilih project aktif"${idle}>${projectOptions()}</select>
     </label>
     <div class="project-actions">
-      <button class="btn project-add" data-action="add-project" title="Tambah project analisis">${icon('plus')}<span class="project-add-label">Tambah project</span></button>
-      ${active && !active.builtIn ? `<button class="btn project-remove" data-action="delete-project" aria-label="Hapus project aktif beserta datanya" title="Hapus project aktif beserta datanya">${icon('trash')}<span class="project-add-label">Hapus</span></button>` : ''}
+      <button class="project-button" data-action="add-project" aria-label="Tambah project" title="Tambah project"${idle}>${icon('plus')}</button>
+      <button class="project-button" data-action="manage-project" aria-label="Kelola project aktif" title="Ubah nama atau hapus project"${active && !busy ? '' : ' disabled'}>${icon('pen')}</button>
     </div>
   </section>`;
 }
@@ -238,11 +243,16 @@ function filters() {
   // yang sedang dipilih, angka aspek mengabaikan aspek, angka topik mengabaikan topik. Dengan
   // begitu pilihan lain tetap menunjukkan jumlah yang benar dan bukan nol semu.
   const analysis = state.view !== 'platforms';
-  const content = { from: state.from, to: state.to, sentiment: state.sentiment, query: state.query, tag: state.tag };
-  const platformBase = analysis ? filterReviews(reviews, content) : filterReviews(reviews, { from: state.from, to: state.to });
-  const aspectBase = analysis ? filterReviews(reviews, { ...content, platform: state.platform }) : filterReviews(reviews, { platform: 'all', from: state.from, to: state.to });
+  // Setiap basis menghitung satu pilihan dengan memakai semua filter lain, termasuk aspek.
+  // Karena pilihan dan grafik memakai penyaring yang sama, angka pilihan tidak pernah lebih
+  // besar daripada himpunan teks yang benar-benar dibaca dasbor.
+  const active = { platform: state.platform, from: state.from, to: state.to, sentiment: state.sentiment, query: state.query, tag: state.tag, aspect: state.aspect };
+  const within = only => scopedRows(analysis ? only : { from: state.from, to: state.to });
+  const platformBase = within({ ...active, platform: 'all' });
+  const aspectBase = within({ ...active, aspect: '' });
+  const sentimentBase = within({ ...active, sentiment: 'all' });
+  const topicBase = within({ ...active, tag: '' });
   const aspects = aspectStats(aspectBase, 'all').filter(a => a.total > 0);
-  const topicBase = filterReviews(reviews, { ...content, platform: state.platform });
   const topicCounts = new Map();
   for (const r of topicBase) for (const t of new Set(reviewTags(r))) topicCounts.set(t, (topicCounts.get(t) || 0) + 1);
   const contentActive = Boolean(state.query) || Boolean(state.tag) || (state.sentiment !== 'all' && !state.complaint && !state.cluster);
@@ -253,21 +263,24 @@ function filters() {
         ${platforms.map(p => { const count = platformBase.filter(r => r.platform === p.id).length, source = sourceFor(p), unavailable = !count && source.status !== 'success'; return `<button class="platform-tab ${state.platform===p.id?'active':''}" data-platform="${esc(p.id)}" aria-pressed="${state.platform===p.id}"><span style="color:${state.platform===p.id?color(p.color):'inherit'};display:flex">${icon(p.icon)}</span>${esc(p.short)}<span class="count" title="${unavailable?esc(sourceStatusNames[source.status]):`${count} ulasan tersimpan`}">${unavailable?'—':count}</span></button>`; }).join('')}
       </div>
     </div>
-    <div class="aspect-filter" role="group" aria-label="Filter aspek pengalaman">
+    ${analysis ? `<div class="aspect-filter" role="group" aria-label="Filter aspek pengalaman">
       <button class="aspect-pill ${state.aspect===''?'active':''}" data-aspect="" aria-pressed="${state.aspect===''}" title="Tampilkan seluruh aspek pengalaman">Semua aspek<span class="count">${integer(aspectBase.length)}</span></button>
       ${aspects.map(a => `<button class="aspect-pill ${state.aspect===a.id?'active':''}" data-aspect="${esc(a.id)}" aria-pressed="${state.aspect===a.id}" title="${esc(`${a.name}: ${a.total} ulasan, ${a.negative} negatif`)}">${esc(a.name)}<span class="count">${integer(a.total)}${a.negative?` · ${integer(a.negative)}−`:''}</span></button>`).join('')}
-    </div>
-    ${analysis ? `<div class="content-filter">
-      <div class="sentiment-tabs" role="group" aria-label="Filter sentimen">${Object.entries({ all: 'Semua', ...sentimentNames }).map(([id, label]) => `<button class="sentiment-tab ${state.sentiment===id?'active':''}" data-sentiment="${esc(id)}" aria-pressed="${state.sentiment===id}">${esc(label)}${id==='all' ? '' : `<span class="count">${integer(aspectBase.filter(r => r.sentiment === id).length)}</span>`}</button>`).join('')}</div>
-      <label class="search-box">${icon('search')}<input type="search" id="review-search" value="${esc(state.query)}" placeholder="Cari ulasan atau nama…" aria-label="Cari ulasan atau nama"></label>
-      <select class="tag-filter" id="tag-filter" aria-label="Filter topik"><option value="">Semua topik (${integer(aspectBase.length)})</option>${Object.entries(tags).map(([id,label])=>`<option value="${esc(id)}" ${state.tag===id?'selected':''} style="color:${esc(tagColors[id]||'#5e6374')}">${esc(label)} (${integer(topicCounts.get(id)||0)})</option>`).join('')}</select>
     </div>` : ''}
-    ${state.aspect?`<div class="active-filter"><span>Aspek aktif: <strong>${esc(aspectNames[state.aspect]||state.aspect)}</strong> — seluruh grafik dan tabel mengikuti filter ini</span><button class="btn-text" data-action="clear-aspect" aria-label="Hapus filter aspek">Hapus filter ${icon('close')}</button></div>`:''}
+    ${analysis ? `<div class="content-filter">
+      <div class="sentiment-tabs" role="group" aria-label="Filter sentimen">${Object.entries({ all: 'Semua', ...sentimentNames }).map(([id, label]) => `<button class="sentiment-tab ${state.sentiment===id?'active':''}" data-sentiment="${esc(id)}" aria-pressed="${state.sentiment===id}">${esc(label)}${id==='all' ? '' : `<span class="count">${integer(sentimentBase.filter(r => r.sentiment === id).length)}</span>`}</button>`).join('')}</div>
+      <label class="search-box">${icon('search')}<input type="search" id="review-search" value="${esc(state.query)}" placeholder="Cari ulasan atau nama…" aria-label="Cari ulasan atau nama"></label>
+      <select class="tag-filter" id="tag-filter" aria-label="Filter topik"><option value="">Semua topik (${integer(topicBase.length)})</option>${Object.entries(tags).map(([id,label])=>`<option value="${esc(id)}" ${state.tag===id?'selected':''} style="color:${esc(tagColors[id]||'#5e6374')}">${esc(label)} (${integer(topicCounts.get(id)||0)})</option>`).join('')}</select>
+    </div>` : ''}
+    ${analysis && state.aspect?`<div class="active-filter"><span>Aspek aktif: <strong>${esc(aspectNames[state.aspect]||state.aspect)}</strong> — seluruh grafik dan tabel mengikuti filter ini</span><button class="btn-text" data-action="clear-aspect" aria-label="Hapus filter aspek">Hapus filter ${icon('close')}</button></div>`:''}
     ${analysis && contentActive?`<div class="active-filter"><span>Konten aktif: ${state.tag?`<strong>${esc(tags[state.tag]||state.tag)}</strong> · `:''}${state.sentiment!=='all'?`sentimen <strong>${esc(sentimentNames[state.sentiment])}</strong> · `:''}${state.query?`kata kunci <strong>${esc(state.query)}</strong> · `:''}seluruh grafik dan tabel mengikuti filter ini</span><button class="btn-text" data-action="clear-content" aria-label="Hapus filter konten">Hapus filter ${icon('close')}</button></div>`:''}
   </section>`;
 }
 function metricCards(data) {
   const s = summary(data), sources = new Set(data.map(r=>r.platform)).size;
+  // Arah NSS memakai pita yang sama dengan gauge, termasuk batas sampel: dua label untuk angka
+  // yang sama membuat pembaca mengira dasbor mengukur dua hal berbeda.
+  const band = nssBand(s.nss, s.classified);
   const source = state.platform === 'all' ? null : sourceFor(platformById(state.platform));
   const unavailable = source && !reviews.some(r=>r.platform===state.platform) && source.status !== 'success';
   const excluded = data.filter(r=>r.relevance?.status==='excluded').length;
@@ -277,7 +290,7 @@ function metricCards(data) {
     {label:'Total ulasan',value:unavailable?'—':integer(s.total),unit:'',icon:'message',cls:'',sub:sources?`<strong>${integer(sources)} kanal</strong> memiliki ulasan`:unavailable?'<strong>Data belum tersedia</strong> dari sumber ini':'<strong>Belum ada ulasan</strong> pada filter ini',width:0},
     {label:'Sentimen positif',value:s.classified?number(s.positivePct):'—',unit:s.classified?'%':'',icon:'smile',cls:'positive',sub:`<strong>${s.positive} ulasan</strong> dari ${s.classified} ulasan berlabel`,width:s.positivePct||0},
     {label:'Sentimen negatif',value:s.classified?number(s.negativePct):'—',unit:s.classified?'%':'',icon:'frown',cls:'negative',sub:`<strong>${s.negative} ulasan</strong> dari ${s.classified} ulasan berlabel`,width:s.negativePct||0},
-    {label:'Skor sentimen neto (NSS)',value:s.classified?`${s.nss>0?'+':''}${number(s.nss)}`:'—',unit:'',icon:'pulse',cls:'nss',sub:s.classified?`<strong>${s.nss>10?'Cenderung positif':s.nss>0?'Positif tipis':s.nss<0?'Cenderung negatif':'Berimbang'}</strong> · poin`:'Belum ada ulasan berlabel',width:s.classified?Math.abs(s.nss):0},
+    {label:'Skor sentimen neto (NSS)',value:s.classified?`${s.nss>0?'+':''}${number(s.nss)}`:'—',unit:'',icon:'pulse',cls:'nss',sub:s.classified?`<strong>${esc(band?band.label:'Belum dapat dinilai')}</strong> · ${integer(s.classified)} berlabel`:'Belum ada ulasan berlabel',width:s.classified?Math.abs(s.nss):0},
   ];
   return `<section class="metrics" aria-label="Metrik sentimen">${metrics.map(m=>`<article class="metric ${m.cls}"><div class="metric-top"><span class="metric-label">${m.label}</span><span class="metric-icon">${icon(m.icon)}</span></div><div class="metric-value">${m.value}<span class="unit">${m.unit}</span></div><div class="metric-sub">${m.sub}</div>${m.cls?`<div class="mini-track"><span style="width:${m.width}%"></span></div>`:''}</article>`).join('')}</section><p class="classification-note ${s.unclassified?'needs-review':''}">${s.unclassified?`<strong>${s.unclassified} ulasan perlu ditinjau</strong>; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS. `:''}${excluded?`${excluded} teks di luar penilaian pelanggan tetap dihitung dalam total teks, bukan dalam NSS. `:''}Persentase sentimen dan NSS dihitung dari ${s.classified} ulasan berlabel sentimen (positif, negatif, dan netral), bukan dari seluruh pengguna. ${esc(scope)}</p>`;
 }
@@ -405,7 +418,7 @@ function nssGauge(data) {
     const tip = gaugePoint(fraction, radius - 14), tail = gaugePoint(fraction, 18);
     return `<line x1="${tail.x.toFixed(1)}" y1="${tail.y.toFixed(1)}" x2="${tip.x.toFixed(1)}" y2="${tip.y.toFixed(1)}" stroke="#2f3842" stroke-width="3" stroke-linecap="round"/><circle cx="${tip.x.toFixed(1)}" cy="${tip.y.toFixed(1)}" r="5" fill="${bandToneColor[band.tone]}"/>`;
   })();
-  const scoped = filterReviews(reviews, { platform:'all', from:state.from, to:state.to });
+  const scoped = scopedRows({ platform:'all', from:state.from, to:state.to, sentiment:state.sentiment, query:state.query, tag:state.tag, aspect:state.aspect });
   const perSource = platforms.map(p => ({ p, rows: scoped.filter(r => r.platform === p.id) }))
     .filter(entry => entry.rows.length).map(entry => ({ ...entry, s: summary(entry.rows) }));
   return `<article class="card nss-card" aria-labelledby="nss-heading">
@@ -501,8 +514,8 @@ function incidentReportHtml(data) {
     <p class="report-meta">Dibuat ${esc(timeLabel(generatedAt))} (${esc(generatedAt)}) · Penarikan terakhir: ${esc(lastPull)} · Penjenisan: rules-v1 · ABSA: aspek/emosi/niat aturan kata kunci · Proyeksi: ${esc(projectionMethod)}</p>
   </header>
   <section class="report-block"><h2>1. Ringkasan</h2>
-    <div class="report-kpis">${kpi('Teks dalam lingkup', integer(s.total))}${kpi('Ulasan berlabel', integer(s.classified))}${kpi('Positif', `${integer(s.positive)}${s.classified ? ` · ${number(s.positivePct)}%` : ''}`)}${kpi('Negatif', `${integer(s.negative)}${s.classified ? ` · ${number(s.negativePct)}%` : ''}`)}${kpi('Netral', `${integer(s.neutral)}${s.classified ? ` · ${number(s.neutralPct)}%` : ''}`)}${kpi('Perlu tinjauan', integer(s.unclassified))}${kpi('NSS', s.classified ? `${esc(`${s.nss>0?'+':''}${number(s.nss)}`)} poin` : 'N/A')}${kpi('Pita NSS', esc(nssBand(s.nss)?.label || 'N/A'))}</div>
-    <p>Dari ${integer(s.classified)} teks berlabel sentimen pada lingkup ini, ${integer(s.negative)} bernada negatif dan ${integer(s.positive)} bernada positif, menghasilkan NSS ${s.classified ? `${s.nss>0?'+':''}${number(s.nss)} poin (${esc(nssBand(s.nss)?.label || 'N/A')})` : 'belum dapat dihitung'}. Teks yang masih perlu ditinjau (${integer(s.unclassified)}) tidak dihitung sebagai netral dan tidak membagi persentase. ${s.classified < nssMinSample ? `Jumlah sampel masih di bawah ${nssMinSample} ulasan berlabel, sehingga angka ini bersifat indikatif.` : ''}</p>
+    <div class="report-kpis">${kpi('Teks dalam lingkup', integer(s.total))}${kpi('Ulasan berlabel', integer(s.classified))}${kpi('Positif', `${integer(s.positive)}${s.classified ? ` · ${number(s.positivePct)}%` : ''}`)}${kpi('Negatif', `${integer(s.negative)}${s.classified ? ` · ${number(s.negativePct)}%` : ''}`)}${kpi('Netral', `${integer(s.neutral)}${s.classified ? ` · ${number(s.neutralPct)}%` : ''}`)}${kpi('Perlu tinjauan', integer(s.unclassified))}${kpi('NSS', s.classified ? `${esc(`${s.nss>0?'+':''}${number(s.nss)}`)} poin` : 'N/A')}${kpi('Pita NSS', esc(nssBand(s.nss, s.classified)?.label || 'N/A'))}</div>
+    <p>Dari ${integer(s.classified)} teks berlabel sentimen pada lingkup ini, ${integer(s.negative)} bernada negatif dan ${integer(s.positive)} bernada positif, menghasilkan NSS ${s.classified ? `${s.nss>0?'+':''}${number(s.nss)} poin (${esc(nssBand(s.nss, s.classified)?.label || 'N/A')})` : 'belum dapat dihitung'}. Teks yang masih perlu ditinjau (${integer(s.unclassified)}) tidak dihitung sebagai netral dan tidak membagi persentase. ${s.classified < nssMinSample ? `Jumlah sampel masih di bawah ${nssMinSample} ulasan berlabel, sehingga angka ini bersifat indikatif.` : ''}</p>
     ${aspects.length ? `<p>Pendorong negatif terbesar: ${aspects.slice(0, 3).map(x => `${esc(x.name)} (${integer(x.negative)} ulasan negatif, ${number(pct(x.negative, s.negative))}% dari seluruh negatif)`).join('; ')}.</p>` : `<p>${negative.length ? `${integer(negative.length)} ulasan negatif belum dapat dipetakan ke aspek tertentu; umumnya penilaian tanpa objek yang jelas.` : 'Tidak ada ulasan negatif pada lingkup ini.'}</p>`}
     <p>Niat pada ulasan negatif: laporan bug ${integer(intentCount('bug_report'))}, keluhan umum ${integer(intentCount('complaint'))}, permintaan fitur ${integer(intentCount('feature_request'))}, lainnya ${integer(intentCount('other'))}. Emosi: marah ${integer(emotionCount('anger'))}, frustrasi ${integer(emotionCount('frustration'))}, netral ${integer(emotionCount('neutral'))}, bertanya ${integer(emotionCount('query'))}, puas ${integer(emotionCount('satisfaction'))}.</p>
   </section>
@@ -704,6 +717,8 @@ function methodology() {
   const base=summary(seedReviews);
   const active = projects.list.find(project => project.id === projects.active) || null;
   const builtInView = !active || active.builtIn;
+  const categoryCounts = new Map();
+  for (const row of analyticalReviews()) for (const tag of new Set(reviewTags(row))) categoryCounts.set(tag, (categoryCounts.get(tag) || 0) + 1);
   // Kalimat sumber mengikuti project aktif: angka data awal hanya berlaku untuk dataset bawaan,
   // project lain melaporkan hasil penarikannya sendiri.
   const dataOrigin = builtInView
@@ -715,7 +730,7 @@ function methodology() {
     <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label pada data awal ditentukan dari pembacaan teks; teks yang tidak berubah mempertahankan labelnya. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (versi 1):</strong> menggunakan aturan kata kunci sederhana, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru; teks yang tidak dikenali ditandai perlu ditinjau.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh ${integer(storeRatingCount('play'))} penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
     <article class="card method-card"><h2>Penyimpanan dan jejak perubahan</h2><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban. Dasbor memuat data tersimpan saat dibuka; pembaruan tidak berlangsung terus-menerus. Status sumber dan waktu pemeriksaan mengikuti data tersimpan. Gangguan pengambilan tidak menghapus data yang sudah tersedia.</p><p>Ulasan baru ditambahkan, sedangkan perubahan teks, penilaian bintang, atau tanggal disimpan sebagai versi sebelumnya. Detail ulasan menampilkan waktu pengambilan, waktu pertama dan terakhir tercatat, serta riwayat perubahan. Versi lama tidak dihitung sebagai ulasan baru dalam grafik.</p><p>Jika data tersimpan tidak dapat dimuat saat awal, data awal tetap ditampilkan disertai pesan kesalahan yang jelas. Penilaian halaman toko hanya ditampilkan dari data daring yang berhasil diambil dan dipisahkan dari penilaian pada ulasan. Sumber publik tidak memverifikasi identitas penulis maupun kebenaran isi keluhan.</p></article>
     <article class="card method-card"><h2>Deteksi lonjakan dan laporan insiden</h2><ul><li><strong>Jendela lonjakan.</strong> Teks dikelompokkan per jam UTC bila sumber mengirim waktu publikasi yang lengkap; bila tidak, jendela diperlebar menjadi harian dan jendela mana yang dipakai selalu tertulis pada spanduk. Ambang: minimal ${anomalyDefaults.minCurrent} ulasan negatif dalam satu jendela dan lebih dari ${anomalyDefaults.thresholdPct}% di atas rata-rata ${anomalyDefaults.baselineWindows} jendela sebelumnya (${anomalyDefaults.dailyBaselineWindows} jendela untuk versi harian). Baseline nol dilaporkan sebagai "dari nol", bukan persentase tak hingga.</li><li><strong>Pita NSS.</strong> ${nssBands.map(band=>`${band.min} sampai ${band.max} = ${band.label}`).join('; ')}. Pita hanya label ambang untuk membaca arah, bukan hasil uji statistik. Di bawah ${nssMinSample} ulasan berlabel, angka ditandai belum representatif.</li><li><strong>Laporan insiden.</strong> Daftarnya memuat seluruh ulasan negatif pada filter aktif tanpa pembatasan sampel, lengkap dengan waktu publikasi mentah (UTC), aspek, emosi, niat, dan tautan sumber; teks yang masih perlu ditinjau tidak dimasukkan karena labelnya belum pasti. PDF dibuat dari dialog cetak peramban dan CSV dari tombol di kartu yang sama — keduanya memakai baris data yang sama dengan dasbor.</li><li><strong>Batas waktu publikasi.</strong> Sebagian kanal mengirim waktu sampai detik (Google Play, App Store, YouTube); actor media sosial ada yang hanya mengirim tanggal atau jam penuh, sehingga teksnya menumpuk pada satu jendela. Distribusi per jam tidak pernah dikarang untuk teks yang sumbernya hanya mengirim tanggal.</li></ul></article>
-  </div><article class="card method-card category-card"><h2>Kategori yang didukung</h2>${Object.values(tags).map(label=>`<span class="tag">${esc(label)}</span>`).join('')}<p>Seluruh kategori tetap terdaftar di bagian ini, termasuk yang belum memiliki ulasan. Jumlah ulasan per kategori mengikuti filter platform dan tanggal. Berkas CSV pada halaman ulasan mengikuti filter yang aktif.</p></article>`;
+  </div><article class="card method-card category-card"><h2>Kategori yang didukung</h2>${Object.entries(tags).map(([id,label])=>`<span class="tag">${esc(label)} · ${integer(categoryCounts.get(id)||0)}</span>`).join('')}<p>Seluruh kategori tetap terdaftar di bagian ini, termasuk yang belum memiliki ulasan. Angka di samping setiap kategori adalah jumlah teks pada pilihan filter yang sedang aktif, dan satu ulasan dapat dihitung pada beberapa kategori. Berkas CSV pada halaman ulasan mengikuti filter yang aktif.</p></article>`;
 }
 // Tombol geser sengaja tidak dipakai: baris platform dapat digulir dengan sentuhan, roda
 // mouse, atau tombol panah saat baris itu fokus. Fungsi ini hanya menjaga tab terpilih terlihat.
@@ -834,7 +849,7 @@ function openProjectDialog() {
   const dialog = $('#project-dialog');
   if (!dialog) return;
   dialog.innerHTML = `<div class="dialog-header"><div><h2 id="project-heading">Tambah project analisis</h2><p>Nama project dan entitas yang dianalisis. Data ditarik dari identitas toko yang Anda konfirmasi.</p></div><button class="icon-button" data-close="project-dialog" aria-label="Tutup tambah project">${icon('close')}</button></div>
-  <div class="dialog-body"><div class="project-form">
+  <div class="dialog-body"><div class="dialog-form">
     <label>Nama project<input id="project-name" type="text" value="${esc(discovery.name)}" placeholder="Misalnya aplikasi kasir terbaru" autocomplete="off" maxlength="80"></label>
     <label>Entitas yang dianalisis<input id="project-entity" type="text" value="${esc(discovery.entity)}" placeholder="Nama aplikasi persis seperti di toko" autocomplete="off" maxlength="80"></label>
     <button class="btn" type="button" data-action="discover-project">${icon('search')}${discovery.busy ? 'Memeriksa…' : 'Cari identitas'}</button>
@@ -971,12 +986,61 @@ async function deleteActiveProject(button) {
   try {
     applyPayload(await requestProject({ action: 'delete', project: active.id }));
     $('#delete-dialog')?.close();
+    $('#manage-dialog')?.close();
     clearReviewFilters();
     render();
     notify(`Project "${active.name}" dihapus beserta datanya. Project bawaan kini yang aktif.`);
   } catch (error) {
     if (button) button.disabled = false;
     notify(`Project tidak dapat dihapus. ${error instanceof Error ? error.message : 'Kesalahan tidak dikenal.'}`, 'error');
+  }
+}
+
+// Dialog kelola project: satu tempat untuk mengganti nama project dan untuk menghapusnya.
+// Identitas toko ditampilkan read-only karena itulah penarikan data diarahkan; menggantinya
+// berarti menganalisis aplikasi yang berbeda, jadi dibuat project baru.
+function openManageDialog() {
+  const active = projects.list.find(project => project.id === projects.active) || null;
+  if (!active) { notify('Belum ada project untuk dikelola.'); return; }
+  if (isBusy()) { notify('Tunggu penarikan selesai sebelum mengubah project.'); return; }
+  const dialog = $('#manage-dialog');
+  if (!dialog) return;
+  const lastPull = active.lastPulledAt ? timeLabel(active.lastPulledAt) : 'belum pernah ditarik';
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="manage-heading">Kelola project</h2><p>Ganti nama project atau hapus beserta datanya.</p></div><button class="icon-button" data-close="manage-dialog" aria-label="Tutup kelola project">${icon('close')}</button></div>
+  <div class="dialog-body"><div class="dialog-form">
+    <label>Nama project<input id="manage-name" type="text" value="${esc(active.name)}" maxlength="80" autocomplete="off"></label>
+    <p class="manage-facts"><span>Entitas dianalisis</span><strong>${esc(active.entity)}</strong></p>
+    <p class="manage-facts"><span>Identitas toko</span><strong>${esc(active.stores)}</strong></p>
+    <p class="manage-facts"><span>Data tersimpan</span><strong>${integer(reviews.length)} teks · penarikan ${esc(lastPull)}</strong></p>
+    <p class="note-inline">Identitas toko tidak diubah di sini. Untuk menganalisis aplikasi lain, buat project baru agar datanya tetap terpisah.</p>
+    <div class="manage-danger">
+      <div><h3>Hapus project</h3><p>${active.builtIn ? 'Project bawaan tidak dapat dihapus; datanya adalah dasar analisis yang selama ini dipakai.' : 'Penghapusan membuang seluruh teks ulasan dan riwayat penarikan project ini. Unduh laporan terlebih dahulu bila masih diperlukan.'}</p></div>
+      ${active.builtIn ? '' : `<button class="btn btn-danger" data-action="delete-project">${icon('trash')}Hapus project</button>`}
+    </div>
+    <p class="filter-error" id="manage-error" role="alert"></p>
+  </div></div>
+  <div class="dialog-footer"><div><small>Nama baru langsung dipakai di seluruh judul dan menu.</small></div><div class="dialog-actions"><button class="btn" data-close="manage-dialog">Batal</button><button class="btn btn-primary" data-action="rename-project">${icon('check')}Simpan nama</button></div></div>`;
+  if (!dialog.open) dialog.showModal();
+  $('#manage-name')?.focus({ preventScroll: true });
+}
+async function renameProjectFromDialog(button) {
+  const active = projects.list.find(project => project.id === projects.active) || null;
+  if (!active) return;
+  const name = String($('#manage-name')?.value || '').trim();
+  const errorHost = $('#manage-error');
+  if (errorHost) errorHost.textContent = '';
+  if (name.length < 2) { if (errorHost) errorHost.textContent = 'Nama project minimal dua karakter.'; return; }
+  if (name === active.name) { $('#manage-dialog')?.close(); return; }
+  if (button) button.disabled = true;
+  try {
+    applyPayload(await requestProject({ action: 'rename', project: active.id, name }));
+    $('#manage-dialog')?.close();
+    render();
+    notify(`Nama project diubah menjadi "${name}".`);
+  } catch (error) {
+    if (button) button.disabled = false;
+    if (errorHost) errorHost.textContent = error instanceof Error ? error.message : 'Project tidak dapat diubah.';
+    notify(`Project tidak dapat diubah. ${error instanceof Error ? error.message : 'Kesalahan tidak dikenal.'}`, 'error');
   }
 }
 
@@ -1173,6 +1237,8 @@ document.addEventListener('click',event=>{
   const action=button.dataset.action;
   if (action==='analyze') { void analyze(); return; }
   if (action==='add-project') { openProjectDialog(); return; }
+  if (action==='manage-project') { openManageDialog(); return; }
+  if (action==='rename-project') { void renameProjectFromDialog(button); return; }
   if (action==='discover-project') { button.innerHTML=`${icon('clock')}Memeriksa…`; void discoverIdentity(); return; }
   if (action==='create-project') { void createProjectFromDialog(); return; }
   if (action==='delete-project') { openDeleteDialog(); return; }

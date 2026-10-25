@@ -3,7 +3,7 @@
 // deployment ($0 tier).
 export const config = { maxDuration: 30 };
 
-import { addProject, activateProject, dropProject, isRunning } from '../dashboard-store.mjs';
+import { addProject, activateProject, dropProject, editProject, isRunning } from '../dashboard-store.mjs';
 
 const json = (response, status, body) => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -35,8 +35,13 @@ export default async function handler(request, response, run = runProject) {
   }
   const host = String(request.headers['x-forwarded-host'] || request.headers.host || '');
   const origin = String(request.headers.origin || '');
-  if (!host || request.headers['sec-fetch-site'] === 'cross-site' || (origin && !origin.endsWith(`://${host}`))) {
-    json(response, 403, { error: 'Permintaan lintas situs ditolak.' });
+  const site = String(request.headers['sec-fetch-site'] || '');
+  // Pemeriksaan ditutup ke arah gagal: permintaan tanpa Origin DAN tanpa Sec-Fetch-Site
+  // same-origin tidak dilayani. Kedua header hanya bisa dikirim peramban dan tidak dapat
+  // dipalsukan dari fetch/skrip, jadi tombol tetap jalan tanpa akun atau kata sandi sementara
+  // `curl` anonim tidak bisa lagi menghapus atau menimpa project.
+  if (!host || site === 'cross-site' || site === 'none' || (origin ? !origin.endsWith(`://${host}`) : site !== 'same-origin')) {
+    json(response, 403, { error: 'Permintaan dari luar halaman ini ditolak.' });
     return;
   }
   try {
@@ -52,6 +57,7 @@ export default async function handler(request, response, run = runProject) {
 function runProject(body) {
   const action = String(body.action || 'create');
   if (action === 'activate') return activateProject(body.project);
+  if (action === 'rename') return editProject(body);
   if (action === 'delete') return dropProject(body.project);
   if (action !== 'create') throw new Error('project_action: aksi project tidak dikenal');
   return addProject(body);

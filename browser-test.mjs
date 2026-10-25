@@ -103,9 +103,11 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('.profile,.profile-avatar,.avatar-light,.sidebar-bottom,.nav-label,.sidebar-separator').length`),0);
   assert.doesNotMatch(await evaluate(`document.querySelector('#sidebar').textContent+document.querySelector('#topbar').textContent`),/Ringkasan|Ulasan & percakapan|Cakupan platform|Analis Data|Ruang kerja|Data & transparansi/i);
   assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT BY BNI');
-  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'1','jumlah project tampil di atas menu Dashboard');
+  assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),1,'satu project tersedia di pemilih');
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-select option')].map(o=>o.textContent)`),['wondr merchant by BNI']);
-  assert.equal(await evaluate(`document.querySelector('.project-bar .project-entity').textContent`),'wondr merchant · Google Play id.bni.wfb · App Store 6741567238');
+  assert.equal(await evaluate(`Boolean(document.querySelector('.project-count,.project-entity,.project-add-label'))`),false,'bilah project hanya dropdown dan tombol ikon');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-actions button')].map(b=>b.dataset.action)`),['add-project','manage-project'],'dua tombol ikon: tambah dan kelola project');
+  assert.equal(await evaluate(`document.querySelector('.project-bar .project-select').disabled`),false,'pemilih project dapat dipakai saat tidak ada penarikan');
   await evaluate(`Promise.all([400,500,600,700].map(weight=>document.fonts.load(weight+' 13px Poppins')))`);
   for (const [view,label] of [['overview','Dashboard'],['sentiment','Analisis sentimen'],['reviews','Review'],['platforms','Platform']]) {
     await click(`[data-view="${view}"]`);
@@ -246,6 +248,25 @@ try {
   await until(`document.querySelector('.summary-card .badge')?.textContent==='64 teks pada pilihan ini'`,'chip filter konten tidak menghapus kata kunci');
   assert.equal(await evaluate(`document.querySelector('#review-search').value`),'','chip menghapus kata kunci di semua menu');
   assert.equal(await evaluate(`document.querySelectorAll('.active-filter').length`),0);
+  // Jumlah setiap pilihan harus berasal dari himpunan yang sama dengan grafik: tidak ada nol
+  // palsu untuk pilihan lain, dan tidak ada jumlah kanal yang melebihi total pilihan.
+  const facetCount = selector => evaluate(`(()=>{const t=document.querySelector(${JSON.stringify(selector)});return t?Number(t.querySelector('.count').textContent):null})()`);
+  await click('[data-aspect="access"]');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='14 teks pada pilihan ini'`,'filter aspek tidak membatasi angka dasbor');
+  assert.equal(await facetCount('.platform-tab[data-platform="all"]'),14,'jumlah "Semua platform" mengikuti aspek aktif');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.platform-tab')].slice(1).reduce((sum,t)=>sum+(Number(t.querySelector('.count').textContent)||0),0)`),14,'jumlah per kanal sama dengan total aspek');
+  await click('[data-aspect=""]');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='64 teks pada pilihan ini'`,'aspek tidak dapat dilepas');
+  await click('[data-sentiment="negative"]');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='22 teks pada pilihan ini'`,'filter sentimen tidak membatasi angka dasbor');
+  assert.equal(await facetCount('.sentiment-tab[data-sentiment="positive"]'),41,'sentimen lain tidak dipaksa nol oleh sentimen yang dipilih');
+  assert.equal(await facetCount('.platform-tab[data-platform="all"]'),22,'total kanal mengikuti sentimen terpilih, bukan jumlah seluruhnya');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.platform-tab')].slice(1).reduce((sum,t)=>sum+(Number(t.querySelector('.count').textContent)||0),0)`),22,'jumlah per kanal tetap sama dengan total pada pilihan ini');
+  await click('[data-view="platforms"]');
+  assert.equal(await evaluate(`document.querySelectorAll('.aspect-filter,.content-filter,.active-filter').length`),0,'menu Platform hanya menampilkan pilihan platform dan tanggal');
+  await click('[data-view="overview"]');
+  await click('.active-filter [data-action="clear-content"]');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='64 teks pada pilihan ini'`,'sentimen tidak dilepas dari chip');
   // Kata kunci dipasang lagi: pemeriksaan di bawah menguji filter yang bertahan saat penarikan
   // dan saat berpindah menu.
   await click('[data-view="reviews"]');
@@ -668,7 +689,7 @@ try {
   let pullSeen=false,pullClosed=false;const pullEnd=Date.now()+15000;
   while(Date.now()<pullEnd){const open=await evaluate(`Boolean(document.querySelector('#pull-dialog')?.open)`);if(open)pullSeen=true;else if(pullSeen){pullClosed=true;break;}await new Promise(resolve=>setTimeout(resolve,150));}
   assert.equal(pullClosed&&pullSeen,true,'penarikan berjalan otomatis mengikuti project baru — '+await evaluate(`document.querySelector('#project-error')?.textContent||'(dialog project tertutup)'`));
-  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'2','project baru tercatat pada penghitung di atas menu');
+  assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),2,'project baru langsung masuk pemilih');
   assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'KASIR TOKO','judul menu mengikuti project aktif');
   assert.deepEqual(await statValues(),['—','—','—'],'project baru belum memiliki angka sentimen');
   assert.equal(await totalBadge(),'0 teks pada pilihan ini');
@@ -688,29 +709,40 @@ try {
   // project baru tetap kosong.
   await evaluate(`const pick=document.querySelector('.project-bar .project-select');pick.value='wondr-merchant';pick.dispatchEvent(new Event('change',{bubbles:true}));`);
   await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent===${JSON.stringify(defaultBadge)})resolve(true);else if(Date.now()>end)reject(Error('Data project lama tidak tampil: '+JSON.stringify({badge:b?.textContent,options:[...document.querySelectorAll('.project-bar .project-select option')].map(o=>[o.value,o.selected]),toast:document.querySelector('#toast').textContent})));else requestAnimationFrame(check);}check();})`);
-  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'2');
+  assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),2);
   assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT BY BNI');
   await screenshot('project-second.png');
   completed.push('Add-project flow: name + entity, confirmed store identity, isolated dataset per project, and project-aware pull');
-  // Menghapus project: konfirmasi merinci apa yang hilang, project bawaan tetap utuh,
-  // dan tombol hapus hanya ditawarkan pada project non-bawaan.
+  // Mengelola project: satu dialog untuk mengubah nama dan untuk menghapus. Project bawaan
+  // tidak menawarkan hapus, dan datanya harus tetap utuh.
   await evaluate(`(()=>{const pick=document.querySelector('.project-bar .project-select');pick.value='kasir-toko';pick.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('[data-action="delete-project"]'))resolve(true);else if(Date.now()>end)reject(Error('Tombol hapus tidak tampil untuk project non-bawaan'));else requestAnimationFrame(check);}check();})`);
-  await click('[data-action="delete-project"]');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('[data-action="manage-project"]');if(b&&!b.disabled)resolve(true);else if(Date.now()>end)reject(Error('Tombol kelola tidak aktif untuk project non-bawaan'));else requestAnimationFrame(check);}check();})`);
+  await click('[data-action="manage-project"]');
+  assert.equal(await evaluate(`document.querySelector('#manage-dialog').open`),true,'dialog kelola project terbuka');
+  assert.match(await evaluate(`document.querySelector('#manage-dialog .dialog-body').textContent`),/Google Play com\.toko\.kasir/,'identitas toko project dibaca dari data');
+  await screenshot('project-manage.png');
+  await evaluate(`document.querySelector('#manage-name').value='Kasir Toko Baru';`);
+  await click('[data-action="rename-project"]');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.topbar-brand')?.textContent==='KASIR TOKO BARU')resolve(true);else if(Date.now()>end)reject(Error('Nama project tidak berubah: '+document.querySelector('.topbar-brand')?.textContent));else requestAnimationFrame(check);}check();})`);
+  assert.equal(await evaluate(`document.querySelector('#manage-dialog').open`),false,'dialog tertutup setelah nama disimpan');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.project-bar .project-select option')].map(o=>o.textContent).join(',')`),'wondr merchant by BNI,Kasir Toko Baru','nama baru dipakai di seluruh antarmuka');
+  await click('[data-action="manage-project"]');
+  await click('#manage-dialog [data-action="delete-project"]');
   assert.equal(await evaluate(`document.querySelector('#delete-dialog').open`),true,'dialog konfirmasi hapus terbuka');
   assert.match(await evaluate(`document.querySelector('#delete-dialog .dialog-body').textContent`),/Yang hilang: 0 teks ulasan/,'konfirmasi merinci data yang akan dihapus');
-  assert.match(await evaluate(`document.querySelector('#delete-dialog .delete-target').textContent`),/Kasir Toko/,'project yang dihapus disebut namanya');
+  assert.match(await evaluate(`document.querySelector('#delete-dialog .delete-target').textContent`),/Kasir Toko Baru/,'project yang dihapus disebut namanya');
   await screenshot('project-delete.png');
   await click('[data-action="confirm-delete-project"]');
-  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const c=document.querySelector('.project-count strong');if(c&&c.textContent==='1')resolve(true);else if(Date.now()>end)reject(Error('Project tidak berkurang: '+document.querySelector('.project-count strong')?.textContent));else requestAnimationFrame(check);}check();})`);
-  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'1');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelectorAll('.project-bar .project-select option').length===1)resolve(true);else if(Date.now()>end)reject(Error('Project tidak berkurang'));else requestAnimationFrame(check);}check();})`);
   assert.equal(await evaluate(`document.querySelector('.project-bar .project-select').value`),'wondr-merchant','project aktif dipindahkan ke bawaan');
-  assert.equal(await evaluate(`Boolean(document.querySelector('[data-action="delete-project"]'))`),false,'project bawaan tidak menawarkan tombol hapus');
-  assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),1,'option project yang dihapus dibersihkan dari pemilih');
+  await click('[data-action="manage-project"]');
+  assert.equal(await evaluate(`Boolean(document.querySelector('#manage-dialog [data-action="delete-project"]'))`),false,'project bawaan tidak menawarkan tombol hapus');
+  assert.match(await evaluate(`document.querySelector('#manage-dialog .manage-danger').textContent`),/tidak dapat dihapus/,'alasan perlindungan project bawaan dinyatakan');
+  await click('#manage-dialog [data-close="manage-dialog"]');
   await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent===${JSON.stringify(defaultBadge)})resolve(true);else if(Date.now()>end)reject(Error('Dataset bawaan berubah setelah penghapusan: '+JSON.stringify({badge:b?.textContent,expected:${JSON.stringify(defaultBadge)}})));else requestAnimationFrame(check);}check();})`);
-  completed.push('Delete flow: explicit confirmation, dataset removed, built-in project protected and untouched');
+  completed.push('Manage flow: rename project, explicit delete confirmation, built-in project protected and untouched');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png','project-delete.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png','project-manage.png','project-delete.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();
