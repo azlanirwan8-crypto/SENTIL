@@ -98,10 +98,10 @@ try {
   assert.deepEqual(await statValues(),['64,1%','34,4%','+29,7']);
   assert.equal(await totalBadge(),'64 teks pada pilihan ini');
   assert.equal(await evaluate(`Boolean(document.querySelector('.brand,.workspace-chip'))`),false);
-  const navigationLabels=['Dashboard','Analisis sentimen','Review','Platform'];
+  const navigationLabels=['Dashboard','Analisis sentimen','Review','Platform','Metode & data'];
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.querySelector('span').textContent)`),navigationLabels);
-  assert.equal(await evaluate(`document.querySelectorAll('[data-view="methodology"],.profile,.profile-avatar,.avatar-light,.sidebar-bottom,.nav-label,.sidebar-separator').length`),0);
-  assert.doesNotMatch(await evaluate(`document.querySelector('#sidebar').textContent+document.querySelector('#topbar').textContent`),/Ringkasan|Ulasan & percakapan|Cakupan platform|Metode & data|Analis Data|Ruang kerja|Data & transparansi/i);
+  assert.equal(await evaluate(`document.querySelectorAll('.profile,.profile-avatar,.avatar-light,.sidebar-bottom,.nav-label,.sidebar-separator').length`),0);
+  assert.doesNotMatch(await evaluate(`document.querySelector('#sidebar').textContent+document.querySelector('#topbar').textContent`),/Ringkasan|Ulasan & percakapan|Cakupan platform|Analis Data|Ruang kerja|Data & transparansi/i);
   assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT BY BNI');
   assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'1','jumlah project tampil di atas menu Dashboard');
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-select option')].map(o=>o.textContent)`),['wondr merchant by BNI']);
@@ -115,7 +115,7 @@ try {
     if(view!=='overview')assert.equal(await evaluate(`document.querySelector('h1').textContent`),label);
   }
   await click('[data-view="overview"]');
-  completed.push('Renamed navigation, matching page labels and removed methodology menu, workspace and profile');
+  completed.push('Five menus including the reachable methodology page, no workspace or profile chrome');
   assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
   // Teks pemasaran dan footer dihapus atas permintaan pemilik akun; tidak ada lagi eyebrow atau footer.
   assert.equal(await evaluate(`document.querySelectorAll('.eyebrow,.page-footer').length`),0,'eyebrow dan footer tidak boleh tersisa');
@@ -231,6 +231,26 @@ try {
   await evaluate(`new Promise(resolve=>{const check=()=>window.__downloadText!==null?resolve(true):requestAnimationFrame(check);check();})`);
   const csv=await evaluate('window.__downloadText');assert.match(csv,/Bos AteQ/);assert.doesNotMatch(csv,/Tanamo/);
   completed.push('CSV export respects current search and filters');
+  // Filter konten kini berlaku global: kata kunci yang sama harus mengubah angka Dashboard,
+  // bukan hanya tabel Review. Setelah ini dasbor diuji dalam keadaan tanpa filter.
+  const until = async (check, label) => evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;function tick(){if(${check})resolve(true);else if(Date.now()>end)reject(Error(${JSON.stringify(label)}+' — '+JSON.stringify({badge:document.querySelector('.summary-card .badge')?.textContent,search:document.querySelector('#review-search')?.value,chips:document.querySelectorAll('.active-filter').length})));else requestAnimationFrame(tick);}tick();})`);
+  await click('[data-view="overview"]');
+  await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='1 teks pada pilihan ini'`,'Dashboard tidak ikut tersaring kata kunci');
+  assert.equal(await evaluate(`document.querySelectorAll('.active-filter').length`),1,'filter konten aktif ditampilkan sebagai chip yang dapat dihapus');
+  assert.match(await evaluate(`document.querySelector('.active-filter').textContent`),/Bos AteQ/);
+  await click('[data-view="reviews"]');
+  assert.equal(await evaluate(`document.querySelector('#review-search').value`),'Bos AteQ','kata kunci bertahan saat pindah menu');
+  await click('.active-filter [data-action="clear-content"]');
+  await click('[data-view="overview"]');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='64 teks pada pilihan ini'`,'chip filter konten tidak menghapus kata kunci');
+  assert.equal(await evaluate(`document.querySelector('#review-search').value`),'','chip menghapus kata kunci di semua menu');
+  assert.equal(await evaluate(`document.querySelectorAll('.active-filter').length`),0);
+  // Kata kunci dipasang lagi: pemeriksaan di bawah menguji filter yang bertahan saat penarikan
+  // dan saat berpindah menu.
+  await click('[data-view="reviews"]');
+  await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
+  await until(`document.querySelectorAll('tbody tr').length===1`,'kata kunci tidak diterapkan lagi');
   assert.equal(await evaluate(`document.querySelectorAll('[data-action="import"],input[type="file"],#import-dialog').length`),0);
   assert.equal(await evaluate(`document.querySelectorAll('.heading-actions button').length`),0);
   await click('[data-view="platforms"]');
@@ -282,7 +302,12 @@ try {
     if(view!=='platforms')await click(`[data-view="${view}"]`);
   };
   completed.push('Platform-only online pull, loading lock across navigation and preserved filters');
+  // Seluruh pemeriksaan berikut mengandaikan dasbor tanpa filter konten, jadi kata kunci
+  // yang dipakai untuk menguji ketahanan filter dibersihkan lebih dulu.
+  await evaluate(`document.querySelector('#review-search').value='';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
+  await until(`document.querySelectorAll('.active-filter').length===0 && document.querySelector('#review-search').value===''`,'kata kunci tidak dibersihkan');
   await click('[data-view="overview"]');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='64 teks pada pilihan ini'`,'dasbor belum kembali ke keadaan tanpa filter');
   const complaintRows=await evaluate(`[...document.querySelectorAll('.complaint-row')].map(r=>({id:r.querySelector('[data-complaint]').dataset.complaint,rank:r.querySelector('.complaint-rank').textContent,count:r.querySelector('.feature-row-label strong').textContent,negative:parseFloat(r.querySelector('.feature-bar .negative').style.width)}))`);
   assert.deepEqual(complaintRows.map(r=>r.id),['onboarding','migration','notifications','login','general','transactions','settlement','features','performance','support']);
   assert.equal(complaintRows[0].rank,'1');assert.match(complaintRows[0].count,/^8 negatif · 8 ulasan$/);
@@ -383,7 +408,7 @@ try {
   await click('[data-action="export-incident"]');
   await evaluate(`new Promise(resolve=>{const check=()=>window.__downloadText!==null?resolve(true):requestAnimationFrame(check);check();})`);
   const incidentCsv=await evaluate('window.__downloadText');
-  assert.match(incidentCsv,/^.{0,3}id,platform,author,date,rating,sentiment,aspects,emotions,emotion,intent,text,tags,sourceUrl,rationale,labeling/,'CSV insiden membawa kolom ABSA');
+  assert.match(incidentCsv,/^.{0,3}id,platform,author,date,rating,sentiment,relevance,aspects,emotions,emotion,intent,text,tags,sourceUrl,rationale,labeling/,'CSV insiden membawa kolom ABSA dan relevansi');
   assert.match(await evaluate(`document.querySelector('#toast').textContent`),/22 ulasan negatif diekspor sebagai laporan insiden/,'ekspor insiden hanya membawa seluruh ulasan negatif');
   completed.push('Executive summary, keyword clusters with drilldown, share of voice, and NSS line mode');
   completed.push('NSS gauge with per-channel scores, anomaly monitor banner, incident report PDF and CSV export');
@@ -530,7 +555,7 @@ try {
   await send('Page.reload');await ready();
   await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.getAttribute('aria-label'))`),navigationLabels);
-  assert.equal(await evaluate(`document.querySelectorAll('[data-view="methodology"],.profile,.profile-avatar,.avatar-light,.sidebar-bottom').length`),0);
+  assert.equal(await evaluate(`document.querySelectorAll('.profile,.profile-avatar,.avatar-light,.sidebar-bottom').length`),0);
   await click('[data-view="reviews"]');
   assert.equal(await evaluate(`document.querySelector('h1').textContent`),'Review');
   assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),10);
@@ -561,7 +586,12 @@ try {
   await click('[data-review]');assert.equal(await evaluate(`document.querySelector('.detail-text').textContent.includes('<script>')`),true);
   assert.equal(await evaluate('Boolean(window.__xss)'),false);assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog script,#detail-dialog img').length`),0);
   assert.match(await evaluate(`document.querySelector('.detail-author').textContent`),/N\/A/);
-  await click('[data-close="detail-dialog"]');await click('[data-view="overview"]');
+  await click('[data-close="detail-dialog"]');
+  // Kata kunci uji XSS dibersihkan: filter konten berlaku pada seluruh menu, termasuk ringkasan.
+  await evaluate(`document.querySelector('#review-search').value='';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
+  await until(`document.querySelector('#review-search').value==='' && document.querySelectorAll('.active-filter').length===0`,'kata kunci uji tidak dibersihkan');
+  await click('[data-view="overview"]');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='65 teks pada pilihan ini'`,'ringkasan tidak kembali ke seluruh data');
   collectorMode='error';await pullFromPlatform();
   assert.equal(await totalBadge(),'65 teks pada pilihan ini','penarikan yang gagal tidak mengubah data tersimpan');assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis gagal/);
   await click('[data-view="platforms"]');assert.match(await evaluate(`document.querySelector('.coverage-grid').textContent`),/Koneksi uji gagal/);

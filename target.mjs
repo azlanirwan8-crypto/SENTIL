@@ -60,10 +60,11 @@ export function normalizeTarget(input = {}) {
 }
 
 // Konversi hasil penemuan menjadi target. Sengaja gagal bila identitasnya belum confirmed:
-// sistem tidak boleh menurunkan target dari kandidat yang masih seri.
+// sistem tidak boleh menurunkan target dari kandidat yang masih seri. Bentuk kiriman klien
+// tidak dipercaya: sisi yang tidak sesuai struktur diperlakukan sebagai "belum dikonfirmasi".
 export function targetFromDiscovery({ discovery, id, name }) {
-  const play = discovery.play.status === 'confirmed' ? discovery.play.chosen : null;
-  const apple = discovery.appstore.status === 'confirmed' ? discovery.appstore.chosen : null;
+  const chosen = side => (side && typeof side === 'object' && side.status === 'confirmed' && side.chosen && typeof side.chosen === 'object') ? side.chosen : null;
+  const play = chosen(discovery?.play), apple = chosen(discovery?.appstore);
   if (!play && !apple) throw new Error('discovery_unconfirmed: tidak ada identitas toko yang dapat dipastikan; pilih kandidat atau isi ID manual.');
   return normalizeTarget({
     id, name: name || discovery.entityName, entityName: discovery.entityName, category: discovery.category,

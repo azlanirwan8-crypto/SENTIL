@@ -10,7 +10,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, requiredProjectId,
 } from './projects.mjs';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
@@ -36,8 +36,13 @@ export const isRunning = () => running;
 
 async function readStored() {
   try { return migrateStore(JSON.parse(await readFile(storagePath(), 'utf8'))); }
-  catch { /* belum ada berkas di instance ini */ }
-  return null;
+  catch (error) {
+    // Belum ada berkas memang keadaan normal instance baru. Berkas yang terpotong, rusak, atau
+    // terbaca sebagian BUKAN keadaan kosong: bila dianggap kosong, penulisan berikutnya akan
+    // menimpa data nyata dengan dataset awal.
+    if (error.code === 'ENOENT') return null;
+    throw new Error(`data_unreadable: berkas data tidak dapat dibaca (${error.message}); penyimpanan dihentikan agar isi berkas tidak ditimpa`);
+  }
 }
 
 // rename() di Windows dan beberapa berkas sistem sementara sering gagal sesaat
@@ -155,7 +160,7 @@ export async function activateProject(project) {
 export async function dropProject(project) {
   if (running) throw new Error('busy');
   const store = await loadStore();
-  const id = resolveProjectId(store, project);
+  const id = resolveProjectId(store, requiredProjectId(project));
   removeProject(store, id);
   cache = store;
   await writeStored(store);

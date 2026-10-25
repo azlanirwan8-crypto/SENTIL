@@ -62,7 +62,7 @@
   --neutral: #878a99;
   --neutral-soft: rgba(135, 138, 153, .1);
   --sidebar-width: 250px;
-  --sidebar-text: #8b93b8;
+  --sidebar-text: #c9d0e6;
   --radius: 4px;
   --radius-lg: 10px;
   --shadow: 0 2px 6px rgba(30, 38, 74, .08);
@@ -521,6 +521,45 @@ main {
   gap: 6px;
   min-width: 0;
   max-width: 100%;
+}
+
+/* Baris filter konten (sentimen, kata kunci, topik) berlaku untuk seluruh grafik dan tabel. */
+.content-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  min-width: 0;
+  max-width: 100%;
+  padding-top: 10px;
+}
+
+.content-filter .sentiment-tabs {
+  border-bottom: 0;
+}
+
+.content-filter .search-box {
+  flex: 1 1 220px;
+}
+
+.content-filter .tag-filter {
+  flex: 0 1 auto;
+}
+
+.sentiment-tab .count {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.size-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .platform-tabs {
@@ -2756,6 +2795,14 @@ tbody tr:hover {
   transform: translateY(0);
 }
 
+/* Kegagalan tampil beda dari keberhasilan: tepi merah, teks merah, bertahan lebih lama. */
+.toast.error {
+  border-color: var(--danger);
+  border-left-width: 4px;
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
 /* Entry animations are excluded from in-place filter/data updates. */
 .spinner {
   display: inline-block;
@@ -4507,10 +4554,10 @@ th[aria-sort='descending'] .th-sort.active .icon {
   gap: 6px;
   justify-self: start;
   padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, .3);
+  border: 1px solid rgba(240, 101, 72, .55);
   border-radius: var(--radius);
-  background: transparent;
-  color: #fff;
+  background: rgba(240, 101, 72, .14);
+  color: #f7c9bf;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -4518,7 +4565,7 @@ th[aria-sort='descending'] .th-sort.active .icon {
 }
 
 .project-remove .icon { width: 14px; height: 14px; }
-.project-remove:hover { background: rgba(240, 101, 72, .28); border-color: var(--danger); }
+.project-remove:hover { background: rgba(240, 101, 72, .3); border-color: var(--danger); color: #fff; }
 
 .btn-danger {
   border-color: var(--danger);

@@ -9,7 +9,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, requiredProjectId,
 } from './projects.mjs';
 import { withAbsa } from './model.js';
 
@@ -130,7 +130,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   // Menghapus project non-bawaan beserta datasetnya; project aktif dikembalikan ke bawaan.
   const dropProject = async project => {
     const next = { ...store, projects: [...store.projects], datasets: { ...store.datasets } };
-    removeProject(next, resolveProjectId(next, project));
+    removeProject(next, resolveProjectId(next, requiredProjectId(project)));
     await persist(next);
     store = next;
     return view(next.activeProject);
@@ -142,11 +142,16 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(req.method === 'HEAD' ? '' : JSON.stringify(body)); };
     const port = server.address().port;
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, ...config.allowedHosts]);
+    // Host diperiksa sebelum URL dibentuk. Header Host yang tidak sah membuat new URL()
+    // melempar, dan lemparan di handler async menghentikan proses tanpa balasan — satu
+    // permintaan rusak tidak boleh mematikan dasbor, apalagi di tengah penarikan data.
+    if (!hosts.has(req.headers.host)) { json(403,{error:'Host tidak diizinkan.'}); return; }
+    let url;
+    try { url = new URL(req.url, `http://${req.headers.host}`); }
+    catch { json(400,{error:'Alamat permintaan tidak dapat dibaca.'}); return; }
     const path = url.pathname;
     const sameSite = !((req.headers.origin && req.headers.origin !== `${String(req.headers['x-forwarded-proto'] || config.scheme).split(',')[0].trim()}://${req.headers.host}`) || req.headers['sec-fetch-site'] === 'cross-site');
-    const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, ...config.allowedHosts]);
-    if (!hosts.has(req.headers.host)) { json(403,{error:'Host tidak diizinkan.'}); return; }
     // /api/status dibiarkan tanpa kredensial karena host memakai endpoint itu untuk pemeriksaan kesehatan.
     if (config.user && path !== '/api/status') {
       const [method, encoded = ''] = String(req.headers.authorization || '').split(' ');
@@ -212,7 +217,9 @@ export async function createDashboardServer({ storagePath, collector = collectOn
         if (platform && !results[0]) { running = false; json(400,{error:'Kanal yang diminta tidak dikenal, sehingga tidak ada permintaan yang dikirim.'}); return; }
         const finishedAt = new Date().toISOString();
         const recordRun = finish || !platform;
-        const next = { ...store };
+        // Salinan dangkal tidak cukup: setDataset mengubah objek dataset dan entri project,
+        // sehingga store yang lama ikut berubah walau penyimpanan gagal.
+        const next = { ...store, projects: store.projects.map(item => item.id === project ? { ...item } : item), datasets: { ...store.datasets } };
         setDataset(next, project, buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun, target: runOptions.target }), { pulledAt: recordRun ? finishedAt : undefined });
         await persist(next);
         store = next;

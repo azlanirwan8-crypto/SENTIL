@@ -118,8 +118,11 @@ function poissonRange(lambda, confidence) {
   const spread = confidence * Math.sqrt(lambda);
   return { low: Math.max(0, Math.floor(lambda - spread)), high: Math.ceil(lambda + spread) };
 }
-function nssRatio(positive, negative) {
-  return positive + negative > 0 ? (positive - negative) / (positive + negative) * 100 : null;
+// Satu definisi NSS untuk seluruh aplikasi: (positif − negatif) ÷ teks berlabel × 100, dengan
+// teks berlabel mencakup netral. Denominasinya dapat dikirim eksplisit; tanpa itu netral tidak
+// ada dalam hitungan sehingga (positif + negatif) tetap merupakan denominasi yang benar.
+function nssRatio(positive, negative, classified = positive + negative) {
+  return classified > 0 ? (positive - negative) / classified * 100 : null;
 }
 // Kesimpulan arah hanya dinyatakan bila kemiringan salah satu deret dapat dibedakan dari
 // kebisingan, dan tidak dibatalkan oleh deret lainnya.
@@ -165,9 +168,15 @@ export function projection(reviews, options = {}) {
   };
   const negative = model(series(r => r.sentiment === 'negative'));
   const positive = model(series(r => r.sentiment === 'positive'));
+  // Netral ikut diproyeksikan hanya agar denominasi NSS proyeksi sama dengan NSS pada kartu
+  // lain. Angka netral tidak ditampilkan; ia tidak mengubah arah kesimpulan positif/negatif.
+  const neutral = model(series(r => r.sentiment === 'neutral'));
   if (negative.observed < minEvents || positive.observed < minEvents) return { ...base, reason: `Ulasan berlabel pada ${weekLabels.length} pekan ini masih sedikit (positif ${positive.observed}, negatif ${negative.observed}). Proyeksi tidak dihitung supaya rentang angkanya tidak menyesatkan.` };
-  const bounds = [nssRatio(positive.low, negative.high), nssRatio(positive.high, negative.low)].filter(value => value !== null);
-  const nssPoint = nssRatio(positive.projected, negative.projected);
+  const bounds = [
+    nssRatio(positive.low, negative.high, positive.low + negative.high + neutral.projected),
+    nssRatio(positive.high, negative.low, positive.high + negative.low + neutral.projected),
+  ].filter(value => value !== null);
+  const nssPoint = nssRatio(positive.projected, negative.projected, positive.projected + negative.projected + neutral.projected);
   const themes = painGroups.map(group => ({ name: group.name, owner: group.owner, action: group.action, ...model(series(r => r.sentiment === 'negative' && r.tags.some(t => group.tags.includes(t)))) }))
     .filter(theme => theme.observed > 0)
     .sort((a,b) => b.projected - a.projected || b.observed - a.observed);
@@ -242,8 +251,12 @@ export const nssBands = [
   { id: 'positif-kuat', min: 50, max: 100, label: 'Positif kuat', tone: 'positive' },
 ];
 export const nssMinSample = 20;
-export function nssBand(nss) {
+// Di bawah batas sampel, arah tidak dinyatakan: satu ulasan negatif pernah tampil sebagai
+// "Tekanan berat", yang terbaca sebagai kesimpulan padahal bukan.
+export const nssInsufficientBand = { id: 'belum-dinilai', min: null, max: null, label: 'Belum dapat dinilai', tone: 'neutral' };
+export function nssBand(nss, classified = Infinity) {
   if (nss === null || !Number.isFinite(nss)) return null;
+  if (Number.isFinite(classified) && classified < nssMinSample) return nssInsufficientBand;
   return nssBands.find(band => nss >= band.min && nss <= band.max) || null;
 }
 // Deret harian untuk grafik batang bertumpuk + garis NSS. Hari disusun berurutan dari tanggal
@@ -270,7 +283,7 @@ export function dailySeries(reviews, options = {}) {
   }
   for (const day of days) {
     const classified = day.positive + day.negative + day.neutral;
-    day.nss = nssRatio(day.positive, day.negative);
+    day.nss = nssRatio(day.positive, day.negative, classified);
     day.classified = classified;
   }
   return { days, truncated: span > days.length, span, undated: reviews.length - dated.length };
@@ -427,9 +440,12 @@ export function absaOf(review) {
 // Isi fields ABSA pada setiap baris agar JSON yang keluar dari API terstruktur, bukan
 // hanya dihitung di peramban.
 export function withAbsa(reviews) {
+  const sameList = (a = [], b = []) => a.length === b.length && a.every((value, index) => value === b[index]);
   return reviews.map(review => {
     const { aspects, emotions, emotion, intent } = absaOf(review);
-    return review.aspects?.length === aspects.length && review.emotions?.length === emotions.length && review.emotion === emotion && review.intent === intent
+    // Isinya dibandingkan, bukan hanya panjangnya: dua daftar berbeda bisa sama panjang dan
+    // membuat label lama bertahan.
+    return sameList(review.aspects, aspects) && sameList(review.emotions, emotions) && review.emotion === emotion && review.intent === intent
       ? review : { ...review, aspects, emotions, emotion, intent };
   });
 }
@@ -485,7 +501,16 @@ const reassurancePhrase = new RegExp(`\\b(?:(?:${negation}) ada|${negation}|tanp
 // "dana settlement belum masuk" tetap keluhan meskipun kata bendanya dipisah beberapa kata.
 const missingAsset = new RegExp(`\\b(?:dana|uang|settlement|transaksi|laporan|notifikasi|notif)\\b[^.!?]{0,25}?\\b(?:${negation})\\s+masuk\\b`);
 const negativeRule = new RegExp(`gagal|lambat|lemot|ribet|repot|jelek|cacat|rusak|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|\\b(?:${negation})\\s+(?:bisa|ada|update|acc|selesai)\\b|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|${missingAsset.source}|tidak menyelesaikan|bankke`);
-const positiveRule = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|^ok(?:e)?[.! ]*$/;
+const positiveRule = /bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|\b(?:ok|oke|okok)\b/;
+// Negasi dapat menempel pada kata penilaian: "gak ribet" bukan keluhan, "tidak ok" bukan pujian.
+// Pujian yang disangkal diubah menjadi kata keluhan baku (buruk), sedangkan kata keluhan yang
+// disangkal dihapus. Jendela satu kata membatasi pembersihan agar frasa seperti "tidak masalah,
+// semua lancar" tidak ikut tersapu.
+const praiseWords = 'bagus|mantap|mantp|keren|kereen|membantu|mempermudah|memudahkan|lancar|memuaskan|akurat|rekomendasi|puas|enak|simpel|good|love|nice|ok|oke|okok';
+const complaintWords = 'jelek|cacat|rusak|lemot|lambat|ribet|repot|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|error|crash|gagal';
+const negatedPraise = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${praiseWords})\\b`,'g');
+const negatedComplaint = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${complaintWords})\\b`,'g');
+const scrubNegatedPolarity = scope => scope.replace(negatedPraise,' buruk').replace(negatedComplaint,' ');
 export function classifyText(text) {
   const value = text.toLocaleLowerCase('id').replace(/\s+/g,' ');
   const reviewTags = Object.entries(topicRules).filter(([,rule]) => rule.test(value)).map(([tag]) => tag);
@@ -497,8 +522,8 @@ export function classifyText(text) {
   const negativeScope = resolved && headAt !== -1
     ? `${hopeful.slice(0,headAt).replace(negatedAbility,' ')} ${hopeful.slice(headAt).replace(resolvedClause,' ')}`
     : hopeful.replace(reassurancePhrase,' ');
-  const negative = negativeRule.test(negativeScope);
-  const positive = positiveRule.test(hopeful) || (resolved && !negative);
+  const negative = negativeRule.test(scrubNegatedPolarity(negativeScope));
+  const positive = positiveRule.test(scrubNegatedPolarity(hopeful)) || (resolved && !negative);
   const neutral = /^(?:[1-5] bintang dulu|terima kasih atas informasinya)[.! ]*$/.test(value);
   const sentiment = negative ? 'negative' : positive ? 'positive' : neutral ? 'neutral' : 'unclassified';
   return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Klausa harapan dan kegagalan yang sudah selesai ("akhirnya bisa masuk") tidak dihitung sebagai keluhan aktif, tetapi teks sesudah klausa itu tetap dinilai. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
@@ -589,6 +614,12 @@ export function classifyReview(raw, target = null) {
   const handle = String(raw.author ?? '').replace(/^@+/, '').trim().toLowerCase();
   const officialAccount = rules.official.test(handle);
   if (raw.platform === 'play' || raw.platform === 'appstore') {
+    // Akun resmi pemilik produk di halaman toko tetap promosi pemilik, bukan pengalaman
+    // pelanggan independen; penyaringnya berlaku di semua kanal, bukan hanya media sosial.
+    if (officialAccount) {
+      const reason = rules.officialReason(raw.author);
+      return { ...label, sentiment:'unclassified', tags:['general'], relevance:{ status:'excluded', reason, method:'merchant-context-v1' }, rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.` };
+    }
     // Ulasan toko dinilai langsung dari teksnya. Teks yang hanya menyebut aplikasi konsumen
     // BNI tidak boleh dihitung sebagai pengalaman merchant.
     if (!consumer || merchant) return label;
@@ -648,14 +679,18 @@ export function upsertReviews(existing, incoming, observedAt, target = null) {
   return { reviews, added, updated, unchanged };
 }
 export function exportCsv(reviews) {
-  const columns = ['id','platform','author','date','rating','sentiment','aspects','emotions','emotion','intent','text','tags','sourceUrl','rationale','labeling'];
+  const columns = ['id','platform','author','date','rating','sentiment','relevance','aspects','emotions','emotion','intent','text','tags','sourceUrl','rationale','labeling'];
   const cell = value => {
+    // Kolom yang kosong ditulis "N/A", bukan string kosong, supaya pembeda "tidak ada" dan
+    // "belum dihitung" tetap terbaca setelah berkas dibuka di lembar kerja.
     let text = Array.isArray(value) ? value.join(';') : String(value ?? '');
+    if (text === '') text = 'N/A';
     if (/^[\s]*[=+\-@]/.test(text) || /^[\t\r]/.test(text)) text = "'" + text;
     return '"' + text.replaceAll('"','""') + '"';
   };
   return '\uFEFF' + [columns.join(','), ...reviews.map(r => {
-    const row = { ...absaOf(r), ...r };
+    // Aspek dihitung ulang agar baris CSV memakai label yang sama dengan grafik di layar.
+    const row = { ...r, ...absaOf(r), relevance: r.relevance?.status ?? 'N/A' };
     return columns.map(k => cell(k === 'tags' ? (r.tags || []).join(';') : row[k])).join(',');
   })].join('\r\n');
 }

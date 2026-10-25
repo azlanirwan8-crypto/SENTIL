@@ -128,6 +128,14 @@ export function projectTarget(store, id) {
   return normalizeTarget({ ...project.target, entityName: project.target?.entityName || project.entity });
 }
 
+// Aksi menghancurkan data tidak boleh memakai project aktif sebagai nilai bawaan: permintaan
+// tanpa ID harus ditolak, bukan menghapus dataset yang sedang dibuka pengguna.
+export function requiredProjectId(value) {
+  const id = String(value ?? '').trim();
+  if (!id) throw new Error('project_required: tindakan ini wajib menyertakan ID project secara eksplisit');
+  return id;
+}
+
 // Menghapus project beserta datasetnya. Ini satu-satunya jalur yang membuang baris ulasan, jadi
 // project bawaan (data awal aplikasi yang selama ini dianalisis) ditolak dan pemanggil wajib
 // menyertakan ID project secara eksplisit. Project aktif dipindahkan kembali ke project bawaan.

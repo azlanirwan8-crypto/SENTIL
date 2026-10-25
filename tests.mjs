@@ -7,6 +7,7 @@ import { mkdtemp, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
+import { connect } from 'node:net';
 import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText, onlineCollectors } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 import { parsePlaySearchResults, parseItunesResults, buildDiscovery, discoverTarget, detectCategory, deriveKeywords, titleSimilarity, queryVariants, decideStatus, playSearchUrl, itunesSearchUrl } from './discovery.mjs';
@@ -484,9 +485,15 @@ test('NSS bands label the score without changing it', () => {
   assert.equal(nssBand(null), null, 'NSS yang belum dapat dihitung tidak diberi label pita');
 });
 test('CSV export carries the ABSA columns for analysts',()=>{
-  const csv=exportCsv([{ ...seedReviews[0], aspects:['payment'], emotions:['frustration'], emotion:'frustration', intent:'complaint' }]);
-  assert.match(csv.split('\r\n')[0],/^\uFEFFid,platform,author,date,rating,sentiment,aspects,emotions,emotion,intent,text,tags,sourceUrl,rationale,labeling$/);
-  assert.match(csv.split('\r\n')[1],/^"[^"]*","play","[^"]*","[^"]*","[^"]*","negative","payment","frustration","frustration","complaint"/);
+  const header = exportCsv([{ ...seedReviews[0], aspects:['payment'], emotions:['frustration'], emotion:'frustration', intent:'complaint' }]).split('\r\n')[0];
+  assert.match(header,/^\uFEFFid,platform,author,date,rating,sentiment,relevance,aspects,emotions,emotion,intent,text,tags,sourceUrl,rationale,labeling$/);
+  // Label dihitung ulang saat mengekspor: aspek tersimpan yang sudah usang tidak boleh menang
+  // atas apa yang sedang ditampilkan grafik.
+  const row = exportCsv([{ ...seedReviews[0], aspects:['payment'], emotions:['frustration'], emotion:'frustration', intent:'complaint' }]).split('\r\n')[1];
+  assert.match(row,/^"[^"]*","play","[^"]*","[^"]*","[^"]*","negative","N\/A","payment;access","N\/A","neutral","complaint"/,'aspek/emosi/niat dihitung ulang, nilai tersimpan yang usang tidak dipakai');
+  const bare = exportCsv([{ ...seedReviews[0], sourceUrl: undefined, rationale: undefined, rating: null }]).split('\r\n')[1];
+  assert.match(bare,/,"N\/A","N\/A","manual"$/,'kolom kosong ditulis N/A, bukan dibiarkan kosong');
+  assert.match(bare,/^"[^"]*","play","[^"]*","[^"]*","N\/A"/,'penilaian bintang yang tidak ada ditulis N/A');
 });
 test('sample star averages use only actual ratings',()=>{
   const s=ratingSummary(seedReviews);assert.equal(s.total,64);assert.ok(Math.abs(s.average-245/64)<1e-9);
@@ -2472,8 +2479,14 @@ test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengiku
     assert.equal(saved.datasets['kasir-toko'].reviews.length, 1);
     assert.equal(saved.datasets[defaultProjectId].reviews.length, seedReviews.length);
 
-    const removed = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', project: 'kasir-toko' }) });
-    assert.equal(removed.status, 200);
+    // Penghapusan tanpa ID eksplisit harus ditolak: bawaan "project aktif" akan menghapus
+    // dataset yang sedang dibuka pengguna.
+    const blindDelete = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete' }) });
+    assert.equal(blindDelete.status, 400);
+    assert.match(blindDelete.body.error, /project_required/);
+    assert.equal((await projectFetch(base, '/api/data')).body.projects.length, 2, 'percobaan hapus tanpa ID tidak menghapus apa pun');
+
+    const removed = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', project: 'kasir-toko' }) });    assert.equal(removed.status, 200);
     assert.equal(removed.body.projects.length, 1, 'daftar project berkurang satu');
     assert.equal(removed.body.activeProject, defaultProjectId, 'project aktif dikembalikan ke bawaan');
     assert.equal(removed.body.reviews.length, seedReviews.length, 'dataset bawaan tidak tersentuh penghapusan');
@@ -2556,4 +2569,76 @@ test('Kegagalan menyimpan data dilaporkan, dan penulisan sukses tidak meninggalk
     if (previous === undefined) delete process.env.DATA_PATH; else process.env.DATA_PATH = previous;
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('satu permintaan dengan Host rusak ditolak tanpa mematikan server', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-host-'));
+  const server = await createDashboardServer({ storagePath: join(dir, 'data.json'), env: {}, collector: async () => [], collectOne: async () => null });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const reply = await new Promise((resolve, reject) => {
+      const socket = connect(port, '127.0.0.1', () => socket.write('GET /api/status HTTP/1.1\r\nHost: a b\r\n\r\n'));
+      let data = '';
+      socket.on('data', chunk => { data += chunk; if (data.includes('\r\n\r\n')) { socket.end(); resolve(data); } });
+      socket.on('error', reject);
+      setTimeout(() => reject(new Error('permintaan rusak tidak dijawab')), 4000);
+    });
+    assert.match(reply, /^HTTP\/1\.1 400|HTTP\/1\.1 403/, 'Host tidak sah dijawab, bukan membuat proses mati');
+    const alive = await fetch(`http://127.0.0.1:${port}/api/status`);
+    assert.equal(alive.status, 200, 'server tetap melayani permintaan setelah permintaan rusak');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('berkas data yang rusak tidak dianggap kosong dan tidak ditimpa', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-corrupt-'));
+  const previous = process.env.DATA_PATH;
+  try {
+    process.env.DATA_PATH = join(dir, 'online-data.json');
+    await writeFile(process.env.DATA_PATH, '{"version":2,"projects":', 'utf8');
+    const store = await freshStore('corrupt');
+    await assert.rejects(store.snapshot(), /data_unreadable/, 'baca gagal dilaporkan, bukan diganti dataset awal');
+    await assert.rejects(store.addProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }), /data_unreadable/, 'project baru tidak ditulis di atas berkas rusak');
+    assert.equal(await readFile(process.env.DATA_PATH, 'utf8'), '{"version":2,"projects":', 'isi berkas rusak tidak berubah');
+    const missing = await freshStore('corrupt-missing');
+    await rm(process.env.DATA_PATH, { force: true });
+    assert.equal((await missing.snapshot()).reviews.length, seedReviews.length, 'berkas yang belum ada tetap keadaan normal instance baru');
+  } finally {
+    if (previous === undefined) delete process.env.DATA_PATH; else process.env.DATA_PATH = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('NSS deret harian dan proyeksi memakai denominasi yang sama dengan kartu KPI', async () => {
+  const rows = [
+    { platform: 'play', id: 'a', date: '2026-10-05', publishedAt: '2026-10-05T02:00:00.000Z', sentiment: 'positive', text: 'bagus', tags: ['ux'] },
+    { platform: 'play', id: 'b', date: '2026-10-05', publishedAt: '2026-10-05T03:00:00.000Z', sentiment: 'positive', text: 'mantap', tags: ['ux'] },
+    { platform: 'play', id: 'c', date: '2026-10-05', publishedAt: '2026-10-05T04:00:00.000Z', sentiment: 'neutral', text: 'oke', tags: ['ux'] },
+  ];
+  const s = summary(rows);
+  const day = dailySeries(rows).days.find(entry => entry.date === '2026-10-05');
+  assert.equal(day.nss, s.nss, 'satu hari dan kartu KPI memakai rumus yang sama');
+  assert.equal(s.nss, (2 - 0) / 3 * 100, 'denominasi NSS adalah seluruh teks berlabel termasuk netral');
+  const band = nssBand(0, 1);
+  assert.equal(band.id, 'belum-dinilai', 'satu ulasan tidak diberi label arah');
+  assert.equal(nssBand(0, 30).id, 'netral-negatif', 'di atas batas sampel, pita tetap diberikan');
+});
+
+test('akun resmi di halaman toko tidak dihitung sebagai pengalaman pelanggan', () => {
+  const official = classifyReview({ platform: 'play', id: 'store-official', author: 'BNI', date: '2026-10-20', text: 'wondr merchant kini lebih cepat', sourceUrl: 'https://play.google.com/store/apps/details?id=id.bni.wfb' });
+  assert.equal(official.relevance.status, 'excluded', 'ulasan toko dari akun resmi tetap promosi pemilik');
+  assert.equal(official.sentiment, 'unclassified', 'tidak masuk pembilang maupun penyebut NSS');
+  const customer = classifyReview({ platform: 'play', id: 'store-customer', author: 'Budi', date: '2026-10-20', text: 'wondr merchant kini lebih cepat', sourceUrl: 'https://play.google.com/store/apps/details?id=id.bni.wfb' });
+  assert.equal(customer.sentiment, 'positive', 'pelanggan biasa tetap dinilai');
+});
+
+test('kiriman identitas dari klien divalidasi bentuknya, tidak dipercaya begitu saja', () => {
+  assert.throws(() => targetFromDiscovery({ discovery: {}, name: 'X' }), /discovery_unconfirmed/);
+  assert.throws(() => targetFromDiscovery({ discovery: { play: null, appstore: 'ya' }, name: 'X' }), /discovery_unconfirmed/);
+  assert.throws(() => targetFromDiscovery({ discovery: { entityName: 'X', play: { status: 'confirmed' } }, name: 'X' }), /discovery_unconfirmed/, 'status confirmed tanpa kandidat dipilih tidak diterima');
+  const built = targetFromDiscovery({ discovery: { entityName: 'Kasir Saya', play: { status: 'confirmed', chosen: { appId: 'com.toko.kasir', sourceUrl: 'https://play.google.com/store/apps/details?id=com.toko.kasir' } }, appstore: { status: 'not-found', chosen: null } } });
+  assert.equal(built.play.appId, 'com.toko.kasir');
 });
