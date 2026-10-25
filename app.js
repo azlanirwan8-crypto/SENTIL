@@ -939,7 +939,7 @@ function openProjectDialog() {
     <p class="filter-error" id="project-error" role="alert">${esc(discovery.error)}</p>
     <div id="project-discovery" class="project-discovery"></div>
   </div></div>
-  <div class="dialog-footer"><div><small>Penarikan berikutnya mengikuti project ini sampai Anda memindahkan project aktif.</small></div><div class="dialog-actions"><button class="btn" data-close="project-dialog">Batal</button><button class="btn btn-primary" data-action="create-project">${icon('spark')}Analisa</button></div></div>`;
+  <div class="dialog-footer"><div><small>Menyimpan project belum mengambil data. Penarikan berjalan saat Anda menekan Tarik Analisis di menu Platform.</small></div><div class="dialog-actions"><button class="btn" data-close="project-dialog">Batal</button><button class="btn btn-primary" data-action="create-project">${icon('check')}Simpan</button></div></div>`;
   renderProjectDiscovery();
   if (!dialog.open) dialog.showModal();
   $('#project-name')?.focus({ preventScroll: true });
@@ -1017,9 +1017,12 @@ async function createProjectFromDialog() {
   try {
     applyPayload(await requestProject(body));
     $('#project-dialog')?.close();
+    clearReviewFilters();
+    render();
     discovery.name = ''; discovery.entity = ''; discovery.payload = null; discovery.picked = { play: '', appstore: '' }; discovery.searched = ''; discovery.error = '';
-    notify(`Project dibuat. Penarikan mengikuti identitas toko yang Anda konfirmasi.`);
-    await analyze();
+    // Menyimpan project sengaja TIDAK langsung menarik data: penarikan memakai kanal yang dapat
+    // memakan kuota, jadi hanya tombol Tarik Analisis yang boleh menjalankannya.
+    notify(`Project "${body.name}" disimpan dan menjadi project aktif. Tekan Tarik Analisis di menu Platform untuk mengambil datanya.`);
   } catch (error) {
     discovery.error = error instanceof Error ? error.message : 'Project tidak dapat disimpan.';
     if (errorHost) errorHost.textContent = discovery.error;

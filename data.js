@@ -14,8 +14,10 @@ export const platforms = [
   { id: 'googlemaps', name: 'Google Reviews', short: 'Google Reviews', icon: 'layers', color: '#4285f4', type: 'Web', status: 'Perlu konfigurasi API', note: 'Kanal ini dibaca melalui Google Places API (New) dengan GOOGLE_PLACES_API_KEY pada environment server; tanpa kunci, belum ada data. Belum ada entitas ulasan terverifikasi khusus untuk aplikasi ini, sehingga ulasan kantor cabang tidak disamakan dengan ulasan aplikasi dan yang tidak menyebut aplikasi tidak diberi sentimen pelanggan.' },
 ];
 
-export const tags = {
-  onboarding: 'Pendaftaran', login: 'Masuk aplikasi', transactions: 'Transaksi QRIS', notifications: 'Notifikasi',
+// Kanal yang punya kolektor nyata di sisi server. Daftar ini dijaga test terhadap kunci
+// onlineCollectors() agar tidak menyimpang dari kolektor yang benar-benar ada.
+export const collectorChannels = new Set(['play', 'appstore', 'youtube', 'googlemaps', 'news', 'x', 'instagram', 'tiktok', 'facebook']);
+export const tags = {  onboarding: 'Pendaftaran', login: 'Masuk aplikasi', transactions: 'Transaksi QRIS', notifications: 'Notifikasi',
   settlement: 'Laporan & pencairan dana', performance: 'Performa', ux: 'Kemudahan & tampilan', features: 'Fitur',
   support: 'Layanan pelanggan', migration: 'Migrasi aplikasi', benefit: 'Manfaat usaha', general: 'Penilaian umum',
 };

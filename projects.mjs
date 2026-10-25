@@ -4,6 +4,7 @@
 // isinya dipindahkan utuh menjadi project biasa yang boleh dihapus pemiliknya, tanpa mengubah
 // satu baris ulasan pun.
 import { defaultTarget, normalizeTarget } from './target.mjs';
+import { collectorChannels } from './data.js';
 import { initialDataset } from './dashboard-core.mjs';
 
 export const storeVersion = 2;
@@ -22,10 +23,11 @@ export function emptyDataset() {
     runs: [],
     lastRun: null,
     batch: null,
-    sources: base.sources.map(source => ({
-      id: source.id, status: freshSourceStatus, fetched: 0,
-      message: 'Project baru belum pernah ditarik. Tekan Tarik Analisis untuk mengambil data dari kanal yang terhubung.',
-    })),
+    sources: base.sources.map(source => (collectorChannels.has(source.id)
+      ? { id: source.id, status: freshSourceStatus, fetched: 0, message: 'Project baru belum pernah ditarik. Tekan Tarik Analisis untuk mengambil data dari kanal yang terhubung.' }
+      // Kanal tanpa kolektor (forum, blog) tetap "belum terhubung": tidak pernah diminta,
+      // sehingga tidak pernah muncul sebagai nol yang keliru maupun di daftar penarikan.
+      : { ...source, status: 'unsupported' })),
   };
 }
 

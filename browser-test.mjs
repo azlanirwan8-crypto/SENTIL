@@ -31,6 +31,14 @@ async function mockResults(){
   if(collectorMode==='error')return ['play','appstore'].map(id=>({id,status:'error',fetched:0,message:'Koneksi uji gagal; histori dipertahankan.'}));
   // Project baru belum memiliki apa pun: kanal menjawab tanpa baris, bukan mewarisi data project lama.
   if(collectorMode==='empty-project')return ['play','appstore'].map(id=>({id,status:'success',fetched:0,rating:null,ratingCount:0,ratingHistogram:null,ratingHistogramTotal:null,reviews:[],coverage:{pagesRead:1,rows:0,added:0,complete:true,error:null},message:`0 teks unik dibaca dari kanal ini untuk project aktif; sumber tidak mengirim halaman ulasan untuk identitas yang dipilih.`}));
+  // Project kedua punya identitasnya sendiri: teks di bawah menyebut "kasir saya" supaya
+  // penyaring identitas project menerima teks itu, bukan warisan teks project lama.
+  if(collectorMode==='filled-project'){
+    const storeUrl=id=>id==='play'?'https://play.google.com/store/apps/details?id=com.toko.kasir':'https://apps.apple.com/id/app/kasir-saya/id111222333';
+    const rows=id=>[{id:`qa-${id}-1`,platform:id,author:'pelanggan uji',date:'2026-10-20',text:'kasir saya mudah dipakai, pembayaran cepat',rating:5,sourceUrl:storeUrl(id),provenance:'Isolated browser fixture untuk project kedua'},
+      ...(id==='play'?[{id:'qa-play-2',platform:'play',author:'pengecer',date:'2026-10-21',text:'kasir saya gagal sync struk, pencairan lama sekali',rating:1,sourceUrl:storeUrl('play'),provenance:'Isolated browser fixture untuk project kedua'}]:[])];
+    return ['play','appstore'].map(id=>({id,status:'success',fetched:rows(id).length,rating:id==='play'?4.2:4.6,ratingCount:id==='play'?40:8,reviews:rows(id),coverage:{pagesRead:1,rows:rows(id).length,added:rows(id).length,complete:true,error:null},message:`${rows(id).length} teks unik dibaca dari kanal uji untuk project Kasir Saya.`}));
+  }
   return ['play','appstore'].map(id=>{
     const count=seedReviews.filter(r=>r.platform===id).length;
     const truncated=id==='appstore'&&collectorMode==='truncated';
@@ -694,7 +702,7 @@ try {
   const defaultBadge=await totalBadge();
   await click('[data-action="add-project"]');
   assert.equal(await evaluate(`document.querySelector('#project-dialog').open`),true,'dialog project terbuka');
-  assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),true,'tombol Analisa terkunci sebelum identitas dipilih');
+  assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),true,'tombol Simpan terkunci sebelum identitas dipilih');
   assert.equal(await evaluate(`document.querySelector('#project-entity').closest('label').firstChild.textContent.trim()`),'Aplikasi yang akan dianalisis','kolom pencarian memakai istilah aplikasi, bukan entitas');
   await evaluate(`const n=document.querySelector('#project-name');n.value='Kasir Toko';n.dispatchEvent(new Event('input',{bubbles:true}));const e=document.querySelector('#project-entity');e.value='Kasir Saya';e.dispatchEvent(new Event('input',{bubbles:true}));`);
   // Kandidat toko harus muncul sendiri setelah nama aplikasi diisi — tanpa menekan tombol apa pun.
@@ -711,16 +719,18 @@ try {
   assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),true,'sistem tidak memilih sendiri saat dua judul sama mirip');
   await click('.discover-item input[value="com.lain.kasir"]');
   assert.match(await evaluate(`document.querySelector('.discover-target').textContent`),/Google Play com\.lain\.kasir/,'pilihan pengguna yang dipakai, bukan tebakan sistem');
-  assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),false,'Analisa terbuka setelah satu identitas dikonfirmasi pengguna');
+  assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),false,'tombol Simpan terbuka setelah satu identitas dikonfirmasi pengguna');
   await evaluate(`document.querySelector('.discover-item input[value="com.toko.kasir"]').click()`);
   await screenshot('project-dialog.png');
   collectorMode='empty-project';
+  const pullsBeforeCreate=pulls;
   await click('[data-action="create-project"]');
-  let pullSeen=false,pullClosed=false;const pullEnd=Date.now()+15000;
-  while(Date.now()<pullEnd){const open=await evaluate(`Boolean(document.querySelector('#pull-dialog')?.open)`);if(open)pullSeen=true;else if(pullSeen){pullClosed=true;break;}await new Promise(resolve=>setTimeout(resolve,150));}
-  assert.equal(pullClosed&&pullSeen,true,'penarikan berjalan otomatis mengikuti project baru — '+await evaluate(`document.querySelector('#project-error')?.textContent||'(dialog project tertutup)'`));
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+15000;function check(){const brand=document.querySelector('.topbar-brand');if(brand&&brand.textContent==='KASIR TOKO')resolve(true);else if(Date.now()>end)reject(new Error('Project baru tidak menjadi project aktif: '+JSON.stringify({brand:brand?.textContent,options:[...document.querySelectorAll('.project-bar .project-select option')].map(o=>o.value),dialog:document.querySelector('#project-dialog')?.open,error:document.querySelector('#project-error')?.textContent,toast:document.querySelector('#toast')?.textContent})));else requestAnimationFrame(check);}check();})`);
+  assert.equal(pulls,pullsBeforeCreate,'menyimpan project tidak menarik data sendiri');
+  assert.equal(await evaluate(`Boolean(document.querySelector('#pull-dialog')?.open)`),false,'modal penarikan tidak terbuka akibat penyimpanan project');
   assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),2,'project baru langsung masuk pemilih');
   assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'KASIR TOKO','judul menu mengikuti project aktif');
+  assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis di menu Platform/,'notifikasi mengarahkan penarikan ke tombolnya');
   assert.deepEqual(await statValues(),['—','—','—'],'project baru belum memiliki angka sentimen');
   assert.equal(await totalBadge(),'0 teks pada pilihan ini');
   assert.equal(await evaluate(`document.querySelectorAll('.chart-empty').length`)>0,true,'grafik kosong tidak merusak tata letak project baru');
@@ -728,15 +738,32 @@ try {
   await click('[data-view="platforms"]');
   assert.match(await evaluate(`document.querySelector('.coverage-intro').textContent`),/Project aktif: Kasir Toko/,'keterangan penarikan menyebut project aktif');
   assert.match(await evaluate(`document.querySelector('.coverage-intro').textContent`),/Google Play com\.toko\.kasir/,'identitas toko project tampil sebelum menarik');
-  assert.match(await evaluate(`[...document.querySelectorAll('[data-source-card="play"] .coverage-state')].map(e=>e.textContent).join(' ')`),/Terhubung · tanpa hasil/,'kanal project baru yang menjawab tanpa teks tidak dilabeli "Berhasil" biasa');
+  assert.doesNotMatch(await evaluate(`[...document.querySelectorAll('[data-source-card] .coverage-state')].map(e=>e.textContent).join(' ')`),/Terhubung/,'kanal project baru belum pernah ditarik');
+  // Langkah pengguna: penarikan dijalankan dari menu Platform, bukan dari penyimpanan project.
+  await pullFromPlatform();
+  assert.match(await evaluate(`document.querySelector('[data-source-card="play"] .coverage-state').textContent`),/Terhubung · tanpa hasil/,'kanal project baru yang menjawab tanpa teks tidak dilabeli "Berhasil" biasa');
+  await click('[data-view="overview"]');
+  assert.deepEqual(await statValues(),['—','—','—'],'penarikan tanpa hasil tidak mengarang angka');
+  // Penarikan yang mengembalikan teks: seluruh menu terisi dari hasil penarikan project itu sendiri.
+  collectorMode='filled-project';
+  await pullFromPlatform();
+  await click('[data-view="overview"]');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent==='3 teks pada pilihan ini')resolve(true);else if(Date.now()>end)reject(Error('Dasbor project baru tidak terisi: '+(document.querySelector('.summary-card .badge')||{}).textContent));else requestAnimationFrame(check);}check();})`);
+  assert.notDeepEqual(await statValues(),['—','—','—'],'angka sentimen project baru terisi dari penarikan');
+  assert.equal(await totalBadge(),'3 teks pada pilihan ini','seluruh teks yang ditarik dihitung');
+  await click('[data-view="reviews"]');
+  assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),3,'menu Review menampilkan teks project baru');
+  assert.equal(await evaluate(`document.querySelector('tbody').textContent.includes('wondr merchant')`),false,'teks project lama tidak ikut tampil di project baru');
+  await screenshot('project-filled.png');
+  await click('[data-view="platforms"]');
   await click('[data-view="overview"]');
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
-  assert.equal(await evaluate(`document.documentElement.scrollWidth`),390,'project baru tanpa data tidak melebar pada layar 390px');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth`),390,'project baru berisi data tidak melebar pada layar 390px');
   assert.equal(await evaluate(`[...document.querySelectorAll('.chart-card,.card')].every(card=>card.getBoundingClientRect().width>0)`),true,'kartu tetap berukuran walau isinya kosong');
   await screenshot('project-empty-mobile.png');
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   // Pemindahan project harus memisahkan datanya: project lama kembali ke jumlah sebelumnya,
-  // project baru tetap kosong.
+  // dataset project baru tidak ikut terbawa.
   await evaluate(`const pick=document.querySelector('.project-bar .project-select');pick.value='wondr-merchant';pick.dispatchEvent(new Event('change',{bubbles:true}));`);
   await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent===${JSON.stringify(defaultBadge)})resolve(true);else if(Date.now()>end)reject(Error('Data project lama tidak tampil: '+JSON.stringify({badge:b?.textContent,options:[...document.querySelectorAll('.project-bar .project-select option')].map(o=>[o.value,o.selected]),toast:document.querySelector('#toast').textContent})));else requestAnimationFrame(check);}check();})`);
   assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),2);
@@ -763,7 +790,7 @@ try {
   await click('[data-action="manage-project"]');
   await click('#manage-dialog [data-action="delete-project"]');
   assert.equal(await evaluate(`document.querySelector('#delete-dialog').open`),true,'dialog konfirmasi hapus terbuka');
-  assert.match(await evaluate(`document.querySelector('#delete-dialog .dialog-body').textContent`),/Yang hilang: 0 teks ulasan/,'konfirmasi merinci data yang akan dihapus');
+  assert.match(await evaluate(`document.querySelector('#delete-dialog .dialog-body').textContent`),/Yang hilang: 3 teks ulasan/,'konfirmasi merinci data yang akan dihapus');
   assert.match(await evaluate(`document.querySelector('#delete-dialog .delete-target').textContent`),/Kasir Toko Baru/,'project yang dihapus disebut namanya');
   await screenshot('project-delete.png');
   await click('#delete-dialog [data-close="delete-dialog"]');

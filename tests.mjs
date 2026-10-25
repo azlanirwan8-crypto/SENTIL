@@ -2721,8 +2721,13 @@ test('Dataset project baru kosong dan setiap kanal diberi keterangan belum ditar
   const dataset = emptyDataset();
   assert.equal(dataset.reviews.length, 0);
   assert.equal(dataset.runs.length, 0);
-  assert.ok(dataset.sources.every(source => source.status === 'belum_ditarik'));
   assert.match(dataset.sources.find(source => source.id === 'play').message, /Project baru belum pernah ditarik/);
+  const pullable = dataset.sources.filter(source => source.status !== 'unsupported').map(source => source.id).sort();
+  assert.deepEqual(pullable, [...onlineCollectors().keys()].sort(), 'kanal yang tercatat dapat ditarik sama persis dengan kanal yang punya kolektor');
+  assert.ok(pullable.every(id => dataset.sources.find(source => source.id === id).status === 'belum_ditarik'));
+  const without = dataset.sources.filter(source => source.status === 'unsupported').map(source => source.id);
+  assert.deepEqual(without, ['forum', 'blog'], 'kanal tanpa kolektor tidak pernah diminta dan tidak muncul di daftar penarikan');
+  assert.match(dataset.sources.find(source => source.id === 'forum').message, /Belum terhubung/);
 });
 test('Target setiap project berasal dari identitas tokonya sendiri', () => {
   const store = initialStore();
