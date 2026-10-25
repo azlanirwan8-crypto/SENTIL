@@ -287,11 +287,15 @@ svg.icon {
   font-variant-numeric: tabular-nums;
 }
 
+/* Kerangka aplikasi setinggi layar: sidebar dan topbar tidak pernah ikut bergulir, dan hanya
+   area konten yang menggulir. Tinggi memakai dvh agar bilah alamat ponsel tidak memotongnya. */
 .app-shell {
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
   min-width: 0;
-  min-height: 100vh;
+  overflow: hidden;
   margin-left: var(--sidebar-width);
 }
 
@@ -342,13 +346,31 @@ svg.icon {
 }
 
 main {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   max-width: 1660px;
   margin: 0 auto;
-  padding: 24px 24px 0;
+  padding: 24px 24px 28px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #c5cbd4 transparent;
   outline: none;
+}
+
+main::-webkit-scrollbar {
+  width: 8px;
+}
+
+main::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: #c5cbd4;
+}
+
+main::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .page-heading {
@@ -2953,7 +2975,7 @@ tbody tr:hover {
   }
 
   main {
-    padding: 20px 16px 0;
+    padding: 20px 16px 24px;
   }
 
   .topbar {
@@ -3071,7 +3093,7 @@ tbody tr:hover {
   }
 
   main {
-    padding: 20px 12px 0;
+    padding: 20px 12px 20px;
   }
 
   .topbar {
@@ -4515,6 +4537,19 @@ th[aria-sort='descending'] .th-sort.active .icon {
 .first-run-steps { display: grid; gap: 10px; margin: 0 0 22px; padding: 0; list-style: none; text-align: left; counter-reset: langkah; }
 .first-run-steps li { position: relative; padding: 10px 12px 10px 40px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); font-size: 13px; line-height: 1.6; counter-increment: langkah; }
 .first-run-steps li::before { content: counter(langkah); position: absolute; top: 10px; left: 12px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; }
+/* Jendela pendek (laptop 768px atau layar 125%): layar awal dipadatkan agar muat utuh di dalam
+   frame tanpa perlu menggulir sama sekali. */
+@media (max-height: 860px) {
+  .first-run { margin: 8px auto; padding: 24px 28px; }
+  .first-run-mark { width: 44px; height: 44px; margin-bottom: 10px; }
+  .first-run-mark .icon { width: 20px; height: 20px; }
+  .first-run h1 { font-size: 20px; }
+  .first-run p { margin-bottom: 14px; line-height: 1.6; }
+  .first-run-steps { gap: 8px; margin-bottom: 16px; }
+  .first-run-steps li { padding: 8px 12px 8px 40px; line-height: 1.5; }
+  .first-run-steps li::before { top: 8px; }
+  .first-run-view { margin-top: 10px; }
+}
 
 /* Catatan pendek di bawah kolom isian dialog. */
 .dialog-form label small { font-size: 11.5px; font-weight: 400; color: var(--text-muted); }

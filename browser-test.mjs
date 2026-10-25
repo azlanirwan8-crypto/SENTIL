@@ -156,6 +156,23 @@ try {
   assert.equal(await evaluate(`performance.getEntriesByType('resource').filter(e=>e.name.includes('.woff2')).length`),4);
   assert.equal(await evaluate(`performance.getEntriesByType('resource').every(e=>new URL(e.name).origin===location.origin)`),true);
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth`),true);
+  // Kerangka tetap: dokumen setinggi layar, topbar dan sidebar tidak ikut bergulir, dan hanya
+  // area konten yang menggulir — sama seperti dasbor profesional pada umumnya.
+  assert.equal(await evaluate(`document.documentElement.scrollHeight<=innerHeight`),true,'tidak ada gulir halaman di luar kerangka aplikasi');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.app-shell')).overflow`),'hidden','kerangka aplikasi mengunci luapan ke dalam');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#main')).overflowY`),'auto','area konten adalah satu-satunya penggulir');
+  await evaluate(`document.querySelector('#main').scrollTop=320`);
+  assert.equal(await evaluate(`document.querySelector('#main').scrollTop>0`),true,'konten panjang menggulir di dalam area konten');
+  assert.equal(await evaluate(`document.querySelector('.topbar').getBoundingClientRect().top`),0,'topbar tetap di atas saat konten digulir');
+  assert.equal(await evaluate(`document.querySelector('.sidebar').getBoundingClientRect().top`),0,'sidebar tetap di tempat saat konten digulir');
+  assert.equal(await evaluate(`window.scrollY`),0,'dokumen tidak ikut bergeser');
+  assert.equal(await evaluate(`document.querySelector('.breadcrumb strong').checkVisibility()`),true,'topbar tetap terlihat saat konten digulir');
+  assert.equal(await evaluate(`document.querySelector('#main').scrollWidth<=document.querySelector('#main').clientWidth`),true,'konten tidak melebar di dalam area gulir');
+  await click('[data-view="platforms"]');
+  assert.equal(await evaluate(`document.querySelector('#main').scrollTop`),0,'pindah menu mengembalikan konten ke atas');
+  assert.equal(await evaluate(`document.querySelector('.topbar').getBoundingClientRect().top`),0);
+  await click('[data-view="overview"]');
+  completed.push('Fixed app frame: document never scrolls, topbar and sidebar stay put, only the content pane scrolls');
   await screenshot('dashboard-desktop.png');completed.push('Velzon Default visual tokens, locally loaded Poppins and baseline metrics');
   await click('[data-platform="play"]');assert.deepEqual(await statValues(),['58,2%','40,0%','+18,2']);assert.equal(await totalBadge(),'55 teks pada pilihan ini');
   await click('[data-platform="appstore"]');assert.deepEqual(await statValues(),['100,0%','0,0%','+100,0']);
@@ -529,6 +546,8 @@ try {
       await click(`[data-view="${view}"]`);
       assert.equal(await evaluate(`document.activeElement.tagName`),'H1');
       assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,`${view} overflows at ${width}px`);
+      assert.equal(await evaluate(`document.documentElement.scrollHeight<=innerHeight`),true,`${view}: dokumen tidak menggulir di luar frame pada ${width}px`);
+      assert.equal(await evaluate(`document.querySelector('#main').scrollWidth<=document.querySelector('#main').clientWidth`),true,`${view}: konten tidak melebar di dalam area gulir pada ${width}px`);
       assert.equal(await evaluate(`new Set([...document.querySelectorAll('.platform-tab')].map(e=>Math.round(e.getBoundingClientRect().top))).size`),1,`${view}: platform rows at ${width}px`);
       assert.equal(await evaluate(`document.querySelectorAll('.platform-tab').length`),12);
       assert.deepEqual(await noClip('.metric-label,.stat-label,.stat-value,.stat-sub,.card h2,.complaint-row .btn-text,.feature-row-label strong,.treemap-cell,.aspect-pill,.distribution-item,.absa-mixes h3,.projection-name,.projection-stats span,.projection-stats strong,.projection-stats small,.driver h3,.source-facts dt,.source-facts dd,.platform-tab,.badge,.priority-count,.distribution-item'),[],`${view}: clipped text at ${width}px`);
@@ -819,7 +838,20 @@ try {
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-select option')].map(o=>[o.value,o.disabled])`),[['',true]],'pemilih project hanya menampung placeholder, bukan project');
   assert.equal(await evaluate(`document.querySelectorAll('.stat-card,.summary-card,.filters').length`),0,'layar awal tidak menampilkan angka atau filter yang bisa terbaca sebagai nol');
   assert.equal(await evaluate(`Boolean(document.querySelector('#main [data-action="analyze"]'))`),false,'tanpa project tidak ada tombol tarik analisis');
+  // Layar awal harus muat utuh di dalam frame pada zoom 100%: tidak ada gulir dokumen pada
+  // layar besar, dan tidak ada gulir konten pada jendela laptop yang lebih pendek.
+  assert.equal(await evaluate(`document.documentElement.scrollHeight<=innerHeight`),true,'layar awal tidak menggulir halaman');
+  assert.equal(await evaluate(`document.querySelector('#main').scrollHeight<=document.querySelector('#main').clientHeight`),true,'layar awal muat penuh pada jendela 1440x1000');
+  await send('Emulation.setDeviceMetricsOverride',{width:1920,height:950,deviceScaleFactor:1,mobile:false});
+  assert.equal(await evaluate(`document.documentElement.scrollHeight<=innerHeight`),true,'layar awal tidak menggulir halaman pada 1920x950 (zoom 100%)');
+  assert.equal(await evaluate(`document.querySelector('#main').scrollHeight<=document.querySelector('#main').clientHeight`),true,'layar awal muat penuh pada 1920x950 (zoom 100%)');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,'layar awal 1920px tidak melebar');
   await screenshot('first-run.png');
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:700,deviceScaleFactor:1,mobile:false});
+  assert.equal(await evaluate(`document.documentElement.scrollHeight<=innerHeight`),true,'layar awal tidak menggulir halaman pada jendela pendek');
+  assert.equal(await evaluate(`document.querySelector('#main').scrollHeight<=document.querySelector('#main').clientHeight`),true,'layar awal tetap muat penuh pada jendela 1440x700');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,'jendela pendek tidak menimbulkan luapan horizontal');
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await click('.first-run [data-action="add-project"]');
   assert.equal(await evaluate(`document.querySelector('#project-dialog').open`),true,'layar awal menawarkan pembuatan project pertama');
   await click('#project-dialog [data-close="project-dialog"]');

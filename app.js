@@ -828,10 +828,16 @@ function clearReviewFilters() {
   clearComplaint();
   state.sentiment='all'; state.query=''; state.tag=''; state.group=null; state.groupName=''; state.page=1;
 }
+// Hanya area konten yang bergulir (topbar dan sidebar tetap). Setiap pindah menu atau project
+// dimulai dari atas supaya pengguna tidak mendarat di tengah halaman yang berbeda isinya.
+function resetContentScroll() {
+  const main = $('#main');
+  if (main) main.scrollTop = 0;
+}
 function navigate(view, keepComplaint=false) {
   if (!Object.hasOwn(views,view)) return;
   if (!keepComplaint) clearComplaint();
-  state.view=view; state.page=1; render({animate:true}); window.scrollTo({top:0,behavior:'instant'});
+  state.view=view; state.page=1; render({animate:true}); resetContentScroll();
   $('#main h1').focus({preventScroll:true});
 }
 function openReview(key) {
@@ -1019,6 +1025,7 @@ async function createProjectFromDialog() {
     $('#project-dialog')?.close();
     clearReviewFilters();
     render();
+    resetContentScroll();
     discovery.name = ''; discovery.entity = ''; discovery.payload = null; discovery.picked = { play: '', appstore: '' }; discovery.searched = ''; discovery.error = '';
     // Menyimpan project sengaja TIDAK langsung menarik data: penarikan memakai kanal yang dapat
     // memakan kuota, jadi hanya tombol Tarik Analisis yang boleh menjalankannya.
@@ -1067,6 +1074,7 @@ async function switchProject(id) {
   clearReviewFilters();
   sync.loading = false;
   render();
+  resetContentScroll();
 }
 // Penghapusan project adalah satu-satunya jalur yang membuang baris ulasan, jadi ia meminta
 // konfirmasi eksplisit dan hanya berlaku pada project yang sedang aktif.
@@ -1100,6 +1108,7 @@ async function deleteActiveProject(button) {
     $('#manage-dialog')?.close();
     clearReviewFilters();
     render();
+    resetContentScroll();
     focusProjectControl('add-project');
     notify(projects.list.length ? `Project "${active.name}" dihapus beserta datanya. Project aktif sekarang: ${projectName()}.` : `Project "${active.name}" dihapus beserta datanya. Dasbor kembali kosong — buat project baru kapan saja.`);
   } catch (error) {
