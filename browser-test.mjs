@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { createDashboardServer } from './server.mjs';
 import { seedReviews } from './data.js';
-import { clusterStats } from './model.js';
+import { clusterStats, summary } from './model.js';
+import { signed } from './format.js';
 import { storeVersion, defaultProjectId } from './projects.mjs';
 import { initialDataset } from './dashboard-core.mjs';
 import { defaultTarget } from './target.mjs';
@@ -107,6 +108,7 @@ try {
   const metricValues=()=>evaluate(`[...document.querySelectorAll('.metrics .metric-value')].map(e=>e.textContent.trim())`);
   const totalBadge=()=>evaluate(`document.querySelector('.summary-card .badge').textContent.trim()`);
   const labeledBadge=()=>evaluate(`document.querySelector('.stat-card.nss .stat-sub').textContent.trim()`);
+  const until = async (check, label) => evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;function tick(){if(${check})resolve(true);else if(Date.now()>end)reject(Error(${JSON.stringify(label)}+' — '+JSON.stringify({badge:document.querySelector('.summary-card .badge')?.textContent,search:document.querySelector('#review-search')?.value,chips:document.querySelectorAll('.active-filter').length})));else requestAnimationFrame(tick);}tick();})`);
   const screenshot=async(name,full=true)=>{
     await evaluate('document.fonts.ready');
     await evaluate('new Promise(resolve=>setTimeout(resolve,900))');
@@ -120,7 +122,7 @@ try {
   assert.deepEqual(await statValues(),['64,1%','34,4%','+29,7']);
   assert.equal(await totalBadge(),'64 teks pada pilihan ini');
   assert.equal(await evaluate(`Boolean(document.querySelector('.brand,.workspace-chip'))`),false);
-  const navigationLabels=['Dashboard','Analisis sentimen','Review','Platform','Metode & data'];
+  const navigationLabels=['Dashboard','Analisis sentimen','Review','Platform','Benchmark','Metode & data'];
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.querySelector('span').textContent)`),navigationLabels);
   assert.equal(await evaluate(`document.querySelectorAll('.profile,.profile-avatar,.avatar-light,.sidebar-bottom,.nav-label,.sidebar-separator').length`),0);
   assert.doesNotMatch(await evaluate(`document.querySelector('#sidebar').textContent+document.querySelector('#topbar').textContent`),/Ringkasan|Ulasan & percakapan|Cakupan platform|Analis Data|Ruang kerja|Data & transparansi/i);
@@ -141,17 +143,37 @@ try {
   }
   await click('[data-view="methodology"]');
   const methodText = await evaluate(`document.querySelector('#main').textContent`);
-  assert.match(methodText,/Kalibrasi awal \(in-sample\)/,'panel kualitas memisahkan kalibrasi');
-  assert.match(methodText,/64 label awal/,'jumlah label kalibrasi dibaca dari data, bukan diklaim');
-  assert.match(methodText,/Uji luar sampel dari label Anda/,'uji luar sampel punya bagian sendiri');
-  assert.match(methodText,/Belum dapat diukur/,'tanpa label analis, akurasi luar sampel tidak dikarang');
-  assert.match(methodText,/bukan akurasi pada teks baru/,'angka in-sample tidak dipasarkan sebagai akurasi');
+  assert.match(methodText,/Mesin analisis otomatis/,'panel metode menjelaskan mesin yang berjalan');
+  assert.match(methodText,/Tidak ada pelabelan manual/,'tidak ada label manusia yang diklaim');
+  assert.match(methodText,/rules-v2/,'versi mesin disebut');
+  assert.match(methodText,/bukan probabilitas terkalibrasi/,'keyakinan aturan tidak dipasarkan sebagai probabilitas');
+  assert.match(methodText,/tidak mengklaim akurasi/,'tidak ada akurasi yang dikarang tanpa holdout');
+  assert.doesNotMatch(methodText,/Kalibrasi awal|Uji luar sampel|Panel koreksi label manual|Simpan label|Tandai ulang/,'salinan panel kualitas dan koreksi label manual sudah tidak ada');
+  assert.equal(await evaluate(`document.querySelectorAll('#main [data-label-sentiment],#main [data-label-reset],#main .label-editor').length`),0,'tidak ada kendali label manual di menu metode');
   await click('[data-view="sentiment"]');
   const methodCard = await evaluate(`document.querySelector('.method-card')?.textContent||''`);
   assert.match(methodCard,/mesin hybrid rules-v2/i,'kartu metode menyebut mesin hybrid yang aktif');
   assert.doesNotMatch(methodCard,/keliru pada negasi/i,'negasi tidak lagi diklaim tidak ditangani');
+  await click('[data-view="benchmark"]');
+  await until(`document.querySelectorAll('.benchmark-stat-cards .stat-card').length===4`,'panel benchmark tidak tampil');
+  assert.equal(await evaluate(`document.querySelector('h1').textContent`),'Benchmark');
+  assert.equal(await evaluate(`document.querySelector('.nav-item[aria-current="page"]').getAttribute('aria-label')`),'Benchmark');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.benchmark-stat-cards .stat-value')].map(e=>e.textContent.trim())`),['1 / 1','64','+29,7','1 / 1'],'benchmark memakai angka project yang benar-benar ditarik');
+  assert.match(await evaluate(`document.querySelector('.benchmark-table').textContent`),/wondr merchant by BNI/);
+  assert.match(await evaluate(`document.querySelector('.benchmark-table').textContent`),/\+29,7/,'NSS tabel sama dengan dasbor');
+  assert.equal(await evaluate(`document.querySelectorAll('.benchmark-table tbody tr').length`),1,'tidak ada aplikasi pembanding yang dikarang');
+  assert.equal(await evaluate(`document.querySelectorAll('.benchmark-empty-action').length`),1,'satu project menawarkan pembanding kedua');
+  assert.equal(await evaluate(`document.querySelectorAll('#period,[data-action="analyze"],.platform-tab').length`),0,'benchmark tidak memakai filter atau tombol tarik');
+  assert.equal(await evaluate(`document.querySelectorAll('.brain-card .brain-sample').length`),4,'otak analisis menampilkan empat contoh tebakan terkuat');
+  assert.equal(await evaluate(`document.querySelectorAll('.brain-card .brain-facts span').length`),6,'kapasitas mesin dibaca dari konstanta classifier');
+  assert.match(await evaluate(`document.querySelector('.brain-card').textContent`),/istilah positif/);
+  assert.match(await evaluate(`document.querySelector('.brain-pipeline').textContent`),/Leksikon berbobot/,'tahapan mesin dinyatakan');
+  const brainQuotes=await evaluate(`[...document.querySelectorAll('.brain-sample .brain-quote')].map(e=>e.textContent)`);
+  assert.equal(brainQuotes.every(text=>seedReviews.some(row=>row.text===text)),true,'setiap kutipan otak analisis adalah teks asli');
+  assert.equal(await evaluate(`document.querySelector('#main').scrollWidth<=document.querySelector('#main').clientWidth`),true,'benchmark tidak melebar di area gulir');
+  await screenshot('benchmark.png');
   await click('[data-view="overview"]');
-  completed.push('Five menus including the reachable methodology page, no workspace or profile chrome');
+  completed.push('Six menus, automatic-only methodology, and benchmark brain panel reading real project data');
   assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
   // Teks pemasaran dan footer dihapus atas permintaan pemilik akun; tidak ada lagi eyebrow atau footer.
   assert.equal(await evaluate(`document.querySelectorAll('.eyebrow,.page-footer').length`),0,'eyebrow dan footer tidak boleh tersisa');
@@ -163,7 +185,7 @@ try {
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).borderRadius`),'4px');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.range-button')).borderRadius`),'4px');
   assert.match(await evaluate(`getComputedStyle(document.body).fontFamily`),/^Poppins/);
-  assert.equal(await evaluate(`[400,500,600,700].every(weight=>document.fonts.check(weight+' 13px Poppins'))`),true);
+  assert.equal(await evaluate(`Promise.all([400,500,600,700].map(weight=>document.fonts.load(weight+' 13px Poppins'))).then(()=>[400,500,600,700].every(weight=>document.fonts.check(weight+' 13px Poppins')))`),true);
   assert.equal(await evaluate(`performance.getEntriesByType('resource').filter(e=>e.name.includes('.woff2')).length`),4);
   assert.equal(await evaluate(`performance.getEntriesByType('resource').every(e=>new URL(e.name).origin===location.origin)`),true);
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth`),true);
@@ -209,8 +231,9 @@ try {
   await click('[data-view="sentiment"]');assert.equal(await evaluate(`document.querySelectorAll('.recommendation').length`),6);
   await screenshot('sentiment-analysis.png');
   await click('[data-driver="Pendaftaran belum tuntas"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
+  const driverText=await evaluate(`document.querySelector('tbody .review-text').textContent`);
   await click('[data-review]');assert.equal(await evaluate(`document.querySelector('#detail-dialog').open`),true);
-  assert.match(await evaluate(`document.querySelector('#detail-dialog .detail-section:not(.label-editor) p').textContent`),/pendaftaran|pengajuan/i);
+  assert.equal(await evaluate(`document.querySelector('#detail-dialog .detail-text').textContent`),driverText,'dialog menampilkan teks ulasan asli tanpa perubahan');
   // Rincian disusun sebagai kartu metadata dua kolom dengan judul berikon; jejak teknis di footer.
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#detail-dialog .detail-grid')).display`),'grid','rincian memakai kartu metadata dua kolom');
   assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .detail-section h3 .icon').length>=3`),true,'setiap bagian rincian diberi ikon');
@@ -286,7 +309,6 @@ try {
   completed.push('CSV export respects current search and filters');
   // Filter konten kini berlaku global: kata kunci yang sama harus mengubah angka Dashboard,
   // bukan hanya tabel Review. Setelah ini dasbor diuji dalam keadaan tanpa filter.
-  const until = async (check, label) => evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;function tick(){if(${check})resolve(true);else if(Date.now()>end)reject(Error(${JSON.stringify(label)}+' — '+JSON.stringify({badge:document.querySelector('.summary-card .badge')?.textContent,search:document.querySelector('#review-search')?.value,chips:document.querySelectorAll('.active-filter').length})));else requestAnimationFrame(tick);}tick();})`);
   await click('[data-view="overview"]');
   await evaluate(`document.querySelector('#review-search').value='Bos AteQ';document.querySelector('#review-search').dispatchEvent(new Event('input',{bubbles:true}));`);
   await until(`document.querySelector('.summary-card .badge')?.textContent==='1 teks pada pilihan ini'`,'Dashboard tidak ikut tersaring kata kunci');
@@ -303,9 +325,9 @@ try {
   // palsu untuk pilihan lain, dan tidak ada jumlah kanal yang melebihi total pilihan.
   const facetCount = selector => evaluate(`(()=>{const t=document.querySelector(${JSON.stringify(selector)});return t?Number(t.querySelector('.count').textContent):null})()`);
   await click('[data-aspect="access"]');
-  await until(`document.querySelector('.summary-card .badge')?.textContent==='14 teks pada pilihan ini'`,'filter aspek tidak membatasi angka dasbor');
-  assert.equal(await facetCount('.platform-tab[data-platform="all"]'),14,'jumlah "Semua platform" mengikuti aspek aktif');
-  assert.equal(await evaluate(`[...document.querySelectorAll('.platform-tab')].slice(1).reduce((sum,t)=>sum+(Number(t.querySelector('.count').textContent)||0),0)`),14,'jumlah per kanal sama dengan total aspek');
+  await until(`document.querySelector('.summary-card .badge')?.textContent==='16 teks pada pilihan ini'`,'filter aspek tidak membatasi angka dasbor');
+  assert.equal(await facetCount('.platform-tab[data-platform="all"]'),16,'jumlah "Semua platform" mengikuti aspek aktif');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.platform-tab')].slice(1).reduce((sum,t)=>sum+(Number(t.querySelector('.count').textContent)||0),0)`),16,'jumlah per kanal sama dengan total aspek');
   await click('[data-aspect=""]');
   await until(`document.querySelector('.summary-card .badge')?.textContent==='64 teks pada pilihan ini'`,'aspek tidak dapat dilepas');
   await click('[data-sentiment="negative"]');
@@ -381,9 +403,9 @@ try {
   await click('[data-view="overview"]');
   await until(`document.querySelector('.summary-card .badge')?.textContent==='64 teks pada pilihan ini'`,'dasbor belum kembali ke keadaan tanpa filter');
   const complaintRows=await evaluate(`[...document.querySelectorAll('.complaint-row')].map(r=>({id:r.querySelector('[data-complaint]').dataset.complaint,rank:r.querySelector('.complaint-rank').textContent,count:r.querySelector('.feature-row-label strong').textContent,negative:parseFloat(r.querySelector('.feature-bar .negative').style.width)}))`);
-  assert.deepEqual(complaintRows.map(r=>r.id),['onboarding','migration','notifications','login','general','transactions','settlement','features','performance','support']);
-  assert.equal(complaintRows[0].rank,'1');assert.match(complaintRows[0].count,/^8 negatif · 8 ulasan$/);
-  assert.deepEqual(complaintRows.map(r=>Number(r.negative.toFixed(3))),[100,100,80,100,14.286,42.857,42.857,40,50,66.667],'segmen sentimen memakai proporsi seluruh ulasan pada area yang sama');
+  assert.deepEqual(complaintRows.map(r=>r.id),['onboarding','login','transactions','notifications','migration','general','settlement','performance','features','ux','support']);
+  assert.equal(complaintRows[0].rank,'1');assert.match(complaintRows[0].count,/^8 negatif · 9 ulasan$/);
+  assert.deepEqual(complaintRows.map(r=>Number(r.negative.toFixed(3))),[88.889,100,50,83.333,100,11.111,40,50,66.667,14.286,50],'segmen sentimen memakai proporsi seluruh ulasan pada area yang sama');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.complaint-row')).display`),'grid');
   assert.equal(await evaluate(`document.querySelector('.complaint-row .feature-bar').getBoundingClientRect().width>0`),true);
   assert.equal(await evaluate(`document.querySelectorAll('.complaint-list .legend-swatch').length`),4,'legenda sentimen dipakai ulang pada kartu keluhan');
@@ -407,10 +429,10 @@ try {
   assert.match(await evaluate(`document.querySelectorAll('.projection-stats small')[1].textContent`),/rentang -71,4 s\.d\. \+57,9 · NSS saat ini \+29,7/);
   assert.equal(await evaluate(`document.querySelector('.projection-card .badge').textContent`),'Belum ada perubahan yang dapat dinyatakan','arah hanya dinyatakan bila kemiringan meyakinkan');
   const projections=await evaluate(`[...document.querySelectorAll('.projection-row')].map(r=>({name:r.querySelector('.projection-name').textContent.replace(/[▲▼■]/,'').trim(),count:r.querySelector('.feature-row-label strong').textContent,recorded:parseFloat(r.querySelector('.recorded').style.width),forecast:parseFloat(r.querySelector('.forecast').style.width),meta:r.querySelector('.projection-meta').textContent}))`);
-  assert.deepEqual(projections.map(p=>p.name),['Akses & performa aplikasi','Notifikasi & pembaruan laporan','Migrasi kurang jelas','Transaksi dan penerimaan pembayaran','Pendaftaran belum tuntas','Penanganan layanan']);
-  assert.equal(projections[0].count,'5 proyeksi · 0–10');
+  assert.deepEqual(projections.map(p=>p.name),['Akses & performa aplikasi','Transaksi dan penerimaan pembayaran','Migrasi kurang jelas','Notifikasi & pembaruan laporan','Pendaftaran belum tuntas','Penanganan layanan']);
+  assert.equal(projections[0].count,'6 proyeksi · 1–11');
   assert.deepEqual([Number(projections[0].recorded.toFixed(3)),Number(projections[0].forecast.toFixed(3))],[50,50],'batang membandingkan pekan terakhir dan proyeksi pada skala yang sama');
-  assert.match(projections[0].meta,/Relatif tetap · laju 1,3 ulasan negatif per pekan · penanggung jawab: Rekayasa · Penjaminan mutu/);
+  assert.match(projections[0].meta,/Relatif tetap · laju 1,5 ulasan negatif per pekan · penanggung jawab: Rekayasa · Penjaminan mutu/);
   assert.match(await evaluate(`document.querySelector('.projection-card .note-inline').textContent`),/kemiringan deret positif maupun negatif belum melampaui ambang \|t\| ≥ 2/);
   assert.match(await evaluate(`document.querySelector('.projection-card .chart-notes').textContent`),/regresi kuadrat terkecil/);
   assert.match(await evaluate(`document.querySelector('.projection-card .chart-notes').textContent`),/Poisson/);
@@ -426,7 +448,7 @@ try {
   await click('[data-platform="all"]');completed.push('Complaint chart reusing the topic bar grammar, projection card with Poisson range, exact drilldown and zero-value bars');
   assert.equal(await evaluate(`document.querySelector('.summary-card h2').textContent.startsWith('Ringkasan')`),true);
   assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Dari 64 teks berlabel pada pilihan ini, 64,1% positif dan 34,4% negatif; NSS \+29,7 poin\./,'kalimat ringkasan memakai angka hasil perhitungan');
-  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Pendaftaran, masuk & keamanan akun — 14 ulasan \(63,6% dari 22 negatif\); Pembayaran, QRIS & pencairan — 8 ulasan \(36,4% dari 22 negatif\)/);
+  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Pendaftaran, masuk & keamanan akun — 15 ulasan \(68,2% dari 22 negatif\); Pembayaran, QRIS & pencairan — 9 ulasan \(40,9% dari 22 negatif\)/);
   assert.equal(await evaluate(`document.querySelectorAll('.stat-card').length`),3,'kepala ringkas memuat tepat tiga kartu angka');
   assert.equal(await evaluate(`document.querySelectorAll('.summary-main > p').length`),2,'ringkasan maksimal dua kalimat');
   assert.match(await evaluate(`document.querySelector('.summary-card .chart-notes').textContent`),/bukan model bahasa/,'sumber ringkasan dinyatakan terbuka');
@@ -443,9 +465,9 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-bar').length`)>0,true,'batang volume harian digambar');
   assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-line').length`),1,'garis NSS harian digambar');
   assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-dot').length`)>0,true,'titik NSS tersedia dengan nilai pada title');
-  assert.equal(await evaluate(`[...document.querySelectorAll('.donut-card svg path title')].reduce((sum,t)=>sum+Number(t.textContent.match(/([0-9]+) ulasan/)[1]),0)`),56,'cincin dalam dan luar digambar dari angka yang sama');
-  assert.equal(await evaluate(`document.querySelector('.donut-card .donut-wrap text').textContent`),'28','pusat donut memuat jumlah keanggotaan aspek');
-  assert.match(await evaluate(`document.querySelector('.donut-card .note-inline').textContent`),/28 adalah jumlah keanggotaan aspek dari 22 ulasan negatif/,'satu ulasan yang masuk beberapa aspek tidak dihitung dua kali diam-diam');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.donut-card svg path title')].reduce((sum,t)=>sum+Number(t.textContent.match(/([0-9]+) ulasan/)[1]),0)`),58,'cincin dalam dan luar digambar dari angka yang sama');
+  assert.equal(await evaluate(`document.querySelector('.donut-card .donut-wrap text').textContent`),'29','pusat donut memuat jumlah keanggotaan aspek');
+  assert.match(await evaluate(`document.querySelector('.donut-card .note-inline').textContent`),/29 adalah jumlah keanggotaan aspek dari 22 ulasan negatif/,'satu ulasan yang masuk beberapa aspek tidak dihitung dua kali diam-diam');
   assert.equal(await evaluate(`document.querySelector('.nss-card h2').textContent`),'Skor sentimen neto');
   assert.equal(await evaluate(`document.querySelectorAll('.nss-card .nss-gauge path').length`),6,'keenam pita NSS digambar');
   assert.equal(await evaluate(`document.querySelectorAll('.nss-card .nss-gauge line').length`),1,'jarum hanya ada bila NSS dapat dihitung');
@@ -645,6 +667,12 @@ try {
   assert.equal(await evaluate(`document.querySelector('h1').textContent`),'Platform');
   assert.equal(await evaluate(`document.querySelectorAll('.coverage-card').length`),11);
   await screenshot('platform-mobile.png');
+  await click('[data-view="benchmark"]');
+  assert.equal(await evaluate(`document.querySelector('h1').textContent`),'Benchmark');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth`),390,'benchmark tidak melebar di layar 390px');
+  assert.equal(await evaluate(`document.querySelector('#main').scrollWidth<=document.querySelector('#main').clientWidth`),true,'tabel benchmark bergulir di wadahnya sendiri');
+  assert.equal(await evaluate(`document.querySelectorAll('.brain-sample').length`),4,'panel otak tetap lengkap di layar sempit');
+  await screenshot('benchmark-mobile.png');
   await click('[data-view="overview"]');
   assert.equal(await evaluate(`document.querySelector('.breadcrumb strong').textContent`),'Dashboard');
   await click('[data-platform="play"]');
@@ -705,33 +733,26 @@ try {
   assert.match(await evaluate(`document.querySelector('.dialog-body').textContent`),/2026-10-23T12:30:00Z/);
   assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog script').length`),0);
   assert.equal(await evaluate('Boolean(window.__xss)'),false);
-  // Panel label manual: baris relevan dapat dikoreksi analis, hasilnya langsung dibaca server,
-  // dan reset mengembalikan label otomatis. Label sementara ini direset sebelum metrik diuji.
-  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .label-editor [data-label-sentiment]').length`),3,'panel koreksi menawarkan tiga kelas sentimen');
+  // Rincian tidak menawarkan koreksi label apa pun: satu-satunya label adalah hasil mesin.
+  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .label-editor,[data-label-sentiment],[data-label-reset]').length`),0,'tidak ada kendali label manual');
   assert.match(await evaluate(`document.querySelector('#detail-dialog .aspect-polarity').textContent`),/Pendaftaran, masuk & keamanan akun/,'polaritas per aspek menyebut nama aspek');
   assert.match(await evaluate(`document.querySelector('#detail-dialog .aspect-polarity').textContent`),/dari kalimat yang menyebut aspek ini/,'polaritas aspek menyebut dasar kalimatnya');
-  await click('#detail-dialog [data-label-sentiment="positive"]');
-  await until(`document.querySelector('#detail-dialog .detail-author .badge')?.textContent.trim()==='Positif' && Boolean(document.querySelector('#detail-dialog [data-label-reset]'))`,'label manual tidak diterapkan pada dialog');
-  assert.match(await evaluate(`document.querySelector('#detail-dialog .label-editor').textContent`),/Riwayat label manual \(1\)/,'riwayat label manual dicatat');
-  const labeledRow = (await (await fetch(`${baseUrl}/api/data?project=${defaultProjectId}`)).json()).reviews.find(row => `${row.platform}|${row.id}`==='youtube|yt-a');
-  assert.equal(labeledRow.sentiment,'positive');
-  assert.equal(labeledRow.labeling,'manual');
-  assert.equal(labeledRow.labelOrigin,'user');
-  assert.equal(labeledRow.text,'wondr merchant login gagal','label manual tidak mengubah teks sumber');
-  await screenshot('review-label-editor.png',false);
+  assert.match(await evaluate(`document.querySelector('#detail-dialog').textContent`),/Otomatis v2/,'label menyebut versi mesin');
+  assert.match(await evaluate(`document.querySelector('#detail-dialog').textContent`),/bukan probabilitas terkalibrasi/,'keyakinan aturan tidak diklaim sebagai probabilitas');
+  const automaticRow = (await (await fetch(`${baseUrl}/api/data?project=${defaultProjectId}`)).json()).reviews.find(row => `${row.platform}|${row.id}`==='youtube|yt-a');
+  assert.equal(automaticRow.sentiment,'negative','sentimen dihitung mesin dari teks');
+  assert.equal(automaticRow.labeling,'rules-v2');
+  assert.equal('labelOrigin' in automaticRow,false,'tidak ada metadata label manusia');
+  assert.equal(automaticRow.text,'wondr merchant login gagal','teks sumber tidak diubah');
+  await screenshot('review-detail-social.png',false);
   await click('[data-close="detail-dialog"]');
-  await click('[data-view="methodology"]');
-  const holdoutText = await evaluate(`document.querySelector('#main').textContent`);
-  assert.match(holdoutText,/1 label manual/,'label analis masuk uji luar sampel setelah disimpan');
-  assert.match(holdoutText,/baris = label manusia/,'matriks kesesuaian ditampilkan bersama label analis');
+  await click('[data-view="benchmark"]');
+  await until(`document.querySelectorAll('.brain-sample [data-review]').length>0`,'contoh otak analisis tidak dapat dibuka');
+  await click('.brain-sample [data-review]');
+  assert.equal(await evaluate(`document.querySelector('#detail-dialog').open`),true,'contoh benchmark membuka rincian nyata');
+  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog [data-label-sentiment],#detail-dialog .label-editor').length`),0,'rincian dari benchmark juga tanpa koreksi manual');
+  await click('[data-close="detail-dialog"]');
   await click('[data-view="reviews"]');
-  await click('[data-review="youtube|yt-a"]');
-  await click('#detail-dialog [data-label-reset]');
-  await until(`document.querySelector('#detail-dialog .detail-author .badge')?.textContent.trim()==='Negatif' && !document.querySelector('#detail-dialog [data-label-reset]')`,'reset label tidak mengembalikan penilaian otomatis');
-  const resetRow = (await (await fetch(`${baseUrl}/api/data?project=${defaultProjectId}`)).json()).reviews.find(row => `${row.platform}|${row.id}`==='youtube|yt-a');
-  assert.equal(resetRow.labeling,'rules-v2');
-  assert.equal('labelOrigin' in resetRow,false,'reset menghapus metadata label manual');
-  await click('[data-close="detail-dialog"]');
   await click('[data-review="youtube|yt-owner"]');
   assert.match(await evaluate(`document.querySelector('.dialog-body').textContent`),/Di luar penilaian pelanggan/);
   await click('[data-close="detail-dialog"]');
@@ -811,6 +832,21 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),3,'menu Review menampilkan teks project baru');
   assert.equal(await evaluate(`document.querySelector('tbody').textContent.includes('wondr merchant')`),false,'teks project lama tidak ikut tampil di project baru');
   await screenshot('project-filled.png');
+  // Dua project berdata kini membandingkan mesin yang sama pada sumber masing-masing.
+  await click('[data-view="benchmark"]');
+  await until(`document.querySelectorAll('.benchmark-table tbody tr').length===2`,'project kedua tidak masuk benchmark');
+  const benchRows=await evaluate(`[...document.querySelectorAll('.benchmark-table tbody tr')].map(row=>({active:row.classList.contains('is-active'),text:row.textContent}))`);
+  assert.equal(benchRows.filter(row=>row.active).length,1,'tepat satu project aktif ditandai');
+  assert.match(benchRows.find(row=>row.active).text,/Kasir Toko/);
+  assert.match(benchRows.find(row=>row.active).text,/Belum dapat dinilai/,'tiga teks belum representatif untuk diperingkat');
+  assert.match(benchRows.find(row=>!row.active).text,/wondr merchant by BNI/);
+  const baselineRows=(await (await fetch(`${baseUrl}/api/data?project=${defaultProjectId}`)).json()).reviews;
+  assert.equal(benchRows.find(row=>!row.active).text.includes(signed(summary(baselineRows).nss)),true,'NSS project pembanding sama dengan hitungan baris tersimpan');
+  assert.equal(await evaluate(`document.querySelectorAll('.benchmark-empty-action').length`),0,'dua project berdata tidak menampilkan ajakan pembanding');
+  assert.equal(await evaluate(`document.querySelector('.brain-card .card-header h2').textContent.includes('Kasir Toko')`),true,'otak analisis mengikuti project aktif');
+  assert.equal(await evaluate(`document.querySelectorAll('.brain-sample').length`),3,'contoh diambil dari teks project aktif');
+  assert.equal(await evaluate(`document.querySelectorAll('.brain-sample').length>0`),true);
+  await screenshot('benchmark-comparison.png');
   await click('[data-view="platforms"]');
   await click('[data-view="overview"]');
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
@@ -899,7 +935,7 @@ try {
   assert.equal(kosong.target,null,'tanpa project tidak ada target toko');
   completed.push('Empty store: first-run screen replaces zeroed dashboard and API reports no project');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png','project-manage.png','project-delete.png','project-delete-last.png','first-run.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','review-detail-social.png','benchmark.png','benchmark-comparison.png','benchmark-mobile.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png','project-manage.png','project-delete.png','project-delete-last.png','first-run.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();

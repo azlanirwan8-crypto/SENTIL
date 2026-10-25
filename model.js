@@ -1,4 +1,4 @@
-import { tags, seedReviews } from './data.js';
+import { tags } from './data.js';
 import { isWondrTarget } from './target.mjs';
 
 export const sentimentNames = { positive: 'Positif', negative: 'Negatif', neutral: 'Netral', unclassified: 'Perlu tinjauan' };
@@ -399,7 +399,7 @@ export function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
 }
 const topicRules = {
-  onboarding: /daftar|pendaftaran|registrasi|verifikasi|approval|approve|pengajuan|ngajuin/,
+  onboarding: /daftar|dftr|pendaftaran|registrasi|verifikasi|approval|approve|pengajuan|ngajuin/,
   login: /login|log in|masuk|password|pasword|sidik jari|fingerprint|biometrik|\b(?:otp|pin)\b/,
   transactions: /qris|transaksi|pembayaran/,
   notifications: /notif|notifikasi|suara nominal/,
@@ -407,7 +407,7 @@ const topicRules = {
   performance: /loading|lambat|lemot|lancar|gangguan|ga ngguan|crash|error|hang/,
   ux: /tampilan|mudah digunakan|simpel|user friendly|mudah dipahami/,
   features: /fitur|sidik jari|fingerprint|hapus toko/,
-  support: /\bcs\b|customer service|pelayanan|layanan pelanggan/,
+  support: /\bcs(?:nya)?\b|\bcustomer service\b|pelayanan|layanan pelanggan/,
   migration: /migrasi|beralih|aplikasi lama|aplikasi sebelumnya|discontinue/,
   benefit: /membantu|mempermudah|usaha/,
 };
@@ -537,59 +537,10 @@ const complaintWords = 'jelek|cacat|rusak|lemot|lambat|ribet|repot|lelet|sia-sia
 const negatedPraise = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${praiseWords})\\b`,'g');
 const negatedComplaint = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${complaintWords})\\b`,'g');
 const scrubNegatedPolarity = scope => scope.replace(negatedPraise,' buruk').replace(negatedComplaint,' ');
-// Kualitas label otomatis diukur terhadap baris yang sudah dinilai manusia, bukan diklaim.
-// 'seed' adalah korpus awal yang ikut menyusun aturan, sehingga angkanya in-sample. 'user'
-// hanya memuat label yang dibuat analis di dasbor pada teks di luar korpus itu, jadi dapat
-// disebut uji luar sampel selama aturan tidak disetel ulang memakai label tersebut.
-// Cohen's kappa dihitung atas seluruh kategori yang benar-benar muncul, termasuk abstain.
+// Seluruh label dibuat mesin. Tidak ada label manusia yang disimpan atau dipakai sebagai
+// pembanding, sehingga angka dasbor selalu dapat dihitung ulang dari teks sumber.
 export const classifierVersion = 'rules-v2';
 export const abstainThreshold = 1.2;
-export const calibrationTexts = new Set(seedReviews.map(row => String(row.text || '').trim().toLocaleLowerCase('id')));
-const isCalibrationText = text => calibrationTexts.has(String(text || '').trim().toLocaleLowerCase('id'));
-const manualLabelSource = row => row?.labelOrigin === 'user' && !isCalibrationText(row.text) ? 'user' : 'seed';
-export function scoreClassifier(rows, classify = classifyText, { labelSource = 'all' } = {}) {
-  const labels = ['positive', 'negative', 'neutral'];
-  const gold = (rows || []).filter(row => row && typeof row.text === 'string' && row.text.trim()
-    && labels.includes(row.sentiment) && row.labeling === 'manual'
-    && (labelSource === 'all' || manualLabelSource(row) === labelSource));
-  const matrix = {}; const countsGold = {}; const countsPred = {};
-  let agree = 0, abstained = 0;
-  for (const row of gold) {
-    const predicted = classify(row.text).sentiment;
-    const key = `${row.sentiment}>${predicted}`;
-    matrix[key] = (matrix[key] || 0) + 1;
-    countsGold[row.sentiment] = (countsGold[row.sentiment] || 0) + 1;
-    countsPred[predicted] = (countsPred[predicted] || 0) + 1;
-    if (predicted === row.sentiment) agree++;
-    if (predicted === 'unclassified') abstained++;
-  }
-  const perClass = {};
-  for (const label of labels) {
-    const tp = matrix[`${label}>${label}`] || 0;
-    const fn = (countsGold[label] || 0) - tp;
-    const fp = (countsPred[label] || 0) - tp;
-    if (!countsGold[label] && !countsPred[label]) { perClass[label] = null; continue; }
-    const precision = tp + fp ? tp / (tp + fp) : null;
-    const recall = tp + fn ? tp / (tp + fn) : null;
-    perClass[label] = {
-      support: countsGold[label] || 0, predicted: countsPred[label] || 0,
-      precision, recall,
-      f1: precision && recall ? (2 * precision * recall) / (precision + recall) : null,
-    };
-  }
-  const n = gold.length;
-  const observed = n ? agree / n : null;
-  let expected = 0;
-  const categories = [...new Set([...labels, ...Object.keys(countsPred)])];
-  if (n) for (const category of categories) expected += ((countsGold[category] || 0) / n) * ((countsPred[category] || 0) / n);
-  const present = labels.filter(label => (countsGold[label] || 0) > 0);
-  const macroF1 = present.length ? present.reduce((sum, label) => sum + (perClass[label]?.f1 ?? 0), 0) / present.length : null;
-  return {
-    n, agree, observed,
-    kappa: n && expected < 1 ? (observed - expected) / (1 - expected) : null,
-    matrix, perClass, abstained, coverage: n ? (n - abstained) / n : null, macroF1, labelSource,
-  };
-}
 
 // Aturan domain mempertahankan pola merchant yang sudah terbukti presisi pada data ini:
 // kegagalan proses, aset yang belum masuk, penyangkalan pujian, dan riwayat yang terselesaikan.
@@ -788,6 +739,21 @@ export function aspectPolarity(review) {
   });
 }
 
+// Kapasitas mesin dibaca dari konstanta yang benar-benar dipakai classifier, bukan dari salinan
+// teks pemasaran. Panel "otak analisis" memakai angka ini agar pembaca dapat melihat apa yang
+// dijalankan pada teks, tanpa klaim akurasi yang tidak diukur.
+export const engineFacts = {
+  version: classifierVersion,
+  abstainThreshold,
+  positiveTerms: Object.keys(positiveLexicon).length,
+  negativeTerms: Object.keys(negativeLexicon).length,
+  phrases: phraseWeights.size,
+  negators: negators.size,
+  boosters: boosters.size,
+  diminishers: diminishers.size,
+  aspects: Object.keys(aspectCueRules).length,
+  topics: Object.keys(topicRules).length,
+};
 export function classifyText(text) {
   const value = String(text ?? '').toLocaleLowerCase('id').replace(/\s+/g,' ');
   const reviewTags = Object.entries(topicRules).filter(([,rule]) => rule.test(value)).map(([tag]) => tag);
@@ -827,7 +793,7 @@ export function classifyText(text) {
       ? 'Aturan domain tidak menemukan pola yang cukup, sehingga leksikon berbobot menentukan arah.'
       : engine === 'neutral' ? 'Teks cocok dengan pola netral eksplisit.' : 'Leksikon tidak menemukan sinyal polaritas yang cukup kuat.';
   const rationale = sentiment === 'unclassified'
-    ? `Mesin hybrid ${classifierVersion} tidak menemukan sinyal polaritas yang cukup kuat (skor leksikon ${lexical.score > 0 ? '+' : ''}${lexical.score.toFixed(2)}; ambang ±${abstainThreshold.toFixed(2)}). ${method} Tidak dihitung sebagai netral; perlu ditinjau secara manual.`
+    ? `Mesin hybrid ${classifierVersion} tidak menemukan sinyal polaritas yang cukup kuat (skor leksikon ${lexical.score > 0 ? '+' : ''}${lexical.score.toFixed(2)}; ambang ±${abstainThreshold.toFixed(2)}). ${method} Tidak dihitung sebagai netral; perlu ditinjau pada menu Review.`
     : `Dinilai otomatis oleh mesin hybrid ${classifierVersion} (${sentimentNames[sentiment].toLowerCase()}). ${method}${evidence ? ` Bukti leksikon: ${evidence}.` : ' Tidak ada kata penilaian yang dikenali leksikon.'} Klausa harapan dan kegagalan yang sudah selesai ("akhirnya bisa masuk") tidak dihitung sebagai keluhan aktif, tetapi teks sesudahnya tetap dinilai. Keyakinan aturan ${Math.round(confidence * 100)}% — bukan probabilitas terkalibrasi. Belum diperiksa manusia; sarkasme, bahasa campur, dan ulasan multiaspek dapat dinilai keliru.`;
   return {
     sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: classifierVersion,
@@ -969,6 +935,9 @@ export function classifyReview(raw, target = null) {
   return {...label,sentiment:'unclassified',confidence:null,engine:'relevance-gate',tags:['general'],relevance,rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.`};
 }
 const fingerprint = r => ['play','appstore'].includes(r.platform) && r.author && r.author !== 'N/A' && r.date ? `${r.platform}|${r.author.trim().toLowerCase()}|${r.date}|${r.text.trim().toLowerCase()}` : null;
+// labelOrigin/labeledAt/labelHistory hanya ada pada data warisan versi label manual. Field itu
+// dibuang saat baris dihitung ulang agar tidak ada lagi label manusia yang tersimpan.
+const derivedLabelFields = ['sentiment','tags','rationale','labeling','confidence','score','engine','evidence','relevance','labelOrigin','labeledAt','labelHistory'];
 export function upsertReviews(existing, incoming, observedAt, target = null) {
   const reviews = existing.map(r => ({ ...r }));
   const ids = new Map(reviews.map((r,i) => [`${r.platform}|${r.id}`, i]));
@@ -985,24 +954,16 @@ export function upsertReviews(existing, incoming, observedAt, target = null) {
       const old = reviews[index];
       const contextChanged = raw.platform === 'youtube' && (['publishedAt','updatedAt','authorChannelId','parentId'].some(k => (old[k] ?? null) !== (raw[k] ?? null)) || JSON.stringify(old.context) !== JSON.stringify(raw.context));
       const changed = contextChanged || ['text','title','rating','date','author'].some(k => (old[k] ?? null) !== (raw[k] ?? null));
-      const textChanged = old.text !== raw.text || (old.title ?? '') !== (raw.title ?? '');
       const history = [...(old.history || [])];
       if (changed) { const { history: ignored, ...version } = old; history.push(version); updated++; } else unchanged++;
       const oldPrint = fingerprint(old);
       if (oldPrint) prints.delete(oldPrint);
-      // Label manual hanya sah untuk teks yang benar-benar dinilai manusia. Teks sumber yang
-      // berubah membatalkan label itu; label otomatis dihitung ulang, bukan diwarisi.
-      const keepsManual = old.labeling === 'manual' && !textChanged;
-      const refreshed = keepsManual ? {} : textChanged || raw.platform === 'youtube' ? classifyReview(raw, target) : {};
+      // Semua field turunan dibuang lebih dulu, lalu dihitung ulang dari teks yang datang.
+      // Dengan begitu label lama (termasuk label manual warisan) tidak pernah menempel pada
+      // teks yang sudah berubah, dan relevance usang tidak tertinggal saat status berganti.
       const next = { ...old, ...raw, id: old.id };
-      for (const field of ['sentiment','tags','rationale','labeling','confidence','score','engine','evidence','relevance','labelOrigin','labeledAt','labelHistory']) {
-        if (field in old) next[field] = old[field]; else delete next[field];
-      }
-      Object.assign(next, refreshed);
-      if (textChanged) {
-        for (const field of ['labelOrigin','labeledAt','labelHistory']) delete next[field];
-        if (!('relevance' in refreshed)) delete next.relevance;
-      }
+      for (const field of derivedLabelFields) delete next[field];
+      Object.assign(next, classifyReview(raw, target));
       reviews[index] = { ...next, observedAt, firstSeenAt: old.firstSeenAt || old.observedAt, lastSeenAt: observedAt, history };
       ids.set(key,index); if (print) prints.set(print,index);
     }
@@ -1021,7 +982,7 @@ export function exportCsv(reviews) {
   };
   return '\uFEFF' + [columns.join(','), ...reviews.map(r => {
     // Aspek dihitung ulang agar baris CSV memakai label yang sama dengan grafik di layar.
-    const row = { ...r, ...absaOf(r), relevance: r.relevance?.status ?? 'N/A' };
+    const row = { ...r, ...absaOf(r), relevance: r.relevance?.status ?? 'N/A', labeling: r.labeling || classifierVersion };
     return columns.map(k => cell(k === 'tags' ? (r.tags || []).join(';') : row[k])).join(',');
   })].join('\r\n');
 }

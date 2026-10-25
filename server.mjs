@@ -4,7 +4,8 @@ import { pathToFileURL } from 'node:url';
 import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
-import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap, applyManualLabel } from './dashboard-core.mjs';
+import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
+import { benchmarkOverview } from './benchmark.mjs';
 import { discoverTarget } from './discovery.mjs';
 import { defaultTarget, normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
@@ -84,7 +85,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     const id = resolveProjectId(store, project);
     // Belum ada project: tidak ada dataset dan tidak ada target, jadi antarmuka menampilkan
     // layar awal alih-alih angka nol yang bisa disalahartikan sebagai "tidak ada keluhan".
-    return { ...(id ? datasetFor(store, id) : emptyView()), projects: projectList(store), activeProject: id, target: id ? safeProjectTarget(store, id) : null, running };
+    return { ...(id ? datasetFor(store, id) : emptyView()), projects: projectList(store), activeProject: id, target: id ? safeProjectTarget(store, id) : null, benchmark: benchmarkOverview(projectList(store), store.datasets, id), running };
   };
   // rename() di Windows sering gagal sesaat (EBUSY/EPERM/EACCES) ketika antivirus atau
   // indexer masih memegang berkas target, jadi penulisan diulang beberapa kali sebelum
@@ -179,22 +180,6 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     await persist(next);
     return view(next.activeProject);
   };
-  // Label manual hanya mengubah field turunan sentimen. Baris yang dikecualikan dari penilaian
-  // pelanggan ditolak oleh applyManualLabel, sehingga NSS tidak dapat dinaikkan dengan melabeli
-  // teks milik produk lain.
-  const labelReview = async body => {
-    if (running) throw new Error('busy');
-    const project = strictProjectId(store, body.project);
-    const dataset = datasetFor(store, project);
-    const result = applyManualLabel(dataset.reviews, body, new Date().toISOString(), projectTarget(store, project));
-    const next = {
-      ...store,
-      datasets: { ...store.datasets, [project]: { ...dataset, reviews: withAbsa(result.rows) } },
-    };
-    await persist(next);
-    store = next;
-    return { ...view(project), labelAction: result.action, labelId: `${body.platform}|${body.id}` };
-  };
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -260,19 +245,6 @@ export async function createDashboardServer({ storagePath, collector = collectOn
         if (/^(project_|target_invalid|discovery_unconfirmed|body_too_large)/.test(message)) { json(400, { error: message }); return; }
         console.error('Project gagal disimpan:', message);
         json(500, { error: 'Project tidak dapat disimpan. Data yang sudah ada tetap tersimpan.' });
-      }
-      return;
-    }
-    if (path === '/api/label' && req.method === 'POST') {
-      if (!sameSite || !fromPage) { json(403,{error:'Permintaan dari luar halaman ini ditolak.'}); return; }
-      try {
-        json(200, await labelReview(await readJsonBody(req)));
-      } catch (error) {
-        const message = String(error.message || '');
-        if (message === 'busy') { json(409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai sebelum melabeli ulasan.' }); return; }
-        if (/^(label_|project_|body_too_large)/.test(message)) { json(400, { error: message }); return; }
-        console.error('Label manual gagal disimpan:', message);
-        json(500, { error: 'Label tidak dapat disimpan. Data yang sudah ada tetap tersimpan.' });
       }
       return;
     }

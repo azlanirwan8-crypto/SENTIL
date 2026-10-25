@@ -81,14 +81,14 @@ const rows = [
   ['ba6f5395-13e2-4b63-ac1d-8c485601f5f7','Eko Hadi','2026-08-20',5,'positive',['general'],'terbaik','Pujian singkat tanpa rincian.'],
   ['9303ab8c-06b9-4223-b007-e3af989ce0d6','Andena Utama','2026-08-20',5,'positive',['ux'],'fresh dan menarik. coba daftar semoga cepat prosesnya ya.','Memuji tampilan yang baru dan menarik. Bagian tentang pendaftaran merupakan harapan, bukan keluhan.'],
   ['6abe6519-896e-4cd2-afba-6a80e1ed2cb2','Ribka Mandagi','2026-10-22',5,'positive',['general'],'mantap, keren appsnya','Pujian umum terhadap aplikasi tanpa menyebut fitur tertentu.'],
-  ['88b5cc8e-25f0-480a-995c-752dbf44f622','satria','2026-10-22',5,'positive',['ux'],'Aplikasi nya mempunyai desain yang sangat menarik 👍','Apresiasi terhadap desain aplikasi. Aturan kata kunci belum mengenali pola ini sehingga diperiksa manual.'],
+  ['88b5cc8e-25f0-480a-995c-752dbf44f622','satria','2026-10-22',5,'positive',['ux'],'Aplikasi nya mempunyai desain yang sangat menarik 👍','Apresiasi terhadap desain aplikasi; rincian fitur tidak disebutkan.'],
   ['1570de49-0cae-43c1-8825-49d459be2bae','Hevira Octia','2026-10-22',5,'positive',['ux'],'aplikasinya baguusss banget, mudah digunakan','Memuji tampilan dan kemudahan penggunaan.'],
   ['1b2b30b0-bdce-4add-9331-d2e63dd30eef','Zunijar Zunijar','2026-10-22',5,'positive',['general'],'bagus','Pujian satu kata tanpa rincian fitur.'],
-  ['d85dcab7-9491-41c3-99ea-395b2d9f0736','Rido oktobriananta','2026-10-22',5,'positive',['ux'],'ihh lebih oke dibanding yang lama,','Perbandingan positif terhadap aplikasi lama; aspek yang dinilai tidak dirinci. Aturan kata kunci belum mengenali pola ini sehingga diperiksa manual.'],
+  ['d85dcab7-9491-41c3-99ea-395b2d9f0736','Rido oktobriananta','2026-10-22',5,'positive',['ux'],'ihh lebih oke dibanding yang lama,','Perbandingan positif terhadap aplikasi lama; aspek yang dinilai tidak dirinci.'],
 ];
 export const seedReviews = rows.map(([id, author, date, rating, sentiment, reviewTags, text, rationale]) => ({
   id, author, date, rating, sentiment, tags: reviewTags, text, rationale, platform: 'play', sourceUrl: playUrl,
-  observedAt: observationDate, labeling: 'manual', labelOrigin: 'seed', provenance: 'Halaman publik Google Play; diambil dengan urutan terbaru',
+  observedAt: observationDate, provenance: 'Halaman publik Google Play; diambil dengan urutan terbaru',
 }));
 const appleRows = [
   ['14579262452','Avengers1403','2026-09-22','QRIS Merchant','Tampilan menarik, modern, pencairan dana lebih cepat',['ux','settlement'],'Memuji tampilan dan kecepatan pencairan dana menurut pengalamannya; bukan pemeriksaan standar layanan.'],
@@ -104,5 +104,5 @@ const appleRows = [
 seedReviews.push(...appleRows.map(([id,author,date,title,text,reviewTags,rationale]) => ({
   id: `apple-${id}`, author, date, title, text, tags: reviewTags, rationale, rating: 5, sentiment: 'positive', platform: 'appstore',
   sourceUrl: 'https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?see-all=reviews&platform=iphone',
-  labeling: 'manual', labelOrigin: 'seed', observedAt: observationDate, provenance: 'Halaman ulasan publik App Store; ID dan tanggal mengikuti data ulasan Apple',
+  observedAt: observationDate, provenance: 'Halaman ulasan publik App Store; ID dan tanggal mengikuti data ulasan Apple',
 })));

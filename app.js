@@ -1,5 +1,5 @@
 ﻿import { platforms, tags, tagColors } from './data.js';
-import { summary, filterReviews, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, aspectPolarity, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, scoreClassifier, classifierVersion, nssBand, nssBands, nssMinSample, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
+import { summary, filterReviews, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, aspectPolarity, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, classifierVersion, engineFacts, abstainThreshold, nssBand, nssBands, nssMinSample, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
 import { esc, number, decimal, integer, pct, signed, colors, sentimentKeys } from './format.js';
 import { comboChart, nestedDonut, painTreemap, matrixChart, statCard } from './charts.js';
 
@@ -60,21 +60,14 @@ function tagStyle(hex) {
   const [r, g, b] = parts.slice(1).map(part => Number.parseInt(part, 16));
   return ` style="--tag-ink:${hex};--tag-soft:rgba(${r},${g},${b},.1);--tag-line:rgba(${r},${g},${b},.28)"`;
 }
-const labelStyles = { manual: '#0ab39c', 'rules-v2': '#299cdb', 'rules-v1': '#7f8c9a' };
-const engineNames = { domain:'Aturan domain produk', lexicon:'Leksikon berbobot', neutral:'Pola netral eksplisit', abstain:'Tidak ada sinyal yang cukup', manual:'Label manual analis', 'relevance-gate':'Disaring oleh pemeriksaan relevansi' };
+const labelStyles = { 'rules-v2': '#299cdb', 'rules-v1': '#7f8c9a' };
+const engineNames = { domain:'Aturan domain produk', lexicon:'Leksikon berbobot', neutral:'Pola netral eksplisit', abstain:'Tidak ada sinyal yang cukup', 'relevance-gate':'Disaring oleh pemeriksaan relevansi' };
 function labelMethod(r) {
-  if (r.labeling === 'manual') return r.labelOrigin === 'user' ? 'Manual · label dibuat analis di dasbor untuk teks ini' : 'Manual · label awal yang dibaca dari teks pada data ini';
-  if (r.labeling === 'rules-v2') return 'Otomatis hybrid v2 · aturan domain + leksikon berbobot (negasi, intensifier, klausa kontrastif); bukan model bahasa, perlu pemeriksaan manusia';
-  if (r.labeling === 'rules-v1') return 'Aturan kata kunci (versi 1) · otomatis, bukan model bahasa; perlu pemeriksaan manusia';
+  if (r.labeling === 'rules-v2') return 'Otomatis hybrid v2 · aturan domain + leksikon berbobot (negasi, intensifier, klausa kontrastif); bukan model bahasa';
+  if (r.labeling === 'rules-v1') return 'Aturan kata kunci (versi 1) · otomatis, bukan model bahasa';
   return `${r.labeling || 'N/A'} · metode pelabelan belum terverifikasi`;
 }
-function labelBadge(r) {
-  if (r.labeling === 'manual') return 'Manual';
-  if (r.labeling === 'rules-v2') return 'Otomatis v2';
-  if (r.labeling === 'rules-v1') return 'Otomatis v1';
-  return r.labeling || 'N/A';
-}
-const canLabelReview = r => !r.relevance || r.relevance.status === 'relevant';
+const labelBadge = r => r.labeling === 'rules-v2' ? 'Otomatis v2' : r.labeling === 'rules-v1' ? 'Otomatis v1' : r.labeling || 'N/A';
 const paths = {
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   chart:'<path d="M4 4v16h17M8 15V9m5 6V5m5 10v-7"/>',
@@ -122,7 +115,10 @@ function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden=
 // yang dibuat dan ditarik sendiri oleh pengguna, dari server, bukan dari berkas aplikasi.
 let reviews = [];
 const state = { view:'overview', platform:'all', period:'all', from:'', to:'', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', cluster:'', aspect:'', page:1, size:10, sort:{ key:'date', dir:'desc' } };
-const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null, storageWarning:null, labeling:null };
+const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null, storageWarning:null };
+// Perbandingan antar project dan jejak mesin datang bersama /api/data, sehingga menu Benchmark
+// tidak memicu permintaan tambahan dan tidak pernah menampilkan aplikasi yang tidak dibuat pengguna.
+let benchmark = null;
 // Project analisis: satu berkas data dapat memuat beberapa project, masing-masing dengan
 // dataset dan target tokonya sendiri. Penarikan selalu mengikuti project aktif.
 const projects = { list:[], active:null, target:null };
@@ -131,7 +127,7 @@ const projects = { list:[], active:null, target:null };
 const projectName = () => projects.list.find(project => project.id === projects.active)?.name || 'project';
 const projectSlug = () => projects.active || 'project';
 const discovery = { name:'', entity:'', payload:null, busy:false, error:'', picked:{ play:'', appstore:'' }, searched:'', partial:'' };
-const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', methodology:'Metode & data' };
+const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', benchmark:'Benchmark', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
 const isBusy = () => sync.loading || sync.busy || sync.running;
 function notify(text, kind) {
@@ -235,7 +231,7 @@ function nav() {
   // Pemilih project di bilah atas adalah satu-satunya pemilih pada layar sempit, jadi ia harus
   // terkunci selama ada permintaan berjalan persis seperti versi sidebar.
   const idle = isBusy() || sync.requesting ? ' disabled' : '';
-  $('#sidebar').innerHTML = `${projectBar()}<nav>${Object.entries(views).map(([id,label],i) => `<button class="nav-item ${state.view===id?'active':''}" data-view="${id}" aria-label="${esc(label)}" ${state.view===id?'aria-current="page"':''} title="${esc(label)}">${icon(['grid','pulse','message','layers','book'][i])}<span>${esc(label)}</span>${id==='reviews'&&projects.active?`<span class="nav-count">${reviews.length}</span>`:''}</button>`).join('')}</nav>`;
+  $('#sidebar').innerHTML = `${projectBar()}<nav>${Object.entries(views).map(([id,label],i) => `<button class="nav-item ${state.view===id?'active':''}" data-view="${id}" aria-label="${esc(label)}" ${state.view===id?'aria-current="page"':''} title="${esc(label)}">${icon(['grid','pulse','message','layers','chart','book'][i])}<span>${esc(label)}</span>${id==='reviews'&&projects.active?`<span class="nav-count">${reviews.length}</span>`:''}</button>`).join('')}</nav>`;
   $('#topbar').innerHTML = `<div class="breadcrumb">${icon('home')}<strong>${esc(views[state.view])}</strong></div><div class="topbar-right"><label class="topbar-project"><span class="sr-only">Project aktif</span><select class="project-select" aria-label="Pilih project aktif"${idle}>${projectOptions()}</select></label><span class="topbar-brand">${esc((projects.list.find(project => project.id === projects.active)?.name || 'belum ada project').toUpperCase())}</span></div>`;
 }
 function heading() {
@@ -244,22 +240,24 @@ function heading() {
     sentiment:'Kenali kekuatan layanan dan area yang perlu ditingkatkan.',
     reviews:'Telusuri teks asli, label sentimen, dan alasan di balik setiap penilaian.',
     platforms:'Lihat cakupan data, status pengambilan, dan batas setiap sumber.',
+    benchmark:'Bandingkan aplikasi yang Anda analisis dan periksa cara mesin membaca teksnya.',
     methodology:'Analisis yang dapat ditelusuri, tanpa angka perkiraan atau klaim pembaruan langsung.',
   };
   const title = state.view === 'overview' ? 'Pemantauan sentimen' : views[state.view];
   const months = [...new Set(reviews.filter(r => validDay(r.date)).map(r => r.date.slice(0,7)))].sort();
   if (/^\d{4}-\d{2}$/.test(state.period) && !months.includes(state.period)) months.push(state.period);
   months.sort();
-  return `<section class="page-heading"><div><h1 tabindex="-1">${esc(title)}</h1><p>${esc(subtitles[state.view])}</p></div>${state.view!=='methodology'?`<div class="heading-actions">
+  const filterable = !['methodology', 'benchmark'].includes(state.view);
+  return `<section class="page-heading"><div><h1 tabindex="-1">${esc(title)}</h1><p>${esc(subtitles[state.view])}</p></div>${filterable?`<div class="heading-actions">
     <label class="range-button">${icon('calendar')}<select id="period" aria-label="Periode ulasan"><option value="all" ${state.period==='all'?'selected':''}>Semua tanggal</option>${months.map(month=>`<option value="${esc(month)}" ${state.period===month?'selected':''}>${esc(dateLabel(month+'-01',{day:undefined,month:'long',year:'numeric'}))}</option>`).join('')}<option value="custom" ${state.period==='custom'?'selected':''}>Rentang khusus</option></select></label>
     ${state.view==='platforms'||!reviews.length?`<button class="btn btn-primary" data-action="analyze" ${isBusy()?'disabled aria-busy="true"':''}>${isBusy()?'<span class="spinner" aria-hidden="true"></span>':icon('pulse')}${isBusy()?'Mengambil dan menganalisis…':'Tarik Analisis'}</button>`:''}
-  </div>`:''}</section>${sync.storageWarning?`<p class="coverage-warning storage-warning" role="status">${esc(sync.storageWarning)}</p>`:''}${state.view!=='methodology'&&state.period==='custom'?`<div class="custom-dates"><label>Dari tanggal<input id="date-from" type="date" value="${esc(state.from)}"></label><label>Sampai tanggal<input id="date-to" type="date" value="${esc(state.to)}"></label><button class="btn" data-action="apply-dates">Terapkan</button><span class="filter-error" id="date-error" role="alert"></span></div>`:''}`;
+  </div>`:''}</section>${sync.storageWarning?`<p class="coverage-warning storage-warning" role="status">${esc(sync.storageWarning)}</p>`:''}${filterable&&state.period==='custom'?`<div class="custom-dates"><label>Dari tanggal<input id="date-from" type="date" value="${esc(state.from)}"></label><label>Sampai tanggal<input id="date-to" type="date" value="${esc(state.to)}"></label><button class="btn" data-action="apply-dates">Terapkan</button><span class="filter-error" id="date-error" role="alert"></span></div>`:''}`;
 }
 function filters() {
   // Konvensi jumlah pilihan (faceted search): angka pada pilihan platform mengabaikan platform
   // yang sedang dipilih, angka aspek mengabaikan aspek, angka topik mengabaikan topik. Dengan
   // begitu pilihan lain tetap menunjukkan jumlah yang benar dan bukan nol semu.
-  const analysis = state.view !== 'platforms';
+  const analysis = !['platforms', 'methodology', 'benchmark'].includes(state.view);
   // Setiap basis menghitung satu pilihan dengan memakai semua filter lain, termasuk aspek.
   // Karena pilihan dan grafik memakai penyaring yang sama, angka pilihan tidak pernah lebih
   // besar daripada himpunan teks yang benar-benar dibaca dasbor.
@@ -320,7 +318,7 @@ function summaryHeader(data) {
     ? `Dari ${integer(s.classified)} teks berlabel pada pilihan ini, ${number(s.positivePct)}% positif dan ${number(s.negativePct)}% negatif; NSS ${signed(s.nss)} poin.`
     : `Belum ada teks berlabel sentimen pada pilihan ini (${integer(s.total)} teks, ${integer(s.unclassified)} perlu ditinjau), jadi NSS tidak dapat dihitung.`;
   const second = drivers.length
-    ? `Pendorong negatif utama: ${drivers.map(a => `${a.name} — ${integer(a.negative)} ulasan (${number(pct(a.negative, s.negative))}% dari ${integer(s.negative)} negatif)`).join('; ')}.`
+    ? `Pendorong negatif utama: ${drivers.map(a => `${a.name} — ${integer(a.negative)} ulasan (${number(pct(a.negative, s.negative))}% dari ${integer(s.negative)} negatif)`).join('; ')}. Satu ulasan dapat menyebut lebih dari satu aspek.`
     : s.negative
       ? `${integer(s.negative)} ulasan negatif belum dapat dipetakan ke aspek tertentu; umumnya penilaian tanpa objek yang jelas.`
       : 'Tidak ada ulasan negatif pada pilihan ini; cakupan data tetap perlu diperiksa.';
@@ -459,7 +457,7 @@ function nssGauge(data) {
     </div>` : empty('NSS belum dapat dihitung', `Pada pilihan ini belum ada ulasan berlabel positif atau negatif (${integer(s.total)} teks, ${s.unclassified} masih perlu ditinjau). Angka nol bukan berarti tidak ada keluhan.`)}
     <p class="note-inline">${s.classified ? `Jumlah sampel ${integer(s.classified)} ulasan berlabel${s.classified < nssMinSample ? ` masih di bawah ${nssMinSample} sehingga pita interpretasinya belum representatif — jadikan arah indikatif, bukan ukuran kepuasan` : ' cukup untuk membaca arahnya'}; pita hanyalah label ambang, bukan hasil uji statistik.` : ''}</p>
     ${perSource.length ? `<div class="nss-sources"><h3>NSS per kanal</h3>${perSource.map(({ p, rows, s: one }) => `<div class="distribution-item"><span class="platform-label"><span style="color:${color(p.color)};display:flex">${icon(p.icon)}</span>${esc(p.short)}</span><strong>${one.classified ? esc(`${one.nss>0?'+':''}${number(one.nss)}`) : 'N/A'}<small>${one.classified ? `${one.positive}+ / ${one.negative}− dari ${one.classified} berlabel` : `${rows.length} teks, belum berlabel`}</small></strong></div>`).join('')}</div>` : ''}
-    <details class="chart-notes"><summary>Batas baca angka ini</summary><p>NSS dihitung dari ulasan publik yang terkumpul pada dasbor ini, bukan dari seluruh pengguna aplikasi. Kanal yang belum memiliki konektor, ulasan tanpa teks, dan teks yang masih perlu ditinjau tidak ikut membagi. Satu ulasan berbintang tinggi dapat saja bernada negatif, jadi NSS tidak dibandingkan dengan rata-rata bintang toko. Label otomatis memakai mesin hybrid <code>rules-v2</code> (aturan domain + leksikon berbobot). Negasi dan klausa kontrastif ditangani, tetapi sarkasme, campur bahasa, dan ulasan multiaspek masih dapat keliru; label manual tersedia di detail setiap ulasan.</p></details>
+    <details class="chart-notes"><summary>Batas baca angka ini</summary><p>NSS dihitung dari ulasan publik yang terkumpul pada dasbor ini, bukan dari seluruh pengguna aplikasi. Kanal yang belum memiliki konektor, ulasan tanpa teks, dan teks yang masih perlu ditinjau tidak ikut membagi. Satu ulasan berbintang tinggi dapat saja bernada negatif, jadi NSS tidak dibandingkan dengan rata-rata bintang toko. Label otomatis memakai mesin hybrid <code>rules-v2</code> (aturan domain + leksikon berbobot). Negasi dan klausa kontrastif ditangani, tetapi sarkasme, campur bahasa, dan ulasan multiaspek masih dapat keliru. Tidak ada koreksi label manual; teks yang perlu ditinjau ditampilkan apa adanya.</p></details>
   </article>`;
 }
 // Spanduk anomali: selalu ditampilkan, baik ada lonjakan maupun tidak, supaya pembaca tahu
@@ -555,7 +553,7 @@ function incidentReportHtml(data) {
     ${negative.length ? `<div class="report-scroll"><table class="report-table incident-table"><thead><tr><th>Tanggal</th><th>Waktu publikasi (UTC)</th><th>Kanal</th><th>Penulis</th><th>Bintang</th><th>Aspek</th><th>Emosi</th><th>Niat</th><th>Teks asli</th><th>Sumber</th><th>ID</th></tr></thead><tbody>${negative.map(r => { const absa = absaOf(r); return `<tr><td>${esc(r.date || 'N/A')}</td><td>${esc(r.publishedAt || 'N/A')}</td><td>${esc(platformById(r.platform)?.name || r.platform)}</td><td>${esc(authorName(r))}</td><td>${esc(hasRating(r.rating) ? `${r.rating}/5` : 'N/A')}</td><td>${esc(absa.aspects.length ? absa.aspects.map(id => aspectNames[id]).join(', ') : 'N/A')}</td><td>${esc(emotionNames[absa.emotion] || 'N/A')}</td><td>${esc(intentNames[absa.intent] || 'N/A')}</td><td class="incident-text">${esc(r.title ? `${r.title} — ${r.text}` : r.text)}</td><td>${esc(safeHttps(r.sourceUrl) || 'N/A')}</td><td>${esc(r.id)}</td></tr>`; }).join('')}</tbody></table></div>` : list([])}
   </section>
   <section class="report-block"><h2>6. Metodologi dan batasan</h2>
-    <p>Seluruh teks, nama penulis, tanggal, penilaian bintang, dan tautan sumber diambil apa adanya dari halaman publik masing-masing kanal; tidak ada baris yang dibuat-buat dan tidak ada sampel yang dibatasi dalam daftar insiden di atas. Sentimen dihitung mesin hybrid <code>${esc(classifierVersion)}</code> yang deterministik di perangkat ini — aturan domain merchant lalu leksikon berbobot dengan negasi, intensifier, dan klausa kontrastif — bukan model bahasa atau model terlatih. Aspek, emosi, dan niat memakai aturan kata kunci. Sarkasme, campur bahasa, dan ulasan multiaspek dapat keliru; label manual analis, bila ada, menggantikan label otomatis dan tercatat riwayatnya.</p>
+    <p>Seluruh teks, nama penulis, tanggal, penilaian bintang, dan tautan sumber diambil apa adanya dari halaman publik masing-masing kanal; tidak ada baris yang dibuat-buat dan tidak ada sampel yang dibatasi dalam daftar insiden di atas. Sentimen dihitung mesin hybrid <code>${esc(classifierVersion)}</code> yang deterministik di perangkat ini — aturan domain merchant lalu leksikon berbobot dengan negasi, intensifier, dan klausa kontrastif — bukan model bahasa atau model terlatih. Aspek, emosi, dan niat memakai aturan kata kunci. Sarkasme, campur bahasa, dan ulasan multiaspek dapat keliru. Semua label dihitung ulang otomatis setiap data dibaca; tidak ada label manual yang menggantikannya.</p>
     <p>Batasan yang harus dibaca bersama angka ini: (1) yang dianalisis adalah ulasan publik tertulis, bukan seluruh pengguna atau transaksi; (2) kanal yang konektornya belum tersedia atau sedang gagal tidak muncul sebagai nol keluhan; (3) jumlah ulasan per jendela sangat dipengaruhi jadwal penarikan data; (4) teks yang masih perlu ditinjau dikeluarkan dari pembilang dan penyebut persentase; (5) tren dan proyeksi memakai tanggal publikasi, dan ulasan tanpa tanggal tidak masuk grafik. Rincian status per kanal tersedia pada menu Platform dasbor ini.</p>
   </section>`;
 }
@@ -620,7 +618,7 @@ function topicChip(tag, clickable) {
     : `<span class="tag"${tagStyle(tagColors[tag])}>${icon('tagIcon')}${esc(label)}</span>`;
 }
 function labelChip(r) {
-  return `<span class="tag" title="${esc(labelMethod(r))}"${tagStyle(labelStyles[r.labeling] || '#878a99')}>${icon(r.labeling === 'manual' ? 'pen' : 'spark')}${esc(labelBadge(r))}</span>`;
+  return `<span class="tag" title="${esc(labelMethod(r))}"${tagStyle(labelStyles[r.labeling] || '#878a99')}>${icon('spark')}${esc(labelBadge(r))}</span>`;
 }
 function reviewRows(data) {
   return data.map((r,i)=>`<tr><td><div class="review-author"><span class="review-avatar ${['','warm','mint'][i%3]}">${esc(initials(r))}</span><div><div class="review-name" title="${esc(authorName(r))}">${esc(authorName(r))}</div><div class="review-date">${esc(dateLabel(r.date,{year:'numeric'}))}</div></div></div></td><td><button class="review-text-button" data-review="${esc(r.platform+'|'+r.id)}" aria-label="Baca ulasan ${esc(authorName(r))}"><span class="review-text">${esc(r.text)}</span></button><div class="review-tags">${reviewTags(r).map(t=>topicChip(t,true)).join('')}${labelChip(r)}</div></td><td>${platformLabel(r.platform)}${hasRating(r.rating)?`<div class="stars" aria-label="${r.rating} dari 5 bintang">${'★'.repeat(r.rating)}<span class="unfilled-stars">${'★'.repeat(5-r.rating)}</span></div>`:'<div class="review-date">Penilaian N/A</div>'}</td><td>${badge(r.sentiment)}</td><td><button class="icon-button" data-review="${esc(r.platform+'|'+r.id)}" aria-label="Detail ulasan ${esc(authorName(r))}">${icon('chevron')}</button></td></tr>`).join('');
@@ -742,40 +740,134 @@ function coverage() {
     </article>`;
   }).join('')}</div><article class="card method-card"><h2>Batas perbandingan sumber</h2><p>Jumlah ulasan tersimpan tidak menggambarkan seluruh percakapan di suatu platform. Sumber yang belum terhubung tidak berarti tidak ada keluhan. Penilaian seluruh halaman toko, penilaian pada ulasan, dan sentimen teks merupakan ukuran yang berbeda. Perbandingan antarplatform perlu memperhatikan periode, cakupan, dan jumlah ulasan; jumlah ulasan yang kecil belum membuktikan pengalaman pengguna di suatu platform lebih baik.</p></article>`;
 }
-// Panel kualitas label: kalibrasi (label awal yang ikut menyusun aturan) dipisahkan tegas dari
-// uji luar sampel (label yang dibuat analis pada teks di luar korpus awal). Tidak ada angka
-// akurasi yang diklaim dari sampel yang sama dengan sumber penyetelan aturan.
-function classifierQuality() {
-  const calibration = scoreClassifier(reviews, undefined, { labelSource:'seed' });
-  const holdout = scoreClassifier(reviews, undefined, { labelSource:'user' });
-  const pctValue = value => value === null ? '—' : `${number(value * 100)}%`;
-  const perClassTable = score => {
-    const rows = [['Positif','positive'],['Negatif','negative'],['Netral','neutral']].filter(([,key]) => score.perClass[key]);
-    return `<table class="quality-table"><thead><tr><th>Label</th><th>Contoh manusia</th><th>Presisi</th><th>Rekal</th><th>F1</th></tr></thead><tbody>${
-      rows.map(([label,key]) => { const s = score.perClass[key]; return `<tr><th scope="row">${label}</th><td>${s.support}</td><td>${pctValue(s.precision)}</td><td>${pctValue(s.recall)}</td><td>${s.f1===null?'—':decimal(s.f1)}</td></tr>`; }).join('')
-    }</tbody></table>`;
-  };
-  const confusionTable = score => {
-    const gold = [['positive','Positif'],['negative','Negatif'],['neutral','Netral']];
-    const predicted = [...gold, ['unclassified','Perlu tinjauan']];
-    return `<div class="quality-matrix"><table class="quality-table"><caption>Matriks kesesuaian pada label Anda: baris = label manusia, kolom = tebakan otomatis</caption><thead><tr><th>Manusia \\ Otomatis</th>${predicted.map(([,label]) => `<th>${label}</th>`).join('')}<th>Total</th></tr></thead><tbody>${
-      gold.map(([key,label]) => {
-        const total = (score.perClass[key]?.support || 0);
-        return `<tr><th scope="row">${label}</th>${predicted.map(([guess]) => `<td>${integer(score.matrix[`${key}>${guess}`] || 0)}</td>`).join('')}<td><strong>${integer(total)}</strong></td></tr>`;
-      }).join('')
-    }</tbody></table></div>`;
-  };
-  const calibrationBlock = calibration.n
-    ? `<h3>Kalibrasi awal (in-sample)</h3><p>Mesin <code>${esc(classifierVersion)}</code> diuji pada <strong>${integer(calibration.n)} label awal</strong> pada project ini: <strong>${integer(calibration.agree)} dari ${integer(calibration.n)} cocok (${number(calibration.observed * 100)}%)</strong>, Cohen&apos;s kappa <strong>${calibration.kappa===null?'—':decimal(calibration.kappa)}</strong>. ${calibration.n - calibration.agree ? `${integer(calibration.n - calibration.agree)} baris tidak cocok.` : 'Tidak ada selisih pada korpus ini.'}</p>${perClassTable(calibration)}<div class="method-callout">Angka kalibrasi mengukur kecocokan terhadap teks yang ikut menyusun aturan. Angka ini <strong>bukan akurasi pada teks baru</strong> dan tidak boleh dipakai sebagai klaim kinerja di luar korpus.</div>`
-    : '<h3>Kalibrasi awal (in-sample)</h3><p>Tidak ada label awal pada project ini. Korpus kalibrasi hanya ada pada dataset awal; project baru dimulai dari label yang Anda buat sendiri.</p>';
-  const holdoutBlock = holdout.n
-    ? `<h3>Uji luar sampel dari label Anda</h3><p><strong>${integer(holdout.n)} label manual</strong> dibuat pada teks di luar korpus awal: <strong>${integer(holdout.agree)} dari ${integer(holdout.n)} cocok (${pctValue(holdout.observed)})</strong>, kappa <strong>${holdout.kappa===null?'—':decimal(holdout.kappa)}</strong>, macro-F1 <strong>${holdout.macroF1===null?'—':decimal(holdout.macroF1)}</strong>. Mesin menjawab (tidak abstain) pada <strong>${pctValue(holdout.coverage)}</strong> baris; ${integer(holdout.abstained)} baris ditandai perlu tinjauan.${holdout.n < nssMinSample ? ` Sampel masih di bawah ${nssMinSample} label, jadi angka ini indikatif.` : ''}</p>${confusionTable(holdout)}${perClassTable(holdout)}`
-    : `<h3>Uji luar sampel dari label Anda</h3><p><strong>Belum dapat diukur.</strong> Belum ada label manual buatan analis pada teks di luar korpus awal project ini. Buka detail ulasan lalu pilih Positif, Negatif, atau Netral; setelah beberapa label terkumpul, panel ini menghitung kecocokan mesin terhadap penilaian Anda tanpa mencampurnya dengan label kalibrasi.${calibration.n ? ' Melabeli ulang teks korpus awal tetap dihitung sebagai kalibrasi, bukan uji luar sampel.' : ''}</p>`;
-  return `<article class="card method-card"><h2>Kualitas label otomatis</h2>
-    <p>Label otomatis memakai mesin hybrid <code>${esc(classifierVersion)}</code>: aturan domain merchant yang presisi dijalankan lebih dulu, lalu leksikon berbobot dengan negasi, intensifier, dan klausa kontrastif. Mesin dapat menahan diri (abstain) dan menandai teks "perlu tinjauan" alih-alih memaksa label.</p>
-    ${calibrationBlock}${holdoutBlock}
-    <div class="method-callout">Baca batasnya: presisi tinggi berarti label otomatis yang diberikan hampir selalu benar; rekal rendah berarti masih banyak teks benar yang belum dikenali dan berakhir sebagai "perlu tinjauan". Skor keyakinan aturan bukan probabilitas terkalibrasi. Sarkasme, campur bahasa, dan ulasan multiaspek masih dapat keliru; label manusia adalah pembanding, bukan kebenaran mutlak.</div>
-    <p class="note-inline">Ulasan berlabel "perlu tinjauan" tidak masuk pembagi persentase sentimen maupun NSS, sehingga angka yang tampil tidak menggelembung karena teks yang tidak dipahami. Label manual yang Anda buat memakai teks asli apa adanya; teks sumber yang berubah membatalkan label itu agar penilaian lama tidak menempel pada isi baru.</p></article>`;
+// Menu Benchmark membandingkan seluruh project yang ada di ruang kerja ini. Tidak ada aplikasi
+// pembanding yang ditambahkan diam-diam: project lain harus dibuat dan ditarik sendiri oleh
+// pemilik data, sehingga setiap angka dapat ditelusuri ke penarikan yang nyata.
+function shareBar(value, total, tone = '') {
+  const width = total ? Math.max(0, Math.min(100, value / total * 100)) : 0;
+  return `<span class="benchmark-track" aria-hidden="true"><span class="${tone}" style="width:${number(width)}%"></span></span>`;
+}
+function benchmarkNssCell(project) {
+  if (!project.total) return '<span class="benchmark-muted">Belum ditarik</span>';
+  if (!project.classified) return '<span class="benchmark-muted">Belum ada teks berlabel</span>';
+  return `<strong class="benchmark-nss">${signed(project.nss)}</strong><small>${esc(project.band || 'Belum dapat dinilai')}${project.representative ? '' : ` · < ${integer(nssMinSample)} teks`}</small>`;
+}
+function benchmarkRow(project, active) {
+  const delta = active && !project.active && active.classified && project.classified ? project.nss - active.nss : null;
+  const trend = delta === null || Math.abs(delta) < 0.05 ? '' : delta > 0 ? 'positive' : 'negative';
+  return `<tr class="${project.active ? 'is-active' : ''}">
+    <td><div class="benchmark-project"><strong>${esc(project.name)}</strong>${project.active ? '<span class="badge neutral">Aktif</span>' : ''}<small>${esc(project.stores)}</small></div></td>
+    <td><strong>${integer(project.total)}</strong><small class="benchmark-muted">${integer(project.classified)} berlabel · ${integer(project.unclassified)} perlu tinjauan</small></td>
+    <td>${benchmarkNssCell(project)}${trend ? `<small class="benchmark-delta ${trend}">${signed(delta)} poin vs aktif</small>` : ''}</td>
+    <td><span class="benchmark-inline positive">${project.positivePct === null ? '—' : `${number(project.positivePct)}%`}</span> / <span class="benchmark-inline negative">${project.negativePct === null ? '—' : `${number(project.negativePct)}%`}</span></td>
+    <td>${project.topAspect ? `<strong>${esc(project.topAspect.name)}</strong><small class="benchmark-muted">${integer(project.topAspect.negative)} negatif</small>` : '<span class="benchmark-muted">Belum terpetakan</span>'}</td>
+    <td>${project.lastPulledAt ? `<span>${esc(dateLabel(project.lastPulledAt, { year:'numeric' }))}</span>` : '<span class="benchmark-muted">Belum pernah</span>'}</td>
+    <td>${project.active ? '<span class="benchmark-muted">—</span>' : `<button class="btn btn-small" data-action="benchmark-switch" data-project="${esc(project.id)}">Buka project</button>`}</td>
+  </tr>`;
+}
+function brainConfidence(brain) {
+  const bands = [['high', 'Tinggi ≥85%'], ['medium', 'Sedang 70–84%'], ['low', 'Rendah <70%'], ['unstated', 'Tidak dinyatakan']];
+  const total = bands.reduce((sum, [key]) => sum + (brain.confidence?.[key] || 0), 0);
+  return `<div class="brain-bands">${bands.map(([key, label]) => {
+    const count = brain.confidence?.[key] || 0;
+    return `<div class="brain-band"><div><span>${label}</span><strong>${integer(count)}</strong></div>${shareBar(count, total, key === 'high' ? 'positive' : key === 'low' ? 'negative' : '')}</div>`;
+  }).join('')}</div>`;
+}
+function brainAspectRows(brain) {
+  const aspects = Array.isArray(brain.aspects) ? brain.aspects.slice(0, 6) : [];
+  if (!aspects.length) return '<p class="benchmark-muted">Belum ada aspek yang terpetakan dari teks.</p>';
+  return `<div class="brain-aspects">${aspects.map(aspect => {
+    const positive = pct(aspect.positive || 0, aspect.total);
+    const negative = pct(aspect.negative || 0, aspect.total);
+    return `<div class="brain-aspect-row"><div class="brain-aspect-head"><strong>${esc(aspect.name)}</strong><small>${integer(aspect.total)} teks · ${integer(aspect.negative)} negatif</small></div><div class="brain-split" aria-hidden="true">${positive ? `<span class="positive" style="width:${number(positive)}%"></span>` : ''}${negative ? `<span class="negative" style="width:${number(negative)}%"></span>` : ''}</div></div>`;
+  }).join('')}</div>`;
+}
+function brainEvidence(entries, tone, label) {
+  if (!Array.isArray(entries) || !entries.length) return `<div class="brain-evidence"><span class="brain-evidence-label">${label}</span><small class="benchmark-muted">Tidak ada istilah yang tercatat.</small></div>`;
+  return `<div class="brain-evidence"><span class="brain-evidence-label">${label}</span><div>${entries.map(entry => `<span class="tag ${tone}">${esc(entry.id)} · ${integer(entry.total)}</span>`).join('')}</div></div>`;
+}
+function brainSamples(brain) {
+  const samples = Array.isArray(brain.samples) ? brain.samples : [];
+  if (!samples.length) return '<p class="benchmark-muted">Belum ada teks berlabel yang dapat ditampilkan sebagai contoh.</p>';
+  return `<div class="brain-samples">${samples.map(sample => {
+    const confidence = Number.isFinite(sample.confidence) ? ` · keyakinan ${Math.round(sample.confidence * 100)}%` : '';
+    return `<article class="brain-sample ${esc(sample.sentiment)}">
+      <header><div>${badge(sample.sentiment)}<span class="brain-engine">${esc(sample.engineName)}</span><span class="brain-score">skor ${esc(decimal(sample.score ?? 0))}${confidence}</span></div><button class="btn-text" data-review="${esc(sample.platform + '|' + sample.id)}">Buka detail ${icon('arrow')}</button></header>
+      <blockquote class="brain-quote">${esc(sample.text)}</blockquote>
+      <p class="brain-reason">${esc(sample.rationale || 'Alasan tidak tercatat.')}</p>
+      <footer>${esc(sample.author)}${sample.date ? ` · ${esc(dateLabel(sample.date, { year:'numeric' }))}` : ''}</footer>
+    </article>`;
+  }).join('')}</div>`;
+}
+function brainPanel(active, brain) {
+  const header = `<div class="card-header"><div><h2>Otak analisis · ${esc(active?.name || 'project aktif')}</h2><p class="card-subtitle">Komposisi mesin, gerbang relevansi, dan contoh teks nyata dari project ini — bukan penilaian manusia.</p></div><span class="badge neutral">${esc(classifierVersion)}</span></div>`;
+  if (!brain || !brain.total) {
+    return `<article class="card brain-card">${header}${empty('Belum ada teks untuk dianalisis', 'Tarik Analisis pada project ini lebih dulu. Panel otak analisis baru dapat menampilkan komposisi mesin setelah ada teks yang tersimpan.')}</article>`;
+  }
+  const facts = brain.facts || {};
+  const engines = Array.isArray(brain.engines) ? brain.engines : [];
+  const gate = Array.isArray(brain.gate) ? brain.gate : [];
+  const reasons = Array.isArray(brain.reasons) ? brain.reasons : [];
+  return `<article class="card brain-card">${header}
+    <div class="brain-facts">
+      <span>${integer(facts.positiveTerms)} istilah positif</span>
+      <span>${integer(facts.negativeTerms)} istilah negatif</span>
+      <span>${integer(facts.phrases)} frasa berbobot</span>
+      <span>${integer(facts.negators)} negator · ${integer(facts.boosters)} penguat · ${integer(facts.diminishers)} pelemah</span>
+      <span>${integer(facts.aspects)} aspek · ${integer(facts.topics)} topik</span>
+      <span>abstain pada skor ±${esc(decimal(facts.abstainThreshold ?? 0))}</span>
+    </div>
+    <ol class="brain-pipeline">
+      <li><strong>Gerbang relevansi.</strong> ${gate.map(entry => `${esc(entry.name)} ${integer(entry.total)}`).join(' · ') || 'Belum ada keputusan relevansi'}. Teks di luar pengalaman produk tetap disimpan, tetapi tidak dihitung dalam sentimen.</li>
+      <li><strong>Aturan domain merchant.</strong> ${integer((engines.find(entry => entry.id === 'domain') || {}).total || 0)} teks diputuskan oleh pola domain produk.</li>
+      <li><strong>Leksikon berbobot.</strong> ${integer((engines.find(entry => entry.id === 'lexicon') || {}).total || 0)} teks diputuskan leksikon, dengan negasi, penguat/pelemah, dan klausa kontrasif.</li>
+      <li><strong>Netral eksplisit &amp; abstain.</strong> ${integer((engines.find(entry => entry.id === 'neutral') || {}).total || 0)} teks netral eksplisit; ${integer((engines.find(entry => entry.id === 'abstain') || {}).total || 0)} teks abstain dan masuk "perlu tinjauan".</li>
+    </ol>
+    <div class="brain-grid">
+      <section><h3>Komposisi mesin</h3><div class="brain-engines">${engines.map(entry => `<div class="brain-engine-row"><div><span>${esc(entry.name)}</span><strong>${integer(entry.total)}</strong></div>${shareBar(entry.total, brain.total, entry.id === 'relevance-gate' ? 'neutral' : entry.id === 'abstain' ? 'negative' : entry.id === 'domain' ? 'positive' : '')}<small>${entry.pct === null ? '—' : `${number(entry.pct)}% dari seluruh teks`}</small></div>`).join('')}</div></section>
+      <section><h3>Keyakinan aturan</h3>${brainConfidence(brain)}<p class="note-inline">Keyakinan ini bukan probabilitas terkalibrasi; ia hanya menunjukkan seberapa jauh skor aturan melewati ambang.</p></section>
+    </div>
+    <div class="brain-grid">
+      <section><h3>Aspek yang dikenali</h3>${brainAspectRows(brain)}</section>
+      <section><h3>Istilah bukti</h3>${brainEvidence(brain.evidence?.positive, 'positive', 'Pemicu positif')}${brainEvidence(brain.evidence?.negative, 'negative', 'Pemicu negatif')}${reasons.length ? `<h4>Alasan penyaringan</h4><ul class="brain-reasons">${reasons.map(reason => `<li><span>${integer(reason.total)}</span>${esc(reason.id)}</li>`).join('')}</ul>` : ''}</section>
+    </div>
+    <section class="brain-sample-section"><h3>Contoh tebakan terkuat</h3><p class="card-subtitle">Dua teks negatif dan dua teks positif dengan skor absolut terbesar pada project aktif. Teks asli ditampilkan apa adanya.</p>${brainSamples(brain)}</section>
+  </article>`;
+}
+function benchmarkPage() {
+  const list = benchmark && Array.isArray(benchmark.projects) ? benchmark.projects : [];
+  if (!list.length) return empty('Benchmark belum tersedia', 'Data project tidak dapat dibaca. Muat ulang halaman atau tarik analisis pada project aktif.');
+  const active = list.find(project => project.active) || null;
+  const withData = list.filter(project => project.total > 0);
+  const ranked = withData.filter(project => project.representative).sort((a, b) => b.nss - a.nss || a.name.localeCompare(b.name));
+  const rank = active && ranked.some(project => project.id === active.id) ? ranked.findIndex(project => project.id === active.id) + 1 : null;
+  const nssValue = active?.classified ? signed(active.nss) : '—';
+  const nssSub = active?.classified ? `${active.band || 'Belum dapat dinilai'} · ${integer(active.classified)} teks berlabel` : 'Belum ada teks berlabel pada project aktif';
+  return `<section class="benchmark-hero" aria-label="Ringkasan benchmark">
+    <div class="stat-cards benchmark-stat-cards">
+      ${statCard({ label:'Aplikasi berdata', value:`${integer(withData.length)} / ${integer(list.length)}`, sub:'project yang sudah ditarik' })}
+      ${statCard({ label:'Teks dianalisis', value:integer(benchmark.totalTexts), sub:'seluruh project, tanpa sampel' })}
+      ${statCard({ label:'NSS aktif', value:nssValue, tone:'nss', sub:nssSub })}
+      ${statCard({ label:'Peringkat NSS', value:rank ? `${rank} / ${ranked.length}` : '—', sub:rank ? `hanya project dengan ≥ ${nssMinSample} teks berlabel` : 'belum representatif untuk diperingkat' })}
+    </div>
+    <article class="card benchmark-note"><p>Perbandingan memakai aturan yang sama untuk setiap project: mesin hybrid <code>${esc(classifierVersion)}</code>, NSS dari teks berlabel, dan penyaring relevansi per identitas toko. Hanya aplikasi yang Anda buat dan tarik sendiri yang masuk tabel; tidak ada data pembanding yang dikarang.</p>${withData.length < 2 ? `<div class="benchmark-empty-action"><p>Tambahkan aplikasi sejenis sebagai project kedua, lalu tarik datanya. Setelah itu tabel ini menampilkan dua mesin penilaian yang dijalankan pada sumber masing-masing.</p><button class="btn btn-primary" data-action="add-project">${icon('plus')}Tambah aplikasi pembanding</button></div>` : ''}</article>
+  </section>
+  <article class="card benchmark-card"><div class="card-header"><div><h2>Perbandingan aplikasi</h2><p class="card-subtitle">NSS dan komposisi sentimen tiap project aktif. Selisih NSS bukan uji signifikansi; periode, jumlah teks, dan cakupan kanal dapat berbeda.</p></div><button class="btn" data-action="add-project">${icon('plus')}Tambah aplikasi</button></div>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Tabel benchmark antar aplikasi; gulir horizontal jika diperlukan"><table class="benchmark-table"><thead><tr><th scope="col">Aplikasi</th><th scope="col">Teks</th><th scope="col">NSS</th><th scope="col">Positif / negatif</th><th scope="col">Aspek negatif utama</th><th scope="col">Terakhir ditarik</th><th scope="col"><span class="sr-only">Tindakan</span></th></tr></thead><tbody>${list.map(project => benchmarkRow(project, active)).join('')}</tbody></table></div>
+  </article>
+  ${brainPanel(active, benchmark.brain || null)}
+  <article class="card method-card"><h2>Batas benchmark</h2><p>Benchmark ini membandingkan project yang Anda analisis, bukan seluruh aplikasi sejenis di pasar. Jumlah ulasan, periode penarikan, dan kanal yang terhubung dapat berbeda. Project dengan kurang dari ${nssMinSample} teks berlabel tidak diberi peringkat dan angkanya ditandai belum representatif. Teks yang perlu tinjauan tidak masuk pembagi NSS pada project mana pun.</p></article>`;
+}
+// Penjelasan mesin otomatis menggantikan panel kualitas label manual. Tidak ada akurasi yang
+// diklaim karena tidak ada label manusia yang dipakai sebagai kebenaran pembanding.
+function engineCard() {
+  const facts = engineFacts;
+  return `<article class="card method-card"><h2>Mesin analisis otomatis</h2>
+    <p>Setiap teks dinilai otomatis oleh mesin hybrid <code>${esc(classifierVersion)}</code>. Tidak ada pelabelan manual: label tidak dibuat atau diubah oleh manusia, dan seluruh baris dihitung ulang dari teks sumber setiap data dibaca. Teks, penulis, tanggal, bintang, dan tautan tidak diubah oleh proses ini.</p>
+    <div class="engine-facts"><span><strong>${integer(facts.positiveTerms)}</strong> istilah positif</span><span><strong>${integer(facts.negativeTerms)}</strong> istilah negatif</span><span><strong>${integer(facts.phrases)}</strong> frasa berbobot</span><span><strong>${integer(facts.negators)}</strong> negator</span><span><strong>${integer(facts.boosters)}</strong> penguat</span><span><strong>${integer(facts.diminishers)}</strong> pelemah</span><span><strong>${integer(facts.aspects)}</strong> aspek</span><span><strong>${integer(facts.topics)}</strong> topik</span></div>
+    <ol class="engine-pipeline"><li>Gerbang relevansi menyaring teks yang bukan pengalaman produk ini; teks itu tetap dihitung dalam total, bukan dalam NSS.</li><li>Aturan domain merchant dijalankan lebih dulu untuk pola yang sudah terbukti presisi.</li><li>Leksikon berbobot menangani teks lain dengan negasi, penguat/pelemah, dan klausa kontrasif.</li><li>Bila skor berada di antara −${esc(decimal(abstainThreshold))} dan +${esc(decimal(abstainThreshold))}, mesin abstain dan menandai teks "perlu tinjauan"; teks itu tidak dipaksa menjadi netral.</li></ol>
+    <div class="method-callout">Keyakinan aturan bukan probabilitas terkalibrasi. Mesin deterministik ini tidak dilatih pada label manusia dan tidak mengklaim akurasi pada teks baru. Sarkasme, campur bahasa, dan ulasan multiaspek masih dapat keliru.</div>
+    <p class="note-inline">Buka menu <strong>Benchmark</strong> untuk melihat komposisi mesin, gerbang relevansi, aspek, istilah bukti, dan contoh teks nyata pada project aktif.</p></article>`;
 }
 function methodology() {
   const base=summary(reviews);
@@ -794,9 +886,9 @@ function methodology() {
     : 'Belum ada project. Angka sumber akan dilaporkan setelah project pertama dibuat.';
   return `<div class="method-grid">
     <article class="card method-card"><h2>Sumber dan cakupan</h2><p>${dataOrigin}</p><p>Tombol Tarik Analisis mengambil data dari kedua toko aplikasi yang terhubung dan memuat seluruh halaman pada setiap kumpulan ulasan yang tersedia, dengan urutan terbaru. Google Play memisahkan daftar ulasannya menurut bahasa antarmuka, sehingga kumpulan bahasa Indonesia dan kumpulan bahasa Inggris dibaca keduanya lalu digabung berdasarkan ID ulasan. Jumlah ulasan tertulis dibaca dari data project ini. ${countSentence} Filter hanya membatasi tampilan, bukan proses pengambilan data. Platform lain belum terhubung dan dilaporkan sebagai belum diambil, bukan nol keluhan.</p><div class="method-callout">Konten promosi resmi, pemberitaan, ulasan duplikat, dan komentar tentang produk lain tidak diperlakukan sebagai pengalaman merchant.</div><p><strong>Unduhan.</strong> Google Play hanya mempublikasikan rentang unduhan, saat ini ${esc(storeInstalls('play') || 'belum terbaca')}. Apple tidak mempublikasikan jumlah unduhan di halaman publik, sehingga metrik tersebut tidak tersedia dan tidak diperkirakan. Keduanya bukan ukuran jumlah pengguna aktif.</p></article>
-    ${classifierQuality()}
+    ${engineCard()}
     <article class="card method-card"><h2>Cara membaca sentimen</h2><ul><li><strong>Positif:</strong> pujian, kepuasan, atau manfaat yang dinyatakan pengguna.</li><li><strong>Negatif:</strong> keluhan, masalah penggunaan, dan kekurangan yang mengganggu.</li><li><strong>Netral:</strong> informasi atau pertanyaan tanpa penilaian yang jelas; bukan label pengganti untuk teks yang tidak dipahami.</li><li><strong>Perlu tinjauan:</strong> teks belum cukup jelas untuk dinilai; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</li></ul><div class="formula">NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100</div><p>Ulasan berlabel sentimen mencakup ulasan positif, negatif, dan netral. ${base.classified ? `Pada project ini: (${base.positive} − ${base.negative}) ÷ ${base.classified} × 100 = <strong>${base.nss>0?'+':''}${number(base.nss)} poin</strong>.` : 'Belum ada teks berlabel pada project ini, jadi contoh angkanya belum dapat ditampilkan.'}</p></article>
-    <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label ditentukan analis lewat panel detail ulasan; teks yang tidak berubah mempertahankan labelnya, sedangkan perubahan teks sumber membatalkan label lama. Label manual hanya diterima untuk teks yang lolos penyaring relevansi, dan riwayat labelnya disimpan. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (${esc(classifierVersion)}):</strong> mesin hybrid deterministik — aturan domain merchant dijalankan lebih dulu, lalu leksikon berbobot dengan negasi, intensifier, dan klausa kontrastif. Bukan model bahasa atau model terlatih. Teks yang tidak cukup kuat ditandai perlu ditinjau, bukan dipaksa netral. Skor keyakinan aturan bukan probabilitas terkalibrasi; sarkasme, campur bahasa, dan ulasan multiaspek dapat keliru.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
+    <article class="card method-card"><h2>Penilaian otomatis dan keterbatasan</h2><ul><li><strong>Otomatis (${esc(classifierVersion)}):</strong> mesin hybrid deterministik — aturan domain merchant dijalankan lebih dulu, lalu leksikon berbobot dengan negasi, intensifier, dan klausa kontrastif. Bukan model bahasa atau model terlatih. Teks yang tidak cukup kuat ditandai perlu ditinjau, bukan dipaksa netral. Skor keyakinan aturan bukan probabilitas terkalibrasi; sarkasme, campur bahasa, dan ulasan multiaspek dapat keliru.</li><li>Tidak ada label manual maupun panel koreksi label. Seluruh field sentimen dihitung ulang otomatis dari teks sumber setiap data dibaca; label tidak dapat dinaikkan atau diturunkan oleh manusia.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
     <article class="card method-card"><h2>Penyimpanan dan jejak perubahan</h2><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban. Dasbor memuat data tersimpan saat dibuka; pembaruan tidak berlangsung terus-menerus. Status sumber dan waktu pemeriksaan mengikuti data tersimpan. Gangguan pengambilan tidak menghapus data yang sudah tersedia.</p><p>Ulasan baru ditambahkan, sedangkan perubahan teks, penilaian bintang, atau tanggal disimpan sebagai versi sebelumnya. Detail ulasan menampilkan waktu pengambilan, waktu pertama dan terakhir tercatat, serta riwayat perubahan. Versi lama tidak dihitung sebagai ulasan baru dalam grafik.</p><p>Jika data tersimpan tidak dapat dimuat saat awal, dasbor menampilkan pesan kesalahan dan tidak menambal angkanya dengan data lain; buat project lebih dulu bila penyimpanan memang masih kosong. Penilaian halaman toko hanya ditampilkan dari data daring yang berhasil diambil dan dipisahkan dari penilaian pada ulasan. Sumber publik tidak memverifikasi identitas penulis maupun kebenaran isi keluhan.</p></article>
     <article class="card method-card"><h2>Deteksi lonjakan dan laporan insiden</h2><ul><li><strong>Jendela lonjakan.</strong> Teks dikelompokkan per jam UTC bila sumber mengirim waktu publikasi yang lengkap; bila tidak, jendela diperlebar menjadi harian dan jendela mana yang dipakai selalu tertulis pada spanduk. Ambang: minimal ${anomalyDefaults.minCurrent} ulasan negatif dalam satu jendela dan lebih dari ${anomalyDefaults.thresholdPct}% di atas rata-rata ${anomalyDefaults.baselineWindows} jendela sebelumnya (${anomalyDefaults.dailyBaselineWindows} jendela untuk versi harian). Baseline nol dilaporkan sebagai "dari nol", bukan persentase tak hingga.</li><li><strong>Pita NSS.</strong> ${nssBands.map(band=>`${band.min} sampai ${band.max} = ${band.label}`).join('; ')}. Pita hanya label ambang untuk membaca arah, bukan hasil uji statistik. Di bawah ${nssMinSample} ulasan berlabel, angka ditandai belum representatif.</li><li><strong>Laporan insiden.</strong> Daftarnya memuat seluruh ulasan negatif pada filter aktif tanpa pembatasan sampel, lengkap dengan waktu publikasi mentah (UTC), aspek, emosi, niat, dan tautan sumber; teks yang masih perlu ditinjau tidak dimasukkan karena labelnya belum pasti. PDF dibuat dari dialog cetak peramban dan CSV dari tombol di kartu yang sama — keduanya memakai baris data yang sama dengan dasbor.</li><li><strong>Batas waktu publikasi.</strong> Sebagian kanal mengirim waktu sampai detik (Google Play, App Store, YouTube); actor media sosial ada yang hanya mengirim tanggal atau jam penuh, sehingga teksnya menumpuk pada satu jendela. Distribusi per jam tidak pernah dikarang untuk teks yang sumbernya hanya mengirim tanggal.</li></ul></article>
   </div><article class="card method-card category-card"><h2>Kategori yang didukung</h2>${Object.entries(tags).map(([id,label])=>`<span class="tag">${esc(label)} · ${integer(categoryCounts.get(id)||0)}</span>`).join('')}<p>Seluruh kategori tetap terdaftar di bagian ini, termasuk yang belum memiliki ulasan. Angka di samping setiap kategori adalah jumlah teks pada pilihan filter yang sedang aktif, dan satu ulasan dapat dihitung pada beberapa kategori. Berkas CSV pada halaman ulasan mengikuti filter yang aktif.</p></article>`;
@@ -822,7 +914,9 @@ function render({animate=false}={}) {
   if (!projects.list.length) { $('#main').innerHTML=firstRun(); if (focusSelector) $(focusSelector)?.focus({preventScroll:true}); return; }
   const data=analyticalReviews();
   $('#main').classList.toggle('in-place-update',!animate);
-  $('#main').innerHTML=heading()+(state.view!=='methodology'?filters():'')+(state.view==='overview'?overview(data):state.view==='sentiment'?analysis(data):state.view==='reviews'?reviewTable(data,true):state.view==='platforms'?coverage():methodology());
+  const filtersVisible = !['methodology', 'benchmark'].includes(state.view);
+  const page = state.view==='overview'?overview(data):state.view==='sentiment'?analysis(data):state.view==='reviews'?reviewTable(data,true):state.view==='platforms'?coverage():state.view==='benchmark'?benchmarkPage():methodology();
+  $('#main').innerHTML=heading()+(filtersVisible?filters():'')+page;
   if ($('#platform-tabs')) $('#platform-tabs').scrollLeft=scrollLeft;
   if (focusSelector) $(focusSelector)?.focus({preventScroll:true});
   updatePlatformScroll();
@@ -837,8 +931,9 @@ function firstRun() {
     <ol class="first-run-steps">
       <li><strong>Buat project.</strong> Isi nama project dan nama aplikasi persis seperti tertulis di toko aplikasi.</li>
       <li><strong>Centang aplikasinya.</strong> Kandidat dicari otomatis di Google Play dan App Store; Anda yang memastikan mana yang benar.</li>
-      <li><strong>Tarik analisis.</strong> Semua ulasan publik pada aplikasi itu diambil tanpa pembatasan sampel, lalu dinilai sentimennya.</li>
+      <li><strong>Tarik analisis.</strong> Semua ulasan publik pada aplikasi itu diambil tanpa pembatasan sampel, lalu otomatis dinilai sentimennya oleh mesin hybrid.</li>
     </ol>
+    <p class="first-run-note">Tidak ada pelabelan manual. Setelah satu project berisi data, menu <strong>Benchmark</strong> dapat membandingkannya dengan project aplikasi sejenis lain yang Anda buat dan tarik sendiri.</p>
     <button class="btn btn-primary" data-action="add-project">${icon('spark')}Buat project pertama</button>
     ${state.view==='overview'?'':`<p class="first-run-view">Menu <strong>${esc(views[state.view])}</strong> baru menampilkan isinya setelah project pertama dibuat dan datanya ditarik.</p>`}
   </section>`;
@@ -876,24 +971,6 @@ function aspectPolarityBlock(r) {
     return `<div class="aspect-polarity-row"><span>${esc(aspectNames[row.id] || row.id)}</span><span class="badge ${tone(row)}">${esc(label)}</span><small>${esc(basis)}</small></div>`;
   }).join('')}</div>`;
 }
-// Kontrol label manual. Hanya baris yang lolos penyaring relevansi yang dapat dilabeli;
-// angka NSS tidak boleh dinaikkan dengan melabeli teks milik produk lain.
-function labelEditor(r, key) {
-  if (!canLabelReview(r)) {
-    return `<section class="detail-section label-editor label-locked"><h3>${icon('shield')}Koreksi label analis</h3><p>Teks ini berada di luar penilaian pelanggan (${esc(r.relevance?.reason || 'relevansi belum pasti')}), jadi tidak dapat dilabeli manual. Label hanya diterima untuk teks yang terbukti membahas produk ini.</p></section>`;
-  }
-  const busy = sync.labeling === key;
-  const manual = r.labeling === 'manual';
-  const choices = [['positive','Positif'],['negative','Negatif'],['neutral','Netral']];
-  const history = Array.isArray(r.labelHistory) ? r.labelHistory : [];
-  return `<section class="detail-section label-editor"><h3>${icon('pen')}Koreksi label analis</h3>
-    <p>Pilih label yang menurut Anda benar untuk teks asli di atas. Label manual disimpan di berkas data, tidak diubah oleh penarikan berikutnya selama teksnya tidak berubah, dan ikut dihitung dalam NSS.</p>
-    <div class="label-actions">${choices.map(([id,label]) => `<button class="btn btn-small${manual && r.sentiment===id ? ' btn-primary' : ''}" data-label-sentiment="${id}" data-label-key="${esc(key)}" ${busy?'disabled':''}>${label}</button>`).join('')}${manual?`<button class="btn-text" data-label-reset="${esc(key)}" ${busy?'disabled':''}>Kembalikan ke otomatis</button>`:''}</div>
-    ${busy?'<p class="label-busy" role="status">Menyimpan label…</p>':''}
-    ${manual?`<p class="note-inline">Teks ini berlabel manual${r.labeledAt?` · disimpan ${esc(timeLabel(r.labeledAt))}`:''}.${r.labelOrigin==='seed'?' Label awal dataset, bukan dibuat melalui panel ini.':''}</p>`:''}
-    ${history.length?`<details class="label-history"><summary>Riwayat label manual (${history.length})</summary><ol>${[...history].reverse().map(entry=>`<li>${esc(timeLabel(entry.at))} · ${esc(sentimentNames[entry.from] || entry.from || 'tanpa label')} → <strong>${esc(sentimentNames[entry.to] || entry.to)}</strong>${entry.fromLabeling?` · sebelumnya ${esc(entry.fromLabeling)}`:''}</li>`).join('')}</ol></details>`:''}
-  </section>`;
-}
 function openReview(key) {
   const r=reviews.find(x=>x.platform+'|'+x.id===key);
   if (!r) return;
@@ -903,16 +980,15 @@ function openReview(key) {
   const facts=(rows)=>`<dl class="source-facts">${rows.filter(Boolean).map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>`;
   const absa=absaOf(r);
   const actionTag = absa.intent==='feature_request' ? 'Masukan untuk produk'
-    : r.sentiment==='unclassified' ? 'Perlu tinjauan manual'
+    : r.sentiment==='unclassified' ? 'Perlu tinjauan'
     : absa.intent==='bug_report' ? (absa.emotion==='anger' ? 'Perlu eskalasi layanan pelanggan' : 'Perlu penelusuran teknis')
     : absa.intent==='complaint' ? 'Perlu ditindaklanjuti' : '';
   dialog.innerHTML=`<div class="dialog-header"><div><h2 id="detail-heading">Rincian ulasan</h2><p>Teks asli, konteks, dan alasan penilaian sentimen</p></div><button class="icon-button" data-close="detail-dialog" aria-label="Tutup detail">${icon('close')}</button></div><div class="dialog-body">
     <div class="detail-author"><div class="review-author"><span class="review-avatar">${esc(initials(r))}</span><div><div class="review-name">${esc(authorName(r))}</div><div class="review-date"><span class="platform-label"><span style="color:${color(platform?.color)};display:flex">${icon(platform?.icon)}</span>${esc(platform?.name || r.platform)}</span> · ${esc(dateLabel(r.date,{year:'numeric'}))} · ${hasRating(r.rating)?`<span class="stars">${'★'.repeat(r.rating)}<span class="unfilled-stars">${'★'.repeat(5-r.rating)}</span></span> ${r.rating}/5`:'Penilaian N/A'}</div></div></div><div class="detail-actions">${actionTag?`<span class="action-tag">${esc(actionTag)}</span>`:''}${badge(r.sentiment)}</div></div>
     ${r.title?`<p class="detail-title">${esc(r.title)}</p>`:''}<div class="detail-text">${esc(r.text)}</div>
     <div class="review-tags">${reviewTags(r).map(t=>topicChip(t,false)).join('')}${labelChip(r)}</div>
-    ${labelEditor(r,key)}
     <div class="detail-grid">
-      <section class="detail-section"><h3>${icon('pen')}Alasan &amp; aspek</h3><p>${esc(r.rationale || 'N/A')}</p>${aspectPolarityBlock(r)}${facts([['Aspek pengalaman',absa.aspects.length?absa.aspects.map(id=>aspectNames[id]).join(', '):'Tidak menyebut aspek tertentu'],['Emosi',emotionNames[absa.emotion]],['Niat ulasan',intentNames[absa.intent]],['Label sentimen',labelMethod(r)],r.engine?['Mesin penilaian',engineNames[r.engine] || r.engine]:null,['Kepercayaan aturan',r.confidence==null?'Tidak dinyatakan (abstain atau label manual)':`${Math.round(r.confidence*100)}% · bukan probabilitas terkalibrasi`],r.relevance?['Relevansi',`${relevanceNames[r.relevance.status] || 'N/A'} — ${r.relevance.reason}`]:null])}${r.sentiment==='unclassified'?'<p>Teks ini tidak dihitung sebagai netral dan tidak masuk dasar persentase sentimen maupun NSS.</p>':''}</section>
+      <section class="detail-section"><h3>${icon('pen')}Alasan &amp; aspek</h3><p>${esc(r.rationale || 'N/A')}</p>${aspectPolarityBlock(r)}${facts([['Aspek pengalaman',absa.aspects.length?absa.aspects.map(id=>aspectNames[id]).join(', '):'Tidak menyebut aspek tertentu'],['Emosi',emotionNames[absa.emotion]],['Niat ulasan',intentNames[absa.intent]],['Label sentimen',labelMethod(r)],r.engine?['Mesin penilaian',engineNames[r.engine] || r.engine]:null,['Kepercayaan aturan',r.confidence==null?'Tidak dinyatakan (mesin abstain)':`${Math.round(r.confidence*100)}% · bukan probabilitas terkalibrasi`],r.relevance?['Relevansi',`${relevanceNames[r.relevance.status] || 'N/A'} — ${r.relevance.reason}`]:null])}${r.sentiment==='unclassified'?'<p>Teks ini tidak dihitung sebagai netral dan tidak masuk dasar persentase sentimen maupun NSS.</p>':''}</section>
       <section class="detail-section"><h3>${icon('database')}Informasi sumber</h3><p>${esc(r.provenance || 'N/A')}</p>${facts([['Platform',platform?.name || r.platform],['Tanggal publikasi',dateLabel(r.date,{year:'numeric'})],['Tautan resmi',url?'Tersedia':'Tidak tersedia']])}${url?`<a class="btn btn-primary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Buka sumber asli ${icon('external')}</a>`:'<p class="detail-plain">Tautan sumber resmi tidak tersedia untuk teks ini.</p>'}</section>
     </div>
     ${r.context?`<section class="detail-section"><h3>${icon('play')}Konteks video, bukan sentimen</h3><p>${esc(r.context.title || 'N/A')}</p><p>${esc(r.context.description || 'N/A')}</p>${facts([['ID video',r.context.videoId || 'N/A']])}</section>`:''}
@@ -1116,37 +1192,9 @@ function applyPayload(payload) {
   projects.target = payload.target && typeof payload.target === 'object' ? payload.target : null;
   if (!payload.running) sync.attempt=null;
   sync.storageWarning = typeof payload.storageWarning === 'string' ? payload.storageWarning : null;
+  benchmark = payload.benchmark && Array.isArray(payload.benchmark.projects) ? payload.benchmark : null;
   // Peringatan gagal tulis ditampilkan sebagai spanduk tetap di bawah judul (heading()), bukan
   // lewat toast: notifikasi sukses yang menyusul akan menimpa satu-satunya wilayah toast.
-}
-// Label manual hanya boleh disimpan bila project aktif diketahui. Server tetap memvalidasi
-// ulang: baris harus ada, relevan, dan sentimen harus salah satu dari tiga kelas.
-async function saveLabel(key, sentiment) {
-  if (sync.labeling) return;
-  const [platform, ...rest] = key.split('|');
-  const id = rest.join('|');
-  if (!projects.active) { notify('Pilih project lebih dulu sebelum melabeli ulasan.', 'error'); return; }
-  if (sync.running || sync.busy) { notify('Tunggu proses penarikan selesai sebelum mengubah label.', 'error'); return; }
-  sync.labeling = key;
-  openReview(key);
-  try {
-    const payload = await requestData('/api/label', 'POST', {
-      project: projects.active, platform, id,
-      ...(sentiment ? { sentiment } : {}),
-      action: sentiment ? 'set' : 'reset',
-    });
-    applyPayload(payload);
-    const unchanged = payload.labelAction === 'unchanged';
-    notify(unchanged ? 'Label manual tidak berubah.'
-      : sentiment ? `Label manual "${sentimentNames[sentiment]}" tersimpan. Angka NSS dan label otomatis dihitung ulang.`
-      : 'Label manual dihapus; teks ini kembali dinilai otomatis.');
-    render();
-  } catch (error) {
-    notify(error instanceof Error ? error.message : 'Label tidak dapat disimpan.', 'error');
-  } finally {
-    sync.labeling = null;
-    openReview(key);
-  }
 }
 async function switchProject(id) {
   if (!id || id === projects.active) return;
@@ -1423,8 +1471,6 @@ document.addEventListener('click',event=>{
     return;
   }
   if (button.dataset.review) { openReview(button.dataset.review); return; }
-  if (button.dataset.labelSentiment) { void saveLabel(button.dataset.labelKey, button.dataset.labelSentiment); return; }
-  if (button.dataset.labelReset) { void saveLabel(button.dataset.labelReset, ''); return; }
   // Semua tombol tutup dialog memakai satu jalur: dialog yang baru ditambah tidak boleh
   // kehilangan Batal dan X-nya hanya karena penanganannya ditulis per-nama.
   if (button.dataset.close) {
@@ -1467,6 +1513,7 @@ document.addEventListener('click',event=>{
   if (button.dataset.page) { state.page+=button.dataset.page==='next'?1:-1; render(); return; }
   const action=button.dataset.action;
   if (action==='analyze') { void analyze(); return; }
+  if (action==='benchmark-switch') { void switchProject(button.dataset.project); return; }
   if (action==='add-project') { openProjectDialog(); return; }
   if (action==='manage-project') { openManageDialog(); return; }
   if (action==='rename-project') { void renameProjectFromDialog(button); return; }

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, rulesFor, scoreClassifier, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes, normalizeSentimentText, aspectPolarity, classifierVersion, abstainThreshold } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, rulesFor, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes, normalizeSentimentText, aspectPolarity, classifierVersion, abstainThreshold, engineFacts } from './model.js';
+import { benchmarkOverview, projectBenchmark, analysisBrain } from './benchmark.mjs';
 import { createDashboardServer, deploymentConfig } from './server.mjs';
 import { mkdtemp, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,7 +11,7 @@ import { get, request as httpRequest } from 'node:http';
 import { connect } from 'node:net';
 import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parseApplePage, parseAppleRss, parsePlayInstalls, collectGoogle, collectApple, youtubeConfiguration, collectYouTube, apifyConfiguration, collectApify, apifyChannels, apifyCommentRuns, apifyLinkedDatasetIds, apifyResultCap, apifyUnknownInputFields, placesConfiguration, collectGooglePlaces, newsConfiguration, collectNews, parseFeed, sanitizeText, onlineCollectors, targetReadyChannels } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
-import { initialDataset, applyManualLabel } from './dashboard-core.mjs';
+import { initialDataset, reclassifyDerived } from './dashboard-core.mjs';
 import { parsePlaySearchResults, parseItunesResults, countPlayLinks, buildDiscovery, discoverTarget, detectCategory, deriveKeywords, titleSimilarity, queryVariants, decideStatus, playSearchUrl, itunesSearchUrl } from './discovery.mjs';
 import { defaultTarget, normalizeTarget, identityPattern, targetFromDiscovery, isWondrTarget } from './target.mjs';
 import {
@@ -163,24 +164,21 @@ test('ulasan toko yang memuji pesaing atau belum mencoba tidak dihitung sebagai 
   assert.equal(own.sentiment, 'positive', 'teks yang benar-benar pengalaman produk ini tetap dinilai');
 });
 
-test('kualitas label terukur: kappa dan presisi dihitung dari baris bernilai manusia', () => {
-  const gold = [
-    { text: 'aplikasi ini scam', sentiment: 'negative', labeling: 'manual' },
-    { text: 'sangat membantu', sentiment: 'positive', labeling: 'manual' },
-    { text: 'sangat membantu', sentiment: 'negative', labeling: 'manual' },
-    { text: 'oke lah', sentiment: 'positive', labeling: 'manual' },
-    { text: 'teks lain tanpa label manusia', sentiment: 'positive', labeling: 'rules-v1' },
-  ];
-  const score = scoreClassifier(gold);
-  assert.equal(score.n, 4, 'hanya baris bernilai manusia yang ikut diukur');
-  assert.equal(score.agree, 3);
-  assert.equal(score.perClass.negative.support, 2);
-  assert.equal(score.perClass.negative.recall, 0.5, 'satu keluhan yang terlewat menurunkan rekal negatif');
-  assert.equal(score.perClass.positive.recall, 1);
-  assert.equal(score.perClass.positive.precision, 2/3, 'satu keluhan ikut disebut positif menurunkan presisi positif');
-  assert.ok(Number.isFinite(score.kappa) && score.kappa < 1, 'kappa dihitung, bukan diklaim');
-  assert.equal(scoreClassifier([]).n, 0, 'tanpa sampel hasilnya nol, bukan angka palsu');
-  assert.equal(scoreClassifier([]).kappa, null);
+test('setiap label berasal dari mesin dan tidak ada metadata label manusia yang tersimpan', () => {
+  const row = classifyReview(sample);
+  assert.equal(row.labeling, classifierVersion);
+  for (const field of ['labelOrigin', 'labeledAt', 'labelHistory']) assert.equal(field in row, false);
+  assert.ok(Number.isFinite(engineFacts.positiveTerms) && engineFacts.positiveTerms > 0);
+  assert.ok(Number.isFinite(engineFacts.negativeTerms) && engineFacts.negativeTerms > 0);
+  assert.equal(engineFacts.version, classifierVersion);
+  assert.equal(engineFacts.abstainThreshold, abstainThreshold);
+  assert.ok(engineFacts.aspects > 0 && engineFacts.topics > 0, 'kapasitas aspek dan topik dibaca dari mesin');
+  const automatic = reclassifyDerived([{ ...sample, sentiment: 'positive', labeling: 'manual', labelOrigin: 'user', labeledAt: '2026-01-01T00:00:00.000Z', labelHistory: [{ to: 'positive' }], rationale: 'label manusia' }]);
+  assert.equal(automatic[0].sentiment, 'negative', 'label lama dihitung ulang dari teks');
+  assert.equal(automatic[0].labeling, classifierVersion);
+  assert.equal(automatic[0].text, sample.text, 'teks sumber tidak diubah');
+  assert.notEqual(automatic[0].rationale, 'label manusia');
+  for (const field of ['labelOrigin', 'labeledAt', 'labelHistory']) assert.equal(field in automatic[0], false);
 });
 
 test('mesin hybrid v2 menormalkan ejaan, menangani negasi, dan menimbang klausa kontrastif', () => {
@@ -262,7 +260,7 @@ test('complaint breakdown bars reuse the same negative counts',()=>{
 const weekMonday = (start, index) => { const d=new Date(`${start}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+index*7); return d; };
 function projectedFixture({ negative=[], positive=[], start='2026-08-03', tags=['login','performance'] }={}) {
   const rows=[];
-  const push=(counts,sentiment,tagList)=>counts.forEach((count,week)=>{ for(let k=0;k<count;k++){ const date=new Date(weekMonday(start,week)); date.setUTCDate(date.getUTCDate()+k); rows.push({ id:`fx-${sentiment}-${week}-${k}`, platform:'play', author:`Uji ${k}`, date:date.toISOString().slice(0,10), text:'teks ujian', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb', sentiment, tags:tagList, labeling:'manual' }); } });
+  const push=(counts,sentiment,tagList)=>counts.forEach((count,week)=>{ for(let k=0;k<count;k++){ const date=new Date(weekMonday(start,week)); date.setUTCDate(date.getUTCDate()+k); rows.push({ id:`fx-${sentiment}-${week}-${k}`, platform:'play', author:`Uji ${k}`, date:date.toISOString().slice(0,10), text:'teks ujian', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb', sentiment, tags:tagList, labeling:'rules-v2' }); } });
   push(negative,'negative',tags); push(positive,'positive',['ux']);
   return rows;
 }
@@ -596,13 +594,13 @@ test('aspect and cluster statistics count only matching reviews',()=>{
   assert.equal(aspectStats(rows,'all').find(a=>a.id==='uxui').total,1);
 });
 test('withAbsa adds structured fields without inventing sentiment',()=>{
-  const source={ id:'absa-1', platform:'play', author:'Uji', date:'2026-10-20', text:'qris gagal', rating:2, sentiment:'negative', tags:['transactions'], labeling:'manual' };
+  const source={ id:'absa-1', platform:'play', author:'Uji', date:'2026-10-20', text:'qris gagal', rating:2, sentiment:'negative', tags:['transactions'], labeling:'rules-v2' };
   const [row]=withAbsa([source]);
   assert.deepEqual(row.aspects,['payment']);assert.equal(row.intent,'bug_report');assert.equal(row.sentiment,'negative','label sentimen tidak diubah ABSA');
   assert.deepEqual(Object.keys(source),['id','platform','author','date','text','rating','sentiment','tags','labeling'],'baris sumber tidak ditambah di tempat');
   assert.equal(withAbsa([row])[0],row,'perhitungan ulang menghasilkan baris yang sama');
 });
-const hourlyRow = (hour, sentiment, id) => ({ id, platform:'play', author:'Uji', date:'2026-10-01', publishedAt:`2026-10-01T${String(hour).padStart(2,'0')}:15:00.000Z`, text:'qris gagal', rating:2, sentiment, tags:['transactions'], labeling:'manual' });
+const hourlyRow = (hour, sentiment, id) => ({ id, platform:'play', author:'Uji', date:'2026-10-01', publishedAt:`2026-10-01T${String(hour).padStart(2,'0')}:15:00.000Z`, text:'qris gagal', rating:2, sentiment, tags:['transactions'], labeling:'rules-v2' });
 test('anomaly scan reads hourly spikes only from published timestamps', () => {
   const rows = [];
   for (let hour = 0; hour <= 22; hour++) rows.push(hourlyRow(hour, 'negative', `b${hour}`));
@@ -660,7 +658,7 @@ test('CSV export carries the ABSA columns for analysts',()=>{
   const row = exportCsv([{ ...seedReviews[0], aspects:['payment'], emotions:['frustration'], emotion:'frustration', intent:'complaint' }]).split('\r\n')[1];
   assert.match(row,/^"[^"]*","play","[^"]*","[^"]*","[^"]*","negative","N\/A","payment;access","N\/A","neutral","complaint"/,'aspek/emosi/niat dihitung ulang, nilai tersimpan yang usang tidak dipakai');
   const bare = exportCsv([{ ...seedReviews[0], sourceUrl: undefined, rationale: undefined, rating: null }]).split('\r\n')[1];
-  assert.match(bare,/,"N\/A","N\/A","manual"$/,'kolom kosong ditulis N/A, bukan dibiarkan kosong');
+  assert.match(bare,/,"N\/A","N\/A","rules-v2"$/,'kolom kosong ditulis N/A, bukan dibiarkan kosong; pelabelan tetap menyebut versi mesin');
   assert.match(bare,/^"[^"]*","play","[^"]*","[^"]*","N\/A"/,'penilaian bintang yang tidak ada ditulis N/A');
 });
 test('sample star averages use only actual ratings',()=>{
@@ -672,10 +670,11 @@ test('sources use HTTPS and matching platform host',()=>{
   assert.equal(validSource('https://x.com@evil.invalid/','x'),false);
   assert.equal(validSource('http://x.com/test','x'),false);
 });
-test('incremental online refresh deduplicates IDs and retains manual labels',()=>{
+test('incremental online refresh deduplicates IDs and recomputes automatic labels',()=>{
   const r=seedReviews[0];const result=upsertReviews(seedReviews,[r,{...r,id:'other-id'}],'2026-10-23');
   assert.equal(result.added,0);assert.equal(result.unchanged,2);assert.equal(result.reviews.length,64);
-  assert.equal(result.reviews[0].sentiment,'negative');assert.equal(result.reviews[0].labeling,'manual');
+  assert.equal(result.reviews[0].sentiment,'negative');assert.equal(result.reviews[0].labeling,classifierVersion);
+  assert.equal('labelOrigin' in result.reviews[0],false);
   assert.equal(upsertReviews(seedReviews,[sample,sample],'2026-10-23').added,1);
 });
 test('edited reviews update metrics and keep prior versions and absent records',()=>{
@@ -2245,62 +2244,23 @@ test('Brand-owned social accounts are kept as context but never counted as custo
   assert.equal(similar.relevance.status, 'relevant', 'handle yang hanya berawalan bni tidak dianggap akun resmi');
 });
 
-test('Reclassifying derived labels refreshes automatic rows without touching manual labels', async () => {
-  const { reclassifyDerived } = await import('./dashboard-core.mjs');
+test('pelabelan ulang otomatis menimpa label lama dan membuang metadata manual warisan', () => {
   const storedPromo = { id: 'tiktok-lama', platform: 'tiktok', author: 'bni46', text: 'Di wondr merchant, kamu bisa ajuin settlement 5x sehari', sentiment: 'positive', tags: ['settlement'], labeling: 'rules-v1', rationale: 'lama', relevance: { status: 'relevant', reason: 'lama', method: 'merchant-context-v1' } };
-  const manual = { id: 'play-manual', platform: 'play', author: 'pemilik usaha', text: 'aplikasi ini lambat sekali', sentiment: 'negative', tags: ['performance'], labeling: 'manual', rationale: 'label manual data awal' };
-  const [refreshed, untouched] = reclassifyDerived([storedPromo, manual]);
+  const manual = { id: 'play-manual', platform: 'play', author: 'pemilik usaha', text: 'aplikasi ini lambat sekali', sentiment: 'negative', tags: ['performance'], labeling: 'manual', labelOrigin: 'user', labeledAt: '2026-10-24T00:00:00.000Z', labelHistory: [{ from: 'positive', to: 'negative' }], rationale: 'label manual data awal' };
+  const frozen = JSON.stringify([storedPromo, manual]);
+  const [refreshed, recalculated] = reclassifyDerived([storedPromo, manual]);
   assert.equal(refreshed.sentiment, 'unclassified', 'baris berlabel otomatis dihitung ulang dengan aturan sekarang');
   assert.equal(refreshed.relevance.status, 'excluded');
   assert.equal(refreshed.text, storedPromo.text, 'teks asli tidak diubah saat pelabelan ulang');
-  assert.equal(untouched.sentiment, 'negative', 'label manual pada dataset awal tidak ditimpa classifier');
-  assert.equal(untouched.rationale, 'label manual data awal');
+  assert.equal(recalculated.sentiment, 'negative', 'label mesin dihitung dari teks, bukan dari metadata lama');
+  assert.equal(recalculated.labeling, classifierVersion);
+  assert.notEqual(recalculated.rationale, 'label manual data awal');
+  for (const field of ['labelOrigin', 'labeledAt', 'labelHistory']) assert.equal(field in recalculated, false);
+  assert.equal(JSON.stringify([storedPromo, manual]), frozen, 'baris masukan tidak boleh dimutasi');
 });
 
-test('label analis hanya mengubah field turunan, menyimpan riwayat, dan dapat direset', () => {
-  const base = {
-    platform: 'play', id: 'manual-1', author: 'Pedagang', date: '2026-10-20',
-    text: 'wondr merchant sangat membantu', rating: 5,
-    sourceUrl: 'https://play.google.com/store/apps/details?id=id.bni.wfb',
-    sentiment: 'positive', tags: ['benefit'], labeling: 'rules-v2', confidence: 0.9,
-    score: 3.2, engine: 'domain', relevance: { status: 'relevant', reason: 'uji' },
-  };
-  const frozen = JSON.stringify(base);
-  const set = applyManualLabel([base], { platform: 'play', id: 'manual-1', sentiment: 'negative' }, '2026-10-25T01:02:03.000Z');
-  assert.equal(set.action, 'labeled');
-  const row = set.review;
-  assert.equal(row.sentiment, 'negative');
-  assert.equal(row.labeling, 'manual');
-  assert.equal(row.labelOrigin, 'user');
-  assert.equal(row.labeledAt, '2026-10-25T01:02:03.000Z');
-  for (const field of ['text', 'author', 'date', 'rating', 'sourceUrl']) assert.equal(row[field], base[field], `${field} sumber tidak boleh berubah`);
-  assert.equal(row.confidence, null, 'label manusia tidak memakai keyakinan aturan');
-  assert.equal(row.score, null);
-  assert.equal(row.engine, 'manual');
-  assert.equal(row.labelHistory.length, 1);
-  assert.deepEqual(row.labelHistory[0], { at: '2026-10-25T01:02:03.000Z', from: 'positive', fromLabeling: 'rules-v2', fromOrigin: null, to: 'negative' });
-  assert.match(row.rationale, /2026-10-25T01:02:03\.000Z/);
-  assert.equal(JSON.stringify(base), frozen, 'larik masukan tidak boleh dimutasi');
-  const duplicate = applyManualLabel(set.rows, { platform: 'play', id: 'manual-1', sentiment: 'negative' }, '2026-10-26T00:00:00.000Z');
-  assert.equal(duplicate.action, 'unchanged');
-  assert.equal(duplicate.rows, set.rows, 'label yang sama tidak menulis riwayat baru');
-  const reset = applyManualLabel(duplicate.rows, { platform: 'play', id: 'manual-1', action: 'reset' }, '2026-10-26T00:00:00.000Z');
-  assert.equal(reset.action, 'reset');
-  assert.equal(reset.review.labeling, 'rules-v2', 'reset menghitung ulang label otomatis');
-  assert.equal(reset.review.sentiment, 'positive');
-  assert.equal('labelOrigin' in reset.review, false);
-  assert.equal('labeledAt' in reset.review, false);
-  assert.equal('labelHistory' in reset.review, false);
-  assert.throws(() => applyManualLabel([base], { platform: 'play', id: 'manual-1', sentiment: 'mixed' }), /label_invalid/);
-  assert.throws(() => applyManualLabel([base], { platform: 'play', id: 'tidak-ada', sentiment: 'positive' }), /label_not_found/);
-  assert.throws(() => applyManualLabel([base], { platform: 'play', id: 'manual-1', action: 'reset' }), /label_not_manual/);
-  const gated = { ...base, relevance: { status: 'excluded', reason: 'bukan pelanggan' } };
-  assert.throws(() => applyManualLabel([gated], { platform: 'play', id: 'manual-1', sentiment: 'positive' }), /label_irrelevant/, 'baris di luar penilaian pelanggan tidak dapat melabeli NSS');
-  assert.throws(() => applyManualLabel([{ ...base, relevance: { status: 'uncertain' } }], { platform: 'play', id: 'manual-1', sentiment: 'positive' }), /label_irrelevant/);
-});
-
-test('penarikan ulang mempertahankan label analis dan membatalkannya saat teks sumber berubah', () => {
-  const manual = {
+test('penarikan ulang selalu menghitung ulang label otomatis pada baris lama', () => {
+  const legacy = {
     platform: 'play', id: 'manual-2', author: 'Pedagang', date: '2026-10-20',
     text: 'wondr merchant sangat membantu', rating: 5,
     sourceUrl: 'https://play.google.com/store/apps/details?id=id.bni.wfb',
@@ -2308,36 +2268,22 @@ test('penarikan ulang mempertahankan label analis dan membatalkannya saat teks s
     labeledAt: '2026-10-25T01:02:03.000Z', labelHistory: [{ at: '2026-10-25T01:02:03.000Z', from: 'positive', to: 'negative' }],
     confidence: null, score: null, engine: 'manual',
   };
-  const incoming = { platform: 'play', id: 'manual-2', author: 'Pedagang', date: '2026-10-20', text: manual.text, rating: 5, sourceUrl: manual.sourceUrl };
-  const kept = upsertReviews([manual], [incoming], '2026-10-25T06:00:00.000Z');
-  assert.equal(kept.reviews[0].sentiment, 'negative', 'teks yang sama tidak boleh menghapus label manusia');
-  assert.equal(kept.reviews[0].labelOrigin, 'user');
-  assert.equal(kept.reviews[0].labeledAt, manual.labeledAt);
-  assert.equal(kept.reviews[0].labelHistory.length, 1);
-  const edited = upsertReviews([manual], [{ ...incoming, text: 'wondr merchant sekarang sangat lambat' }], '2026-10-25T06:00:00.000Z');
+  const incoming = { platform: 'play', id: 'manual-2', author: 'Pedagang', date: '2026-10-20', text: legacy.text, rating: 5, sourceUrl: legacy.sourceUrl };
+  const kept = upsertReviews([legacy], [incoming], '2026-10-25T06:00:00.000Z');
+  assert.equal(kept.reviews[0].sentiment, 'positive', 'teks yang sama dinilai ulang oleh mesin');
+  assert.equal(kept.reviews[0].labeling, classifierVersion);
+  assert.equal(kept.reviews[0].text, legacy.text, 'teks sumber tetap apa adanya');
+  assert.ok(Number.isFinite(kept.reviews[0].confidence), 'label otomatis membawa keyakinan aturan');
+  for (const field of ['labelOrigin', 'labeledAt', 'labelHistory']) assert.equal(field in kept.reviews[0], false);
+  const edited = upsertReviews([legacy], [{ ...incoming, text: 'wondr merchant sekarang sangat lambat' }], '2026-10-25T06:00:00.000Z');
   const refreshed = edited.reviews[0];
   assert.equal(refreshed.text, 'wondr merchant sekarang sangat lambat', 'teks sumber terbaru tetap disimpan apa adanya');
-  assert.equal(refreshed.labeling, 'rules-v2', 'label lama tidak diwarisi ke teks yang belum pernah dinilai manusia');
+  assert.equal(refreshed.labeling, classifierVersion);
+  assert.equal(refreshed.sentiment, 'negative');
   assert.equal('labelOrigin' in refreshed, false);
   assert.equal('labeledAt' in refreshed, false);
   assert.equal('labelHistory' in refreshed, false);
   assert.ok(Number.isFinite(refreshed.confidence), 'label otomatis baru membawa keyakinan aturan');
-});
-
-test('metrik kalibrasi dan uji luar sampel dipisahkan berdasarkan asal label, bukan sekadar labeling manual', () => {
-  const seed = seedReviews[0];
-  const relabeledSeed = applyManualLabel([seed], { platform: seed.platform, id: seed.id, sentiment: 'neutral' }, '2026-10-25T00:00:00.000Z').review;
-  const fresh = { platform: 'play', id: 'holdout-1', text: 'wondr merchant sangat membantu sekali', sentiment: 'unclassified', tags: ['general'] };
-  const userLabeled = applyManualLabel([fresh], { platform: 'play', id: 'holdout-1', sentiment: 'negative' }, '2026-10-25T00:00:00.000Z').review;
-  assert.equal(scoreClassifier([relabeledSeed], undefined, { labelSource: 'seed' }).n, 1, 'teks yang sudah ada di korpus kalibrasi tetap dihitung in-sample walau dilabeli ulang');
-  assert.equal(scoreClassifier([relabeledSeed], undefined, { labelSource: 'user' }).n, 0, 'melabeli ulang teks kalibrasi tidak boleh menaikkan skor luar sampel');
-  assert.equal(scoreClassifier([userLabeled], undefined, { labelSource: 'user' }).n, 1);
-  assert.equal(scoreClassifier([userLabeled], undefined, { labelSource: 'seed' }).n, 0);
-  const combined = scoreClassifier([relabeledSeed, userLabeled], undefined, { labelSource: 'all' });
-  assert.equal(combined.n, 2);
-  assert.equal(scoreClassifier([userLabeled], undefined, { labelSource: 'user' }).labelSource, 'user');
-  const automatic = { ...userLabeled, labeling: 'rules-v2' };
-  assert.equal(scoreClassifier([automatic], undefined, { labelSource: 'user' }).n, 0, 'label otomatis tidak pernah dihitung sebagai kebenaran manusia');
 });
 
 test('Server reports every credential-backed channel as needing setup, never as connected', async () => {  const dir = await mkdtemp(join(tmpdir(), 'wondr-apify-'));
@@ -3280,126 +3226,86 @@ test('kiriman identitas dari klien divalidasi bentuknya, tidak dipercaya begitu 
   assert.equal(built.play.appId, 'com.toko.kasir');
 });
 
-// ---------- Pelabelan manual: rute lokal dan fungsi serverless ----------
-test('Server lokal menyimpan label analis melalui /api/label dan membacanya kembali setelah restart', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'wondr-label-'));
+// ---------- Pelabelan otomatis: tidak ada rute atau fungsi untuk label manusia ----------
+test('rute dan fungsi pelabelan manual sudah tidak ada; /api/data hanya menyajikan label mesin', async () => {
+  const apiFiles = await readdir(new URL('./api/', import.meta.url));
+  assert.equal(apiFiles.includes('label.js'), false, 'function label manual tidak lagi dikirim');
+  const serverless = await import('./dashboard-store.mjs');
+  assert.equal('labelReview' in serverless, false, 'penyimpanan serverless tidak lagi menyediakan aksi label manual');
+
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-auto-'));
   const storagePath = join(dir, 'data.json');
-  await seedStoreFile(storagePath);
-  const target = seedReviews[0];
-  const start = async () => {
-    const instance = await createDashboardServer({ storagePath, env: {} });
-    await new Promise(resolve => instance.listen(0, '127.0.0.1', resolve));
-    return instance;
+  const legacyManual = {
+    ...seedReviews[0], sentiment: 'neutral', rationale: 'label manusia lama',
+    labeling: 'manual', labelOrigin: 'user',
+    labeledAt: '2026-10-24T00:00:00.000Z', labelHistory: [{ at: '2026-10-24T00:00:00.000Z', to: 'neutral' }],
   };
-  const close = instance => new Promise(resolve => instance.close(() => resolve()));
-  let server = await start();
+  await seedStoreFile(storagePath, { reviews: [legacyManual, ...seedReviews.slice(1)] });
+  const server = await createDashboardServer({ storagePath, env: {} });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    let base = `http://127.0.0.1:${server.address().port}`;
-    const findRow = body => body.reviews.find(item => item.platform === target.platform && String(item.id) === String(target.id));
-    const set = await projectFetch(base, '/api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: defaultProjectId, platform: target.platform, id: target.id, sentiment: 'positive' }) });
-    assert.equal(set.status, 200);
-    assert.equal(set.body.labelAction, 'labeled');
-    let row = findRow(set.body);
-    assert.equal(row.sentiment, 'positive');
-    assert.equal(row.labeling, 'manual');
-    assert.equal(row.labelOrigin, 'user');
-    assert.equal(row.text, target.text, 'teks sumber tidak diubah oleh label');
-    assert.equal(row.author, target.author);
-    assert.equal(set.body.reviews.length, seedReviews.length, 'pelabelan tidak menambah atau menghapus baris');
-    const disk = JSON.parse(await readFile(storagePath, 'utf8'));
-    assert.equal(findRow(storedDataset(disk)).sentiment, 'positive', 'label ditulis ke berkas data');
-    assert.equal(findRow(storedDataset(disk)).labelOrigin, 'user');
+    const data = (await projectFetch(base, '/api/data')).body;
+    assert.equal(data.reviews.length, seedReviews.length, 'tidak ada baris yang hilang atau ditambah');
+    assert.ok(data.reviews.every(row => row.labeling === classifierVersion), 'seluruh baris membawa versi mesin');
+    assert.ok(data.reviews.every(row => !('labelOrigin' in row) && !('labeledAt' in row) && !('labelHistory' in row)), 'metadata label manual tidak pernah keluar ke klien');
+    assert.equal('labelAction' in data, false);
+    const row = data.reviews.find(item => item.platform === legacyManual.platform && String(item.id) === String(legacyManual.id));
+    assert.equal(row.text, legacyManual.text, 'teks sumber tidak diubah pelabelan ulang');
+    assert.equal(row.author, legacyManual.author);
+    assert.equal(row.date, legacyManual.date);
+    assert.equal(row.rating, legacyManual.rating);
+    assert.equal(row.sentiment, 'negative', 'sentimen dihitung ulang dari teks, bukan dari label lama');
+    assert.notEqual(row.rationale, 'label manusia lama');
+    assert.equal(data.benchmark.totalTexts, seedReviews.length);
+    assert.equal(data.benchmark.projects.length, 1);
+    assert.equal(data.benchmark.projects[0].nss, summary(reclassifyDerived(seedReviews)).nss);
+    assert.equal(data.benchmark.brain.total, seedReviews.length);
+    assert.ok(data.benchmark.brain.samples.every(entry => data.reviews.some(item => item.platform === entry.platform && String(item.id) === String(entry.id))), 'contoh otak analisis berasal dari baris yang disajikan');
 
-    await close(server);
-    server = await start();
-    base = `http://127.0.0.1:${server.address().port}`;
-    row = findRow((await projectFetch(base, '/api/data')).body);
-    assert.equal(row.sentiment, 'positive');
-    assert.equal(row.labeling, 'manual');
-    assert.equal(row.labelOrigin, 'user', 'label manual bertahan setelah proses dimulai ulang');
-
-    const reset = await projectFetch(base, '/api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: defaultProjectId, platform: target.platform, id: target.id, action: 'reset' }) });
-    assert.equal(reset.status, 200);
-    assert.equal(reset.body.labelAction, 'reset');
-    row = findRow(reset.body);
-    assert.equal(row.labeling, 'rules-v2', 'reset mengembalikan label otomatis');
-    assert.equal('labelOrigin' in row, false);
-
-    const invalid = await projectFetch(base, '/api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: defaultProjectId, platform: target.platform, id: target.id, sentiment: 'mixed' }) });
-    assert.equal(invalid.status, 400);
-    assert.match(invalid.body.error, /label_invalid/);
-    const missing = await projectFetch(base, '/api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: defaultProjectId, platform: 'play', id: 'tidak-ada', sentiment: 'positive' }) });
-    assert.equal(missing.status, 400);
-    assert.match(missing.body.error, /label_not_found/);
-    const scripted = await rawRequest(server.address().port, '/api/label', { method: 'POST', host: `127.0.0.1:${server.address().port}` });
-    assert.equal(scripted.status, 403, 'tanpa Sec-Fetch-Site same-origin, permintaan skrip tidak dapat melabeli');
+    const labelPost = await projectFetch(base, '/api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(labelPost.status, 405, 'tidak ada aksi POST label yang dapat menulis data');
+    assert.match(labelPost.body.error, /Metode/);
+    const labelGet = await projectFetch(base, '/api/label');
+    assert.equal(labelGet.status, 404, 'rute label tidak lagi dilayani');
   } finally {
-    await close(server);
+    await new Promise(resolve => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('Fungsi serverless menyimpan dan mereset label manual di berkas, serta menolak baris yang tidak boleh dinilai', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'wondr-label-store-'));
-  const seeded = [...seedReviews, { ...storedReview, platform: 'play', id: 'gated-1', sentiment: 'unclassified', labeling: 'manual', relevance: { status: 'excluded', reason: 'bukan pelanggan' } }];
-  try {
-    await useDataPath(dir, async () => {
-      await seedStoreFile(join(dir, 'online-data.json'), { reviews: seeded });
-      const store = await freshStore('label-store');
-      const target = seedReviews[0];
-      const labeled = await store.labelReview({ project: defaultProjectId, platform: target.platform, id: target.id, sentiment: 'positive' });
-      assert.equal(labeled.labelAction, 'labeled');
-      const row = labeled.reviews.find(item => item.platform === target.platform && String(item.id) === String(target.id));
-      assert.equal(row.sentiment, 'positive');
-      assert.equal(row.labeling, 'manual');
-      assert.equal(row.labelOrigin, 'user');
-      assert.equal(row.text, target.text);
-      const disk = JSON.parse(await readFile(join(dir, 'online-data.json'), 'utf8'));
-      assert.equal(storedDataset(disk).reviews.find(item => item.platform === target.platform && String(item.id) === String(target.id)).labelOrigin, 'user');
-      assert.equal(labeled.reviews.length, seeded.length, 'tidak ada baris yang hilang atau ditambah');
-
-      const reset = await store.labelReview({ project: defaultProjectId, platform: target.platform, id: target.id, action: 'reset' });
-      assert.equal(reset.labelAction, 'reset');
-      assert.equal(reset.reviews.find(item => item.platform === target.platform && String(item.id) === String(target.id)).labeling, 'rules-v2');
-      await assert.rejects(() => store.labelReview({ project: defaultProjectId, platform: 'play', id: 'gated-1', sentiment: 'positive' }), /label_irrelevant/, 'baris yang dikecualikan dari penilaian pelanggan tidak dapat melabeli NSS');
-      await assert.rejects(() => store.labelReview({ project: 'tidak-ada', platform: target.platform, id: target.id, sentiment: 'positive' }), /project_/);
-    });
-  } finally { await rm(dir, { recursive: true, force: true }); }
-});
-
-test('Function /api/label hanya menerima POST dari halaman sendiri dan melaporkan kesalahan label dengan benar', async () => {
-  const label = await import('./api/label.js');
-  assert.equal(label.config.maxDuration, 30);
-  const request = (headers, body = { platform: 'play', id: 'x', sentiment: 'positive' }) => ({
-    method: 'POST', url: '/api/label', headers,
-    async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(body)); },
-  });
-  const getRes = mockResponse();
-  await label.default({ method: 'GET', url: '/api/label', headers: {} }, getRes);
-  assert.equal(getRes.status, 405);
-  assert.equal(getRes.headers.allow, 'POST');
-  let calls = 0;
-  const run = async body => { calls += 1; return { ok: true, body }; };
-  const anonymous = mockResponse();
-  await label.default(request({ host: 'situs.example.com' }), anonymous, run);
-  assert.equal(anonymous.status, 403, 'tanpa Origin dan Sec-Fetch-Site, permintaan dianggap skrip');
-  const cross = mockResponse();
-  await label.default(request({ host: 'situs.example.com', origin: 'https://pengiklan.example' }), cross, run);
-  assert.equal(cross.status, 403);
-  const none = mockResponse();
-  await label.default(request({ host: 'situs.example.com', 'sec-fetch-site': 'none' }), none, run);
-  assert.equal(none.status, 403);
-  assert.equal(calls, 0, 'semua penolakan terjadi sebelum penyimpanan disentuh');
-  const ok = mockResponse();
-  await label.default(request({ host: 'situs.example.com', 'sec-fetch-site': 'same-origin' }), ok, run);
-  assert.equal(ok.status, 200);
-  assert.equal(JSON.parse(ok.body).body.sentiment, 'positive');
-  assert.equal(calls, 1);
-  const invalid = mockResponse();
-  await label.default(request({ host: 'situs.example.com', 'sec-fetch-site': 'same-origin' }), invalid, async () => { throw new Error('label_invalid: x'); });
-  assert.equal(invalid.status, 400);
-  const busy = mockResponse();
-  await label.default(request({ host: 'situs.example.com', 'sec-fetch-site': 'same-origin' }), busy, async () => { throw new Error('busy'); });
-  assert.equal(busy.status, 409);
+test('benchmark memakai project yang benar-benar ada dan menghitung NSS dari teks berlabel', () => {
+  const rows = reclassifyDerived(seedReviews.slice(0, 10));
+  const projects = [
+    { id: 'utama', name: 'Aplikasi Utama', entity: 'Utama', stores: 'Google Play id.bni.wfb', lastPulledAt: '2026-10-23T00:00:00.000Z' },
+    { id: 'kosong', name: 'Aplikasi Kosong', entity: 'Kosong', stores: 'identitas toko belum lengkap', lastPulledAt: null },
+  ];
+  const overview = benchmarkOverview(projects, { utama: { reviews: rows }, kosong: { reviews: [] } }, 'utama');
+  assert.equal(overview.totalTexts, 10);
+  assert.equal(overview.withData, 1);
+  assert.equal(overview.projects.length, 2, 'tidak ada aplikasi pembanding yang ditambahkan sendiri');
+  assert.deepEqual(overview.projects.map(project => project.name), ['Aplikasi Utama', 'Aplikasi Kosong']);
+  assert.equal(overview.projects[0].active, true);
+  assert.equal(overview.projects[0].representative, false, 'sepuluh teks belum cukup untuk diperingkat');
+  assert.equal(overview.projects[0].band, 'Belum dapat dinilai');
+  assert.equal(overview.projects[0].nss, summary(rows).nss);
+  assert.equal(overview.projects[0].classified, summary(rows).classified);
+  assert.equal(overview.projects[1].total, 0);
+  assert.equal(overview.projects[1].nss, null);
+  assert.equal(overview.projects[1].positivePct, null);
+  assert.equal(overview.projects[1].band, null);
+  assert.equal(overview.projects[1].topAspect, null);
+  assert.equal(overview.brain.total, 10);
+  assert.equal(overview.brain.facts.version, classifierVersion);
+  assert.equal(overview.brain.facts.aspects, engineFacts.aspects);
+  assert.ok(overview.brain.engines.length > 0);
+  assert.equal(overview.brain.engines.reduce((sum, entry) => sum + entry.total, 0), 10, 'komposisi mesin menghitung setiap baris');
+  for (const sample of overview.brain.samples) {
+    const source = rows.find(entry => entry.platform === sample.platform && String(entry.id) === String(sample.id));
+    assert.ok(source, 'contoh berasal dari baris nyata');
+    assert.equal(sample.text, source.text, 'kutipan tidak diubah');
+    assert.equal(sample.rationale, source.rationale);
+  }
+  assert.equal(benchmarkOverview([], {}, '').brain, null);
 });
 

@@ -1,49 +1,17 @@
 import { platforms, observationDate, seedReviews } from './data.js';
-import { upsertReviews, classifyReview, withAbsa, sentimentNames } from './model.js';
+import { upsertReviews, classifyReview, withAbsa } from './model.js';
 
 const connectedSources = new Set(['play', 'appstore']);
 
-// Label otomatis dihitung ulang setiap kali data dibaca, sehingga perbaikan aturan langsung
-// berlaku pada baris yang sudah tersimpan — termasuk baris warisan rules-v1. Baris berlabel
-// manual (dataset awal maupun label pengguna) tidak pernah ditimpa classifier. Target project
-// ikut dipakai agar relevansi dinilai terhadap aplikasi yang benar, bukan terhadap satu merek.
+// Setiap baris dihitung ulang otomatis saat data dibaca, apa pun versi label yang tersimpan.
+// Ini membuat perbaikan aturan langsung berlaku pada data lama dan menghapus sisa metadata
+// label manual warisan. Teks, penulis, tanggal, bintang, dan tautan tidak pernah diubah.
 export function reclassifyDerived(rows, target = null) {
-  return rows.map(row => row.labeling === 'rules-v1' || row.labeling === 'rules-v2' ? { ...row, ...classifyReview(row, target) } : { ...row });
-}
-
-// Label manual adalah tindakan analis, bukan teks sumber. Teks, penulis, tanggal, bintang,
-// dan tautan tidak pernah diubah oleh fungsi ini; hanya field turunan sentimen yang diganti.
-// Baris yang dikecualikan dari penilaian pelanggan (relevansi excluded/uncertain) tidak boleh
-// dilabeli: NSS harus tetap hanya berisi pengalaman produk ini.
-export const manualSentiments = ['positive', 'negative', 'neutral'];
-export const labelableReview = row => {
-  const status = row?.relevance?.status;
-  return !status || status === 'relevant';
-};
-export function applyManualLabel(rows, { platform, id, sentiment, action = 'set' } = {}, at = new Date().toISOString(), target = null) {
-  const index = rows.findIndex(row => row.platform === platform && String(row.id) === String(id));
-  if (index === -1) throw new Error('label_not_found: ulasan tidak ditemukan pada project ini');
-  const row = rows[index];
-  if (!labelableReview(row)) throw new Error('label_irrelevant: teks ini berada di luar penilaian pelanggan, jadi tidak dapat dilabeli manual');
-  if (action === 'reset') {
-    if (row.labeling !== 'manual') throw new Error('label_not_manual: baris ini tidak memiliki label manual');
-    // Label otomatis dihitung ulang dengan aturan dan target saat ini; metadata manusia dibuang.
+  return rows.map(row => {
     const next = { ...row, ...classifyReview(row, target) };
     delete next.labelOrigin; delete next.labeledAt; delete next.labelHistory;
-    return { rows: [...rows.slice(0, index), next, ...rows.slice(index + 1)], review: next, action:'reset' };
-  }
-  if (!manualSentiments.includes(sentiment)) throw new Error('label_invalid: label harus positive, negative, atau neutral');
-  if (row.labeling === 'manual' && row.sentiment === sentiment && row.labelOrigin === 'user') {
-    return { rows, review: row, action:'unchanged' };
-  }
-  const previous = { at, from: row.sentiment ?? null, fromLabeling: row.labeling ?? null, fromOrigin: row.labelOrigin ?? null, to: sentiment };
-  const next = {
-    ...row, sentiment, labeling:'manual', labelOrigin:'user', labeledAt:at,
-    labelHistory: [...(row.labelHistory || []), previous].slice(-20),
-    confidence:null, score:null, engine:'manual', evidence:{ positive:[], negative:[] },
-    rationale:`Label manual oleh analis pada ${at} sebagai ${sentimentNames[sentiment].toLowerCase()}. Teks asli tidak diubah; label sebelumnya (${sentimentNames[row.sentiment] || 'tanpa label'}) tersimpan di riwayat label.`,
-  };
-  return { rows: [...rows.slice(0, index), next, ...rows.slice(index + 1)], review: next, action:'labeled' };
+    return next;
+  });
 }
 // Daftar sumber awal disusun di satu tempat agar server lokal dan function serverless
 // memulai dari keadaan yang sama persis.
