@@ -4489,6 +4489,17 @@ th[aria-sort='descending'] .th-sort.active .icon {
 .project-button-manage { width: auto; padding: 0 9px; gap: 5px; }
 .project-button-label { font-size: 12px; font-weight: 600; }
 
+/* Layar awal: belum ada project. Tidak ada angka yang ditampilkan, karena nol akan terbaca
+   sebagai "tidak ada keluhan" padahal datanya belum pernah diambil. */
+.first-run { max-width: 660px; margin: 40px auto; padding: 34px 32px; text-align: center; }
+.first-run-mark { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); }
+.first-run-mark .icon { width: 24px; height: 24px; }
+.first-run h1 { margin: 0 0 8px; font-size: 22px; }
+.first-run p { max-width: 52ch; margin: 0 auto 18px; color: var(--ink); line-height: 1.7; }
+.first-run-steps { display: grid; gap: 10px; margin: 0 0 22px; padding: 0; list-style: none; text-align: left; counter-reset: langkah; }
+.first-run-steps li { position: relative; padding: 10px 12px 10px 40px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); font-size: 13px; line-height: 1.6; counter-increment: langkah; }
+.first-run-steps li::before { content: counter(langkah); position: absolute; top: 10px; left: 12px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; }
+
 /* Catatan pendek di bawah kolom isian dialog. */
 .dialog-form label small { font-size: 11.5px; font-weight: 400; color: var(--text-muted); }
 

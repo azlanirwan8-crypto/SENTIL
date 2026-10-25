@@ -6,8 +6,21 @@ import assert from 'node:assert/strict';
 import { createDashboardServer } from './server.mjs';
 import { seedReviews } from './data.js';
 import { clusterStats } from './model.js';
+import { storeVersion, defaultProjectId } from './projects.mjs';
+import { initialDataset } from './dashboard-core.mjs';
+import { defaultTarget } from './target.mjs';
 
 const profile = await mkdtemp(join(tmpdir(),'wondr-browser-test-'));
+// Aplikasi sungguhan mulai tanpa project. Alur utama pengujian ini memakai berkas yang sudah
+// berisi satu project (64 ulasan baseline) supaya angka yang diperiksa berasal dari dataset,
+// bukan dari data contoh tersembunyi; layar "belum ada project" diperiksa pada server kedua
+// yang berkasnya benar-benar kosong.
+const seededStore = {
+  version: storeVersion,
+  projects: [{ id: defaultProjectId, name: defaultTarget.name, entity: defaultTarget.entityName, target: { ...defaultTarget, id: defaultProjectId }, createdAt: '2026-01-05T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z', lastPulledAt: null }],
+  activeProject: defaultProjectId,
+  datasets: { [defaultProjectId]: { ...initialDataset(), reviews: seedReviews } },
+};
 let collectorMode='baseline', releasePull, pulls=0, waited=false;
 const synthetic={id:'qa-browser-only',platform:'play',author:'QA <img src=x onerror="window.__xss=true">',date:null,text:'Login gagal <script>window.__xss=true</script>',rating:null,sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb',provenance:'Synthetic isolated browser fixture'};
 const socialBase={platform:'youtube',author:'YouTube test fixture',date:'2026-10-23',publishedAt:'2026-10-23T12:30:00Z',retrievedAt:'2026-10-24T01:00:00Z',rating:null,sourceUrl:'https://www.youtube.com/watch?v=abcdefghijk',authorChannelId:'viewer',context:{videoId:'abcdefghijk',channelId:'owner',product:'wondr-merchant',title:'wondr merchant <script>window.__xss=true</script>',description:'Isolated fixture context, not customer sentiment'},provenance:'Synthetic API fixture; never live social data'};
@@ -42,6 +55,7 @@ async function mockResults(){
 // Penarikan berjalan satu kanal per permintaan; keduanya di-mock agar pengujian tidak
 // pernah mengirim permintaan nyata ke Google, Apple, YouTube, atau Apify.
 const unemulatedResult=id=>({id,status:'needs_setup',fetched:null,message:id==='youtube'?'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY atau GOOGLE_API_KEY belum tersedia pada environment server. Belum ada komentar yang diambil.':'Kanal uji tanpa fixture; tidak ada permintaan nyata dikirim.',reviews:[]});
+await writeFile(join(profile,'test-data.json'),JSON.stringify(seededStore),'utf8');
 const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:mockResults,collectOne:async id=>(await mockResults()).find(result=>result.id===id)??unemulatedResult(id),discover:async ({entityName})=>({ok:true,queries:['kasir saya'],partial:'1 dari 3 permintaan pencarian tidak terjawab; kandidat yang ada tetap ditampilkan.',discovery:{entityName,resolvedAt:'2026-10-25T00:00:00.000Z',method:'fixture',country:'id',category:'app',keywords:{entity:'Kasir Saya',compact:'KasirSaya',terms:['kasir','saya'],phrases:['Kasir Saya'],quoted:['"Kasir Saya"'],searchTerms:['"Kasir Saya"','KasirSaya']},titleAgreement:false,needsConfirmation:true,note:'Fixture penemuan identitas; tidak ada permintaan nyata ke Google atau Apple.',play:{status:'ambiguous',candidates:[{appId:'com.toko.kasir',title:'Kasir Saya — Toko Retail',artist:'PT Contoh Retail',ratingCount:1204,averageRating:4.2,sourceUrl:'https://play.google.com/store/apps/details?id=com.toko.kasir',similarity:0.82},{appId:'com.lain.kasir',title:'Kasir Lain',artist:'Vendor Lain',ratingCount:3,averageRating:1,sourceUrl:'https://play.google.com/store/apps/details?id=com.lain.kasir',similarity:0.6},{appId:'com.game.kasir',title:'Cash Register Game',artist:'Game Studio',ratingCount:9,averageRating:3,sourceUrl:'https://play.google.com/store/apps/details?id=com.game.kasir',similarity:0}],chosen:null},appstore:{status:'not-found',candidates:[],chosen:null}}})});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const baseUrl=`http://127.0.0.1:${server.address().port}`;
@@ -759,15 +773,37 @@ try {
   await click('#manage-dialog [data-action="delete-project"]');
   await click('[data-action="confirm-delete-project"]');
   await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelectorAll('.project-bar .project-select option').length===1)resolve(true);else if(Date.now()>end)reject(Error('Project tidak berkurang'));else requestAnimationFrame(check);}check();})`);
-  assert.equal(await evaluate(`document.querySelector('.project-bar .project-select').value`),'wondr-merchant','project aktif dipindahkan ke bawaan');
+  assert.equal(await evaluate(`document.querySelector('.project-bar .project-select').value`),'wondr-merchant','project aktif berpindah ke project yang masih ada');
   await click('[data-action="manage-project"]');
-  assert.equal(await evaluate(`Boolean(document.querySelector('#manage-dialog [data-action="delete-project"]'))`),false,'project bawaan tidak menawarkan tombol hapus');
-  assert.match(await evaluate(`document.querySelector('#manage-dialog .manage-danger').textContent`),/tidak dapat dihapus/,'alasan perlindungan project bawaan dinyatakan');
+  assert.equal(await evaluate(`Boolean(document.querySelector('#manage-dialog [data-action="delete-project"]'))`),true,'project pertama hasil berkas lama tetap dapat dihapus');
+  await click('#manage-dialog [data-action="delete-project"]');
+  assert.match(await evaluate(`document.querySelector('#delete-dialog .dialog-footer small').textContent`),/kembali kosong/,'penghapusan project terakhir menyatakan dasbor menjadi kosong');
+  await screenshot('project-delete-last.png');
+  await click('#delete-dialog [data-close="delete-dialog"]');
   await click('#manage-dialog [data-close="manage-dialog"]');
-  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent===${JSON.stringify(defaultBadge)})resolve(true);else if(Date.now()>end)reject(Error('Dataset bawaan berubah setelah penghapusan: '+JSON.stringify({badge:b?.textContent,expected:${JSON.stringify(defaultBadge)}})));else requestAnimationFrame(check);}check();})`);
-  completed.push('Manage flow: rename project, explicit delete confirmation, built-in project protected and untouched');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent===${JSON.stringify(defaultBadge)})resolve(true);else if(Date.now()>end)reject(Error('Dataset project yang tersisa berubah setelah penghapusan: '+JSON.stringify({badge:b?.textContent,expected:${JSON.stringify(defaultBadge)}})));else requestAnimationFrame(check);}check();})`);
+  completed.push('Manage flow: rename project, explicit delete confirmation, surviving project dataset untouched');
+  // Tidak ada project lagi: dasbor harus menampilkan layar awal, bukan angka nol.
+  await click('[data-action="manage-project"]');
+  await click('#manage-dialog [data-action="delete-project"]');
+  await click('[data-action="confirm-delete-project"]');
+  await until(`Boolean(document.querySelector('.first-run'))`,'layar awal tanpa project tidak muncul');
+  assert.equal(await evaluate(`document.querySelector('.first-run h1').textContent.trim()`),'Belum ada project','layar awal menyebut keadaan sebenarnya');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-select option')].map(o=>[o.value,o.disabled])`),[['',true]],'pemilih project hanya menampung placeholder, bukan project');
+  assert.equal(await evaluate(`document.querySelectorAll('.stat-card,.summary-card,.filters').length`),0,'layar awal tidak menampilkan angka atau filter yang bisa terbaca sebagai nol');
+  assert.equal(await evaluate(`Boolean(document.querySelector('#main [data-action="analyze"]'))`),false,'tanpa project tidak ada tombol tarik analisis');
+  await screenshot('first-run.png');
+  await click('.first-run [data-action="add-project"]');
+  assert.equal(await evaluate(`document.querySelector('#project-dialog').open`),true,'layar awal menawarkan pembuatan project pertama');
+  await click('#project-dialog [data-close="project-dialog"]');
+  const kosong = await evaluate(`fetch('/api/data').then(response=>response.json())`);
+  assert.deepEqual(kosong.projects,[],'server menjawab tanpa project setelah project terakhir dihapus');
+  assert.equal(kosong.activeProject,'','tidak ada project aktif yang menggantung');
+  assert.equal(kosong.reviews.length,0,'dataset kosong ikut terkirim, bukan sisa project lama');
+  assert.equal(kosong.target,null,'tanpa project tidak ada target toko');
+  completed.push('Empty store: first-run screen replaces zeroed dashboard and API reports no project');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png','project-manage.png','project-delete.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png','project-manage.png','project-delete.png','project-delete-last.png','first-run.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();

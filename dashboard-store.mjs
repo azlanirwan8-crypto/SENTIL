@@ -11,7 +11,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, renameProject, strictProjectId,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
@@ -117,11 +117,12 @@ async function loadStore() {
 async function view(project) {
   const store = await loadStore();
   const id = resolveProjectId(store, project);
+  // Tanpa project, tidak ada dataset maupun target: antarmuka menampilkan layar awal, bukan angka nol.
   return {
-    ...datasetFor(store, id),
+    ...(id ? datasetFor(store, id) : emptyView()),
     projects: projectList(store),
     activeProject: id,
-    target: projectTarget(store, id),
+    target: id ? projectTarget(store, id) : null,
     running,
     storageWarning,
   };
@@ -143,7 +144,8 @@ export async function discover({ entity, fetcher = fetch }) {
 }
 
 // Membuat project baru dari hasil penemuan yang sudah dikonfirmasi, atau dari ID toko yang
-// diisi manual. Dataset baru dimulai kosong; data awal hanya milik project bawaan.
+// diisi manual. Dataset project baru selalu dimulai kosong: aplikasi tidak mengirim data contoh,
+// jadi seluruh angka berasal dari penarikan yang dijalankan pemiliknya.
 export async function addProject({ name, entity, discovery, playAppId, appleAppId }) {
   if (running) throw new Error('busy');
   const store = await loadStore();
@@ -183,8 +185,9 @@ export async function editProject({ project, name }) {
   return view(id);
 }
 
-// Menghapus project dan seluruh datasetnya. Project bawaan ditolak, dan project aktif
-// dikembalikan ke bawaan; dataset project lain tidak tersentuh.
+// Menghapus project dan seluruh datasetnya. Project aktif berpindah ke project lain yang masih ada;
+// bila project terakhir dihapus, penyimpanan kembali kosong. Dataset project yang tidak disebut
+// tidak tersentuh.
 export async function dropProject(project) {
   if (running) throw new Error('busy');
   const store = await loadStore();
@@ -202,6 +205,9 @@ async function runStep(project, produce, { recordRun }) {
   try {
     const store = await loadStore();
     const id = resolveProjectId(store, project);
+    // Tanpa project tidak ada yang bisa ditarik: target toko berasal dari project, jadi menaruh
+    // ulasan di project mana pun akan menjadi tebakan.
+    if (!id) throw new Error('project_required: belum ada project — buat project lebih dulu sebelum menarik data');
     const previous = datasetFor(store, id);
     const target = projectTarget(store, id);
     const results = await produce(previous, { resume: resumeMap(previous), apifyWaitMs: apifyWaitMs(), target });

@@ -1,4 +1,4 @@
-// Membuat project baru, memindahkan project aktif, atau menghapus project non-bawaan
+// Membuat project baru, memindahkan project aktif, mengganti namanya, atau menghapus project
 // beserta datasetnya. Batas waktu function dinyatakan di sini agar cocok dengan konfigurasi
 // deployment ($0 tier).
 export const config = { maxDuration: 30 };

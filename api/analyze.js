@@ -46,7 +46,7 @@ export default async function handler(request, response, run = runPull) {
   } catch (error) {
     if (error.message === 'busy') { json(response, 409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
     if (error.message === 'unknown-platform') { json(response, 400, { error: 'Kanal yang diminta tidak dikenal, sehingga tidak ada permintaan yang dikirim.' }); return; }
-    if (String(error.message).startsWith('project_')) { json(response, 400, { error: 'Project yang diminta tidak terdaftar.' }); return; }
+    if (String(error.message).startsWith('project_')) { json(response, 400, { error: String(error.message).replace(/^[a-z_]+: /, '') }); return; }
     console.error('Penarikan data gagal:', error.message);
     json(response, 500, { error: 'Pengambilan atau penyimpanan data gagal. Data sebelumnya tetap tersimpan; silakan coba lagi.' });
   }

@@ -1,4 +1,4 @@
-﻿import { seedReviews, platforms, tags, tagColors, observationDate } from './data.js';
+﻿import { platforms, tags, tagColors } from './data.js';
 import { summary, filterReviews, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, nssBand, nssBands, nssMinSample, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
 import { esc, number, decimal, integer, pct, signed, colors, sentimentKeys } from './format.js';
 import { comboChart, nestedDonut, painTreemap, matrixChart, statCard } from './charts.js';
@@ -114,7 +114,9 @@ const paths = {
   printer:'<path d="M7 8V3h10v5"/><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 13h10v8H7v-8Z"/>',
 };
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.message}</svg>`; }
-let reviews = [...seedReviews];
+// Aplikasi mulai kosong: tidak ada ulasan bawaan. Semua baris yang tampil berasal dari project
+// yang dibuat dan ditarik sendiri oleh pengguna, dari server, bukan dari berkas aplikasi.
+let reviews = [];
 const state = { view:'overview', platform:'all', period:'all', from:'', to:'', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', cluster:'', aspect:'', page:1, size:10, sort:{ key:'date', dir:'desc' } };
 const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null, storageWarning:null };
 // Project analisis: satu berkas data dapat memuat beberapa project, masing-masing dengan
@@ -200,7 +202,11 @@ function wasFetched(source) {
 // Bilah project: pemilih project aktif, tombol ikon tambah, dan tombol "Kelola" yang membuka
 // dialog ganti nama / hapus. "Kelola" sengaja diberi teks (bukan hanya ikon) karena pengguna
 // tidak boleh menebak-nebak di mana hapus project-nya.
-const projectOptions = () => projects.list.map(project => `<option value="${esc(project.id)}" ${project.id === projects.active ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
+// Dropdown kosong akan terbaca sebagai antarmuka yang rusak, jadi keadaan tanpa project dinyatakan
+// dengan pilihan temporer yang tidak dapat dipilih.
+const projectOptions = () => projects.list.length
+  ? projects.list.map(project => `<option value="${esc(project.id)}" ${project.id === projects.active ? 'selected' : ''}>${esc(project.name)}</option>`).join('')
+  : '<option value="" disabled selected>Belum ada project</option>';
 function projectBar() {
   const active = projects.list.find(project => project.id === projects.active) || null;
   // Tombol project ikut dikunci selama ada permintaan berjalan (memindahkan project, menarik
@@ -714,19 +720,18 @@ function coverage() {
   }).join('')}</div><article class="card method-card"><h2>Batas perbandingan sumber</h2><p>Jumlah ulasan tersimpan tidak menggambarkan seluruh percakapan di suatu platform. Sumber yang belum terhubung tidak berarti tidak ada keluhan. Penilaian seluruh halaman toko, penilaian pada ulasan, dan sentimen teks merupakan ukuran yang berbeda. Perbandingan antarplatform perlu memperhatikan periode, cakupan, dan jumlah ulasan; jumlah ulasan yang kecil belum membuktikan pengalaman pengguna di suatu platform lebih baik.</p></article>`;
 }
 function methodology() {
-  const base=summary(seedReviews);
+  const base=summary(reviews);
   const active = projects.list.find(project => project.id === projects.active) || null;
-  const builtInView = !active || active.builtIn;
   const categoryCounts = new Map();
   for (const row of analyticalReviews()) for (const tag of new Set(reviewTags(row))) categoryCounts.set(tag, (categoryCounts.get(tag) || 0) + 1);
-  // Kalimat sumber mengikuti project aktif: angka data awal hanya berlaku untuk dataset bawaan,
-  // project lain melaporkan hasil penarikannya sendiri.
-  const dataOrigin = builtInView
-    ? `Data awal diambil pada ${esc(dateLabel(observationDate,{year:'numeric'}))}: <strong>${seedReviews.filter(r=>r.platform==='play').length} ulasan tertulis Google Play</strong> dan <strong>${seedReviews.filter(r=>r.platform==='appstore').length} ulasan tertulis App Store</strong>. Aplikasi yang dianalisis adalah wondr merchant by BNI (Play: <strong>id.bni.wfb</strong>; App Store: <strong>id6741567238</strong>). Aplikasi wondr untuk konsumen dan BNI Merchant lama tidak termasuk dalam analisis ini.`
-    : `Dataset project <strong>${esc(active.name)}</strong> saat ini memuat <strong>${integer(reviews.filter(r=>r.platform==='play').length)} ulasan tertulis Google Play</strong> dan <strong>${integer(reviews.filter(r=>r.platform==='appstore').length)} ulasan tertulis App Store</strong> hasil penarikan. Aplikasi yang dianalisis adalah ${esc(active.name)} (Play: <strong>${esc(projects.target?.play?.appId || 'tidak terpasang')}</strong>; App Store: <strong>${esc(projects.target?.appstore?.appId || 'tidak terpasang')}</strong>). Identitas toko ini yang Anda konfirmasi saat project dibuat; aplikasi lain dengan nama serupa tidak termasuk.`;
+  // Kalimat sumber selalu melaporkan project aktif: tidak ada lagi angka bawaan yang bisa
+  // disalahartikan sebagai hasil penarikan pengguna.
+  const dataOrigin = active
+    ? `Project <strong>${esc(active.name)}</strong> saat ini memuat <strong>${integer(reviews.filter(r=>r.platform==='play').length)} ulasan tertulis Google Play</strong> dan <strong>${integer(reviews.filter(r=>r.platform==='appstore').length)} ulasan tertulis App Store</strong> hasil penarikan Anda. Aplikasi yang dianalisis adalah ${esc(active.name)} (Play: <strong>${esc(projects.target?.play?.appId || 'tidak terpasang')}</strong>; App Store: <strong>${esc(projects.target?.appstore?.appId || 'tidak terpasang')}</strong>). Identitas toko ini yang Anda konfirmasi saat project dibuat; aplikasi lain dengan nama serupa tidak termasuk.`
+    : 'Belum ada project. Angka sumber akan dilaporkan setelah project pertama dibuat.';
   return `<div class="method-grid">
     <article class="card method-card"><h2>Sumber dan cakupan</h2><p>${dataOrigin}</p><p>Tombol Tarik Analisis mengambil data dari kedua toko aplikasi yang terhubung dan memuat seluruh halaman pada setiap kumpulan ulasan yang tersedia, dengan urutan terbaru. Google Play memisahkan daftar ulasannya menurut bahasa antarmuka, sehingga kumpulan bahasa Indonesia dan kumpulan bahasa Inggris dibaca keduanya lalu digabung berdasarkan ID ulasan. Jumlah ulasan tertulis berbeda dari ${integer(storeRatingCount('play'))} penilaian Play Store dan ${integer(storeRatingCount('appstore'))} penilaian App Store karena penilaian tanpa teks tidak menyertakan nama atau isi yang dapat dianalisis. Filter hanya membatasi tampilan, bukan proses pengambilan data. Platform lain belum terhubung dan dilaporkan sebagai belum diambil, bukan nol keluhan.</p><div class="method-callout">Konten promosi resmi, pemberitaan, ulasan duplikat, dan komentar tentang produk lain tidak diperlakukan sebagai pengalaman merchant.</div><p><strong>Unduhan.</strong> Google Play hanya mempublikasikan rentang unduhan, saat ini ${esc(storeInstalls('play') || 'belum terbaca')}. Apple tidak mempublikasikan jumlah unduhan di halaman publik, sehingga metrik tersebut tidak tersedia dan tidak diperkirakan. Keduanya bukan ukuran jumlah pengguna aktif.</p></article>
-    <article class="card method-card"><h2>Cara membaca sentimen</h2><ul><li><strong>Positif:</strong> pujian, kepuasan, atau manfaat yang dinyatakan pengguna.</li><li><strong>Negatif:</strong> keluhan, masalah penggunaan, dan kekurangan yang mengganggu.</li><li><strong>Netral:</strong> informasi atau pertanyaan tanpa penilaian yang jelas; bukan label pengganti untuk teks yang tidak dipahami.</li><li><strong>Perlu tinjauan:</strong> teks belum cukup jelas untuk dinilai; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</li></ul><div class="formula">NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100</div><p>Ulasan berlabel sentimen mencakup ulasan positif, negatif, dan netral. Data awal: (${base.positive} − ${base.negative}) ÷ ${base.classified} × 100 = <strong>${base.nss>0?'+':''}${number(base.nss)} poin</strong>.</p></article>
+    <article class="card method-card"><h2>Cara membaca sentimen</h2><ul><li><strong>Positif:</strong> pujian, kepuasan, atau manfaat yang dinyatakan pengguna.</li><li><strong>Negatif:</strong> keluhan, masalah penggunaan, dan kekurangan yang mengganggu.</li><li><strong>Netral:</strong> informasi atau pertanyaan tanpa penilaian yang jelas; bukan label pengganti untuk teks yang tidak dipahami.</li><li><strong>Perlu tinjauan:</strong> teks belum cukup jelas untuk dinilai; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</li></ul><div class="formula">NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100</div><p>Ulasan berlabel sentimen mencakup ulasan positif, negatif, dan netral. ${base.classified ? `Pada project ini: (${base.positive} − ${base.negative}) ÷ ${base.classified} × 100 = <strong>${base.nss>0?'+':''}${number(base.nss)} poin</strong>.` : 'Belum ada teks berlabel pada project ini, jadi contoh angkanya belum dapat ditampilkan.'}</p></article>
     <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label pada data awal ditentukan dari pembacaan teks; teks yang tidak berubah mempertahankan labelnya. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (versi 1):</strong> menggunakan aturan kata kunci sederhana, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru; teks yang tidak dikenali ditandai perlu ditinjau.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh ${integer(storeRatingCount('play'))} penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
     <article class="card method-card"><h2>Penyimpanan dan jejak perubahan</h2><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban. Dasbor memuat data tersimpan saat dibuka; pembaruan tidak berlangsung terus-menerus. Status sumber dan waktu pemeriksaan mengikuti data tersimpan. Gangguan pengambilan tidak menghapus data yang sudah tersedia.</p><p>Ulasan baru ditambahkan, sedangkan perubahan teks, penilaian bintang, atau tanggal disimpan sebagai versi sebelumnya. Detail ulasan menampilkan waktu pengambilan, waktu pertama dan terakhir tercatat, serta riwayat perubahan. Versi lama tidak dihitung sebagai ulasan baru dalam grafik.</p><p>Jika data tersimpan tidak dapat dimuat saat awal, data awal tetap ditampilkan disertai pesan kesalahan yang jelas. Penilaian halaman toko hanya ditampilkan dari data daring yang berhasil diambil dan dipisahkan dari penilaian pada ulasan. Sumber publik tidak memverifikasi identitas penulis maupun kebenaran isi keluhan.</p></article>
     <article class="card method-card"><h2>Deteksi lonjakan dan laporan insiden</h2><ul><li><strong>Jendela lonjakan.</strong> Teks dikelompokkan per jam UTC bila sumber mengirim waktu publikasi yang lengkap; bila tidak, jendela diperlebar menjadi harian dan jendela mana yang dipakai selalu tertulis pada spanduk. Ambang: minimal ${anomalyDefaults.minCurrent} ulasan negatif dalam satu jendela dan lebih dari ${anomalyDefaults.thresholdPct}% di atas rata-rata ${anomalyDefaults.baselineWindows} jendela sebelumnya (${anomalyDefaults.dailyBaselineWindows} jendela untuk versi harian). Baseline nol dilaporkan sebagai "dari nol", bukan persentase tak hingga.</li><li><strong>Pita NSS.</strong> ${nssBands.map(band=>`${band.min} sampai ${band.max} = ${band.label}`).join('; ')}. Pita hanya label ambang untuk membaca arah, bukan hasil uji statistik. Di bawah ${nssMinSample} ulasan berlabel, angka ditandai belum representatif.</li><li><strong>Laporan insiden.</strong> Daftarnya memuat seluruh ulasan negatif pada filter aktif tanpa pembatasan sampel, lengkap dengan waktu publikasi mentah (UTC), aspek, emosi, niat, dan tautan sumber; teks yang masih perlu ditinjau tidak dimasukkan karena labelnya belum pasti. PDF dibuat dari dialog cetak peramban dan CSV dari tombol di kartu yang sama — keduanya memakai baris data yang sama dengan dasbor.</li><li><strong>Batas waktu publikasi.</strong> Sebagian kanal mengirim waktu sampai detik (Google Play, App Store, YouTube); actor media sosial ada yang hanya mengirim tanggal atau jam penuh, sehingga teksnya menumpuk pada satu jendela. Distribusi per jam tidak pernah dikarang untuk teks yang sumbernya hanya mengirim tanggal.</li></ul></article>
@@ -750,12 +755,28 @@ function render({animate=false}={}) {
   const attribute=['data-platform','data-sentiment','data-page','data-action','data-sort','data-aspect','data-tag'].find(name=>focused?.hasAttribute(name));
   const focusSelector=focused?.id?`#${CSS.escape(focused.id)}`:attribute?`[${attribute}="${CSS.escape(focused.getAttribute(attribute))}"]`:null;
   nav();
+  if (!projects.list.length) { $('#main').innerHTML=firstRun(); if (focusSelector) $(focusSelector)?.focus({preventScroll:true}); return; }
   const data=analyticalReviews();
   $('#main').classList.toggle('in-place-update',!animate);
   $('#main').innerHTML=heading()+(state.view!=='methodology'?filters():'')+(state.view==='overview'?overview(data):state.view==='sentiment'?analysis(data):state.view==='reviews'?reviewTable(data,true):state.view==='platforms'?coverage():methodology());
   if ($('#platform-tabs')) $('#platform-tabs').scrollLeft=scrollLeft;
   if (focusSelector) $(focusSelector)?.focus({preventScroll:true});
   updatePlatformScroll();
+}
+// Belum ada project sama sekali: dasbor tidak boleh menampilkan angka nol, karena nol akan
+// terbaca sebagai 'tidak ada keluhan' padahal datanya belum pernah diambil.
+function firstRun() {
+  return `<section class="first-run card">
+    <div class="first-run-mark">${icon('spark')}</div>
+    <h1 tabindex="-1">Belum ada project</h1>
+    <p>Dasbor ini mulai kosong. Buat project lebih dulu, lalu seluruh angka yang Anda lihat berasal dari penarikan yang Anda jalankan sendiri — bukan dari data contoh yang ikut terkirim dalam aplikasi.</p>
+    <ol class="first-run-steps">
+      <li><strong>Buat project.</strong> Isi nama project dan nama aplikasi persis seperti tertulis di toko aplikasi.</li>
+      <li><strong>Centang aplikasinya.</strong> Kandidat dicari otomatis di Google Play dan App Store; Anda yang memastikan mana yang benar.</li>
+      <li><strong>Tarik analisis.</strong> Semua ulasan publik pada aplikasi itu diambil tanpa pembatasan sampel, lalu dinilai sentimennya.</li>
+    </ol>
+    <button class="btn btn-primary" data-action="add-project">${icon('spark')}Buat project pertama</button>
+  </section>`;
 }
 function clearComplaint() {
   if (state.complaint || state.cluster) { state.complaint=''; state.cluster=''; state.sentiment='all'; }
@@ -817,7 +838,7 @@ function discoveryColumn(store) {
     const link = safeHttps(candidate.sourceUrl);
     return `<div class="discover-item${picked === candidate.appId ? ' picked' : ''}"><label><input type="radio" name="discover-${store}" value="${esc(candidate.appId)}" ${picked === candidate.appId ? 'checked' : ''}><span><strong>${esc(candidate.title || 'judul tidak terbaca')}</strong><small>${esc(candidate.appId)}${facts ? ` · ${esc(facts)}` : ''}</small></span></label>${link ? `<a class="discover-open" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Buka halaman tokonya</a>` : ''}</div>`;
   }).join('');
-  return `<div class="discover-col"><h4>${esc(discoveryStoreNames[store])} <span class="badge ${block.status === 'confirmed' ? 'positive' : 'neutral'}">${esc(discoveryStatusNames[block.status] || block.status)}</span></h4>${rows ? `<div class="discover-list">${rows}</div>` : `<p class="discover-empty">${esc(discoveryStoreNames[store])} tidak mengirim judul yang mirip. Periksa ejaan nama aplikasinya, atau tulis nama paketnya di kolom bawah bila Anda tahu.</p>`}</div>`;
+  return `<div class="discover-col"><h4>${esc(discoveryStoreNames[store])} <span class="badge ${block.status === 'confirmed' ? 'positive' : 'neutral'}">${esc(discoveryStatusNames[block.status] || block.status)}</span></h4>${rows ? `<div class="discover-list">${rows}</div>` : `<p class="discover-empty">${esc(discoveryStoreNames[store])} tidak mengirim judul yang mirip dengan "${esc(discovery.searched)}". Periksa ejaan nama aplikasinya, atau tulis nama paketnya di kolom bawah bila Anda tahu.</p>`}</div>`;
 }
 // ID terpilih: isian manual selalu menang di atas kandidat, lalu kandidat yang dipilih,
 // lalu kandidat unggul dari sumber. Tidak ada ID yang dikarang bila ketiganya kosong.
@@ -853,6 +874,7 @@ function renderProjectDiscovery() {
           <label>Nomor App Store<input id="manual-appstore" type="text" inputmode="numeric" value="${esc(targets.appstore)}" placeholder="1234567890" autocomplete="off"></label>
         </div><p>Pakai ini bila pencarian otomatis tidak menemukan aplikasinya — misalnya namanya berbeda di tiap toko. ID yang ditulis manual tetap ditampilkan sebelum data ditarik.</p></details>
         <p class="discover-target" role="status"></p>`
+      : discovery.error ? `<p class="discover-empty" role="status">${esc(discovery.error)} Nama yang sudah diketik tetap dipakai, jadi tekan "Cari ulang" untuk mencoba lagi.</p>`
       : `<p class="discover-idle">Kandidat toko dicari otomatis begitu nama aplikasi diisi di atas. Aplikasi membaca dua sumber gratis (iTunes Search dan halaman pencarian Google Play) tanpa kunci API.</p>`;
   updateProjectReadout();
 }
@@ -901,7 +923,7 @@ async function discoverIdentity() {
   const errorHost = $('#project-error');
   if (errorHost) errorHost.textContent = '';
   if (entity.length < 2) { discovery.error = 'Isi nama aplikasi terlebih dahulu (minimal dua karakter).'; if (errorHost) errorHost.textContent = discovery.error; return; }
-  discovery.busy = true; discovery.payload = null; discovery.picked = { play: '', appstore: '' }; discovery.searched = entity; discovery.partial = '';
+  discovery.busy = true; discovery.payload = null; discovery.error = ''; discovery.picked = { play: '', appstore: '' }; discovery.searched = entity; discovery.partial = '';
   renderProjectDiscovery();
   try {
     const response = await fetch(`/api/discover?entity=${encodeURIComponent(entity)}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
@@ -976,7 +998,7 @@ function applyPayload(payload) {
   sync.sources=payload.sources; sync.lastRun=payload.lastRun; sync.runs=payload.runs; sync.running=payload.running; sync.loaded=true;
   if (Array.isArray(payload.projects)) projects.list=payload.projects;
   if (typeof payload.activeProject==='string') projects.active=payload.activeProject;
-  if (payload.target && typeof payload.target==='object') projects.target=payload.target;
+  projects.target = payload.target && typeof payload.target === 'object' ? payload.target : null;
   if (!payload.running) sync.attempt=null;
   sync.storageWarning = typeof payload.storageWarning === 'string' ? payload.storageWarning : null;
 }
@@ -992,11 +1014,10 @@ async function switchProject(id) {
   render();
 }
 // Penghapusan project adalah satu-satunya jalur yang membuang baris ulasan, jadi ia meminta
-// konfirmasi eksplisit dan tidak pernah berlaku pada project bawaan.
+// konfirmasi eksplisit dan hanya berlaku pada project yang sedang aktif.
 function openDeleteDialog() {
   const active = projects.list.find(project => project.id === projects.active) || null;
   if (!active) return;
-  if (active.builtIn) { notify('Project bawaan tidak dapat dihapus.'); return; }
   if (isBusy()) { notify('Tunggu penarikan selesai sebelum menghapus project.'); return; }
   const dialog = $('#delete-dialog');
   if (!dialog) return;
@@ -1004,13 +1025,13 @@ function openDeleteDialog() {
     (active.lastPulledAt ? ` (penarikan terakhir ${timeLabel(active.lastPulledAt)})` : ' (belum pernah ditarik)');
   dialog.innerHTML = `<div class="dialog-header"><div><h2 id="delete-heading">Hapus project</h2><p>Project aktif akan dihapus berikut seluruh datanya.</p></div><button class="icon-button" data-close="delete-dialog" aria-label="Tutup hapus project">${icon('close')}</button></div>
   <div class="dialog-body"><p class="delete-target"><strong>${esc(active.name)}</strong><br>${esc(active.entity)} · ${esc(active.stores)}</p>
-  <p>Yang hilang: ${lost}. Penghapusan ini tidak dapat dibatalkan dari dasbor; unduh laporan terlebih dahulu bila datanya masih diperlukan. Project bawaan dan datanya tidak terpengaruh.</p></div>
-  <div class="dialog-footer"><div><small>Project bawaan tetap tersedia setelah penghapusan.</small></div><div class="dialog-actions"><button class="btn" data-close="delete-dialog">Batal</button><button class="btn btn-danger" data-action="confirm-delete-project">${icon('trash')}Hapus project</button></div></div>`;
+  <p>Yang hilang: ${lost}. Penghapusan ini tidak dapat dibatalkan dari dasbor; unduh laporan terlebih dahulu bila datanya masih diperlukan. Project lain dan datanya tidak terpengaruh.</p></div>
+  <div class="dialog-footer"><div><small>${projects.list.length > 1 ? 'Project lain tetap tersedia setelah penghapusan.' : 'Ini project terakhir, jadi dasbor kembali kosong setelahnya.'}</small></div><div class="dialog-actions"><button class="btn" data-close="delete-dialog">Batal</button><button class="btn btn-danger" data-action="confirm-delete-project">${icon('trash')}Hapus project</button></div></div>`;
   if (!dialog.open) dialog.showModal();
 }
 async function deleteActiveProject(button) {
   const active = projects.list.find(project => project.id === projects.active) || null;
-  if (!active || active.builtIn) return;
+  if (!active) return;
   if (button) button.disabled = true;
   try {
     applyPayload(await requestProject({ action: 'delete', project: active.id }));
@@ -1018,7 +1039,7 @@ async function deleteActiveProject(button) {
     $('#manage-dialog')?.close();
     clearReviewFilters();
     render();
-    notify(`Project "${active.name}" dihapus beserta datanya. Project bawaan kini yang aktif.`);
+    notify(projects.list.length ? `Project "${active.name}" dihapus beserta datanya. Project aktif sekarang: ${projectName()}.` : `Project "${active.name}" dihapus beserta datanya. Dasbor kembali kosong — buat project baru kapan saja.`);
   } catch (error) {
     if (button) button.disabled = false;
     notify(`Project tidak dapat dihapus. ${error instanceof Error ? error.message : 'Kesalahan tidak dikenal.'}`, 'error');
@@ -1043,8 +1064,8 @@ function openManageDialog() {
     <p class="manage-facts"><span>Data tersimpan</span><strong>${integer(reviews.length)} teks · penarikan ${esc(lastPull)}</strong></p>
     <p class="note-inline">Aplikasi sumber tidak diganti di sini. Kalau salah pilih aplikasi, hapus project ini lalu buat project baru agar datanya tetap terpisah.</p>
     <div class="manage-danger">
-      <div><h3>Hapus project</h3><p>${active.builtIn ? 'Project bawaan tidak dapat dihapus; datanya adalah dasar analisis yang selama ini dipakai.' : 'Penghapusan membuang seluruh teks ulasan dan riwayat penarikan project ini. Unduh laporan terlebih dahulu bila masih diperlukan.'}</p></div>
-      ${active.builtIn ? '' : `<button class="btn btn-danger" data-action="delete-project">${icon('trash')}Hapus project</button>`}
+      <div><h3>Hapus project</h3><p>Penghapusan membuang seluruh teks ulasan dan riwayat penarikan project ini. Unduh laporan terlebih dahulu bila datanya masih diperlukan. Project lain tidak terpengaruh.</p></div>
+      <button class="btn btn-danger" data-action="delete-project">${icon('trash')}Hapus project</button>
     </div>
     <p class="filter-error" id="manage-error" role="alert"></p>
   </div></div>

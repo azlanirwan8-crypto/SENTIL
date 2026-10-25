@@ -1,7 +1,8 @@
 // Simpanan project analisis. Satu berkas data dapat memuat beberapa project; setiap project
 // punya dataset sendiri (ulasan, status kanal, riwayat) sehingga angka sebuah project tidak pernah
 // bercampur dengan project lain. Berkas lama dengan satu dataset di atas tetap dibaca apa adanya:
-// isinya dipindahkan utuh menjadi project bawaan, tanpa mengubah satu baris ulasan pun.
+// isinya dipindahkan utuh menjadi project biasa yang boleh dihapus pemiliknya, tanpa mengubah
+// satu baris ulasan pun.
 import { defaultTarget, normalizeTarget } from './target.mjs';
 import { initialDataset } from './dashboard-core.mjs';
 
@@ -60,22 +61,18 @@ export function createProject({ id, name, entity, target, playAppId, appleAppId,
   return { id: projectId, name: projectName, entity: entityName, target: { ...resolved, id: projectId }, createdAt: now, updatedAt: now, lastPulledAt: null };
 }
 
-// Project bawaan adalah aplikasi yang selama ini dianalisis; datanya sudah ada, jadi project ini
-// tidak dibuat lewat alur penemuan identitas.
-export function defaultProject() {
-  return {
-    id: defaultProjectId, name: 'wondr merchant by BNI', entity: defaultTarget.entityName,
-    target: defaultTarget, createdAt: null, updatedAt: null, lastPulledAt: null, builtIn: true,
-  };
+// Tidak ada project bawaan. Aplikasi mulai kosong dan project pertama dibuat sendiri oleh
+// pengguna lewat penemuan identitas, sehingga seluruh angka berasal dari penarikan yang ia
+// jalankan — bukan dari data yang ikut terkirim dalam berkas aplikasi.
+export function initialStore() {
+  return { version: storeVersion, projects: [], activeProject: '', datasets: {} };
 }
 
-export function initialStore() {
-  return {
-    version: storeVersion,
-    projects: [defaultProject()],
-    activeProject: defaultProjectId,
-    datasets: { [defaultProjectId]: initialDataset() },
-  };
+// Berkas lama (v1) hanya memuat satu dataset. Isinya dipindah utuh menjadi project biasa —
+// identitasnya memang aplikasi yang selama ini dianalisis — sehingga pemiliknya bebas
+// menghapusnya tanpa ada satu baris ulasan pun yang hilang diam-diam.
+export function legacyProject(now = nowIso()) {
+  return createProject({ id: defaultProjectId, name: defaultTarget.name, entity: defaultTarget.entityName, target: defaultTarget, now });
 }
 
 // Pemindahan berkas lama ke bentuk multi-project dilakukan sekali saat dibaca. Semua kunci dataset
@@ -84,19 +81,19 @@ export function initialStore() {
 // hilang) karena menghapus data ulasan bukan cara yang sah untuk menyembuhkan berkas.
 export function migrateStore(saved) {
   if (saved && saved.version === storeVersion && Array.isArray(saved.projects)) {
-    const known = new Set(saved.projects.map(project => project.id));
+    // 'builtIn' adalah sifat lama; project hasil baca berkas selalu dapat dihapus pemiliknya.
+    const projects = saved.projects.map(({ builtIn, ...project }) => project);
+    const known = new Set(projects.map(project => project.id));
     const datasets = Object.fromEntries(Object.entries(saved.datasets && typeof saved.datasets === 'object' ? saved.datasets : {})
       .map(([id, value]) => [id, repairDataset(value)]));
-    const projects = saved.projects.some(project => project.id === defaultProjectId) ? saved.projects : [defaultProject(), ...saved.projects];
-    // Dataset disemaikan setelah daftar project lengkap: project bawaan yang disisipkan di baris
-    // sebelumnya harus ikut punya dataset, jika tidak `/api/data` menjawab tanpa kunci reviews.
     for (const project of projects) if (!datasets[project.id]) datasets[project.id] = emptyDataset();
-    const activeProject = known.has(saved.activeProject) ? saved.activeProject : defaultProjectId;
+    const activeProject = known.has(saved.activeProject) ? saved.activeProject : (projects[0]?.id || '');
     return { ...saved, version: storeVersion, projects, datasets, activeProject };
   }
   if (saved && Array.isArray(saved.reviews) && Array.isArray(saved.sources) && Array.isArray(saved.runs)) {
+    const project = legacyProject();
     const dataset = { reviews: saved.reviews, sources: saved.sources, runs: saved.runs, lastRun: saved.lastRun ?? null, batch: saved.batch ?? null };
-    return { version: storeVersion, projects: [defaultProject()], activeProject: defaultProjectId, datasets: { [defaultProjectId]: dataset } };
+    return { version: storeVersion, projects: [project], activeProject: project.id, datasets: { [project.id]: dataset } };
   }
   return initialStore();
 }
@@ -106,17 +103,16 @@ export function projectList(store) {
     const dataset = store.datasets[project.id];
     const last = dataset?.runs?.at(-1) || null;
     return {
-      id: project.id, name: project.name, entity: project.entity, builtIn: Boolean(project.builtIn),
+      id: project.id, name: project.name, entity: project.entity,
       createdAt: project.createdAt, updatedAt: project.updatedAt,
       lastPulledAt: project.lastPulledAt || last?.finishedAt || null,
       reviewCount: Array.isArray(dataset?.reviews) ? dataset.reviews.length : 0,
       stores: [project.target?.play?.appId ? `Google Play ${project.target.play.appId}` : null,
         project.target?.appstore?.appId ? `App Store ${project.target.appstore.appId}` : null].filter(Boolean).join(' · ') || 'identitas toko belum lengkap',
     };
-  // Project bawaan selalu di atas, sisanya menurut waktu dibuat lalu nama. Nama tidak boleh
-  // menjadi penentu utama: mengganti nama project tidak boleh memindahkan posisinya di pemilih.
-  }).sort((a, b) => Number(b.builtIn) - Number(a.builtIn)
-    || (a.createdAt || '9999').localeCompare(b.createdAt || '9999') || a.name.localeCompare(b.name));
+  // Urutan stabil: project terlama di atas, lalu nama. Nama sengaja bukan penentu utama supaya
+  // mengganti nama project tidak memindahkan posisinya di pemilih.
+  }).sort((a, b) => (a.createdAt || '9999').localeCompare(b.createdAt || '9999') || a.name.localeCompare(b.name));
 }
 
 export function findProject(store, id) {
@@ -130,7 +126,11 @@ export function resolveProjectId(store, requested) {
   return store.activeProject;
 }
 
-export function datasetFor(store, id) { return store.datasets[id]; }
+export function datasetFor(store, id) { return id ? store.datasets[id] : undefined; }
+
+// Dataset untuk keadaan "belum ada project": kosong dan tanpa daftar kanal, karena kanal mana pun
+// hanya punya arti setelah sebuah project memilih identitas tokonya.
+export const emptyView = () => ({ reviews: [], sources: [], runs: [], lastRun: null, batch: null });
 
 export function setDataset(store, id, dataset, { pulledAt } = {}) {
   store.datasets[id] = dataset;
@@ -139,12 +139,11 @@ export function setDataset(store, id, dataset, { pulledAt } = {}) {
   return dataset;
 }
 
-// Target sebuah project. Project bawaan memakai target yang sudah teruji; project lain wajib
-// mempunyai setidaknya satu ID toko agar penarikan tidak salah sasaran.
+// Target sebuah project. Setiap project wajib mempunyai setidaknya satu ID toko agar
+// penarikan tidak salah sasaran — tidak ada lagi target diam-diam dari aplikasi bawaan.
 export function projectTarget(store, id) {
   const project = findProject(store, id);
   if (!project) throw new Error('project_unknown: project yang diminta tidak terdaftar');
-  if (project.builtIn) return defaultTarget;
   return normalizeTarget({ ...project.target, entityName: project.target?.entityName || project.entity });
 }
 
@@ -181,15 +180,14 @@ export function renameProject(store, id, name) {
   return project;
 }
 
-// Menghapus project beserta datasetnya. Ini satu-satunya jalur yang membuang baris ulasan, jadi
-// project bawaan (data awal aplikasi yang selama ini dianalisis) ditolak dan pemanggil wajib
-// menyertakan ID project secara eksplisit. Project aktif dipindahkan kembali ke project bawaan.
+// Menghapus project beserta datasetnya. Setiap project boleh dihapus — termasuk project pertama
+// yang dipindah dari berkas lama — asalkan ID-nya disebut secara eksplisit. Setelah project
+// terakhir hilang, dasbor kembali kosong dan pengguna membuat project baru dari awal.
 export function removeProject(store, id) {
   const project = findProject(store, id);
   if (!project) throw new Error('project_unknown: project yang diminta tidak terdaftar');
-  if (project.builtIn) throw new Error('project_builtIn: project bawaan tidak dapat dihapus');
   store.projects = store.projects.filter(item => item.id !== id);
   delete store.datasets[id];
-  if (store.activeProject === id) store.activeProject = defaultProjectId;
+  if (store.activeProject === id) store.activeProject = store.projects[0]?.id || '';
   return project;
 }

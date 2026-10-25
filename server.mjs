@@ -9,7 +9,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject, renameProject, strictProjectId,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
 } from './projects.mjs';
 import { withAbsa } from './model.js';
 
@@ -75,7 +75,9 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   // menimpa hasil baca pertama; hasil penarikan yang baru disimpan dilaporkan apa adanya.
   const view = project => {
     const id = resolveProjectId(store, project);
-    return { ...datasetFor(store, id), projects: projectList(store), activeProject: id, target: projectTarget(store, id), running };
+    // Belum ada project: tidak ada dataset dan tidak ada target, jadi antarmuka menampilkan
+    // layar awal alih-alih angka nol yang bisa disalahartikan sebagai "tidak ada keluhan".
+    return { ...(id ? datasetFor(store, id) : emptyView()), projects: projectList(store), activeProject: id, target: id ? projectTarget(store, id) : null, running };
   };
   // rename() di Windows sering gagal sesaat (EBUSY/EPERM/EACCES) ketika antivirus atau
   // indexer masih memegang berkas target, jadi penulisan diulang beberapa kali sebelum
@@ -122,7 +124,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
   };
   // Project baru dibuat dari hasil penemuan yang sudah dikonfirmasi pengguna, atau dari ID toko
-  // yang diisi manual. Datasetnya kosong; data awal tetap milik project bawaan.
+  // yang diisi manual. Dataset project baru selalu kosong: tidak ada data contoh di aplikasi.
   const addProject = async ({ name, entity, discovery, playAppId, appleAppId }) => {
     if (running) throw new Error('busy');
     const target = discovery
@@ -160,7 +162,8 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     store = next;
     return view(renamed.id);
   };
-  // Menghapus project non-bawaan beserta datasetnya; project aktif dikembalikan ke bawaan.
+  // Menghapus project beserta datasetnya; project aktif berpindah ke project yang tersisa, dan
+  // kembali kosong bila project terakhir yang dihapus.
   const dropProject = async project => {
     if (running) throw new Error('busy');
     const next = { ...store, projects: [...store.projects], datasets: { ...store.datasets } };
@@ -252,6 +255,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
         // Penarikan selalu mengikuti target project aktif: kanal yang kolektornya belum
         // mendukung target dilaporkan tidak dijalankan, bukan menarik data aplikasi lain.
         project = resolveProjectId(store, params.get('project'));
+        if (!project) { running = false; json(400,{error:'Belum ada project. Buat project lebih dulu sebelum menarik data.'}); return; }
         const previous = datasetFor(store, project);
         const runOptions = { resume: resumeMap(previous), target: projectTarget(store, project) };
         const results = finish ? [] : platform ? [await collectOne(platform, runOptions)] : await collector(runOptions);
