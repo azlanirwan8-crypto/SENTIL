@@ -1,13 +1,26 @@
 {
-  "name": "wondr-merchant-sentiment-monitor",
-  "version": "1.0.0",
+  "name": "sentiment-intelligence",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "build": "node build.mjs && npm run build:css",
+    "build:js": "node build.mjs",
+    "build:css": "tailwindcss -i ./src/index.css -o ./styles.css --minify",
     "start": "node server.mjs",
-    "test": "node --test tests.mjs"
+    "dev": "npm run build && node server.mjs",
+    "test": "node --test tests"
+  },
+  "dependencies": {
+    "google-play-scraper": "^10.1.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.17"
   }
 }

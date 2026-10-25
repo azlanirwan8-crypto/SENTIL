@@ -1,169 +1,124 @@
-# wondr merchant by BNI — Dasbor Sentimen
+# Sentiment Intelligence — analisis ulasan otomatis
 
-Dasbor lokal untuk menganalisis sentimen ulasan publik **wondr merchant by BNI** di Google Play dan Apple App Store, ditambah komentar media sosial (X, Instagram, TikTok, Facebook, YouTube), Google Reviews, dan liputan melalui RSS — semuanya dari halaman publik, tanpa login dan tanpa upaya melewati perlindungan akses. Dasbor ini independen dan bukan produk resmi BNI.
+Platform analisis sentimen untuk ulasan publik Google Play dan App Store. Satu pintu data (`/api/sync`), satu mesin statistik yang mempelajari korpusnya sendiri, dan ruang analisis multi-workspace yang tersimpan di peramban.
 
-## Fitur
+## Yang tidak dilakukan aplikasi ini
 
-- **Tarik Analisis** mengambil ulasan dari halaman publik kedua toko aplikasi melalui aplikasi lokal.
-- Seluruh ulasan tertulis yang dapat diakses dimuat sampai halaman terakhir, dapat dicari berdasarkan nama atau teks, dan dapat diunduh sebagai CSV.
-- Google Play memisahkan daftar ulasannya menurut bahasa antarmuka. Kedua kumpulan (bahasa Indonesia dan bahasa Inggris) dibaca keduanya lalu digabung berdasarkan ID ulasan agar tidak ada ulasan terlewat.
-- Ringkasan sentimen, Net Sentiment Score (NSS), sebaran bintang, peringkat tema keluhan, faktor pendorong positif, dan cakupan sumber.
-- **Gauge NSS** dengan pita interpretasi, jumlah sampel minimum yang dinyatakan, serta NSS per kanal supaya satu kanal tidak menimpa yang lain.
-- **Pemantauan lonjakan** ulasan negatif: jendela 1 jam bila sumber mengirim waktu publikasi lengkap, jika tidak jendela 1 hari, dengan ambang >200% di atas rata-rata jendela sebelumnya. Spanduk selalu tampil, termasuk saat tidak ada anomali.
-- **ABSA** (aspek pengalaman, emosi, niat ulasan) yang diturunkan dari teks, dengan polaritas per aspek yang hanya memakai kalimat penyebut aspek itu, plus ringkasan eksekutif dan klaster frasa keluhan yang dapat diklik.
-- **Mesin sentimen hybrid `rules-v2`**: aturan domain merchant berpresisi tinggi dijalankan lebih dulu, lalu leksikon berbobot dengan negasi, penguat/pelemah, klausa kontrastif, dan emoji. Baris yang sinyalnya tidak cukup kuat ditandai **perlu tinjauan** (abstain), bukan dipaksa netral.
-- **100% label otomatis**: setiap baris dinilai ulang oleh mesin `rules-v2` dari teks sumber setiap data dibaca. Tidak ada panel koreksi label manual, dan metadata label manual warisan dibuang saat pembacaan. Teks, penulis, tanggal, bintang, dan tautan tidak diubah.
-- **Benchmark project aplikasi sejenis**: bandingkan NSS, distribusi sentimen, tingkat abstain, gerbang relevansi, aspek negatif utama, dan topik keluhan untuk setiap aplikasi yang Anda tambahkan sebagai project dan tarik sendiri. Tidak ada aplikasi pembanding atau angka yang dikarang.
-- **Panel otak analisis**: komposisi mesin, tahapan aturan, gerbang relevansi, sebaran keyakinan, aspek yang dikenali, istilah bukti, alasan penolakan, dan contoh teks nyata terkuat dari project aktif.
-- **Proyeksi 4 pekan** dengan regresi kuadrat terkecil per pekan dan rentang Poisson 95%; arah hanya dinyatakan bila kemiringan meyakinkan (|t| ≥ 2).
-- **Laporan insiden eksekutif** sebagai CSV atau PDF (dialog cetak peramban): seluruh ulasan negatif pada filter aktif tanpa sampling, beserta waktu publikasi mentah, aspek, emosi, niat, dan tautan sumber.
-- Detail ulasan menampilkan teks asli, alasan penilaian otomatis, polaritas aspek, sumber, waktu pengambilan, serta riwayat perubahan data. Tidak ada kendali untuk menaikkan atau menurunkan label.
-- Status setiap sumber dilaporkan secara terpisah. Sumber yang belum terhubung tidak dihitung sebagai nol keluhan.
-- Metrik halaman toko (jumlah penilaian, nilai rata-rata, dan rentang unduhan) dilaporkan terpisah dari hasil analisis sentimen.
-- Tidak ada unggah berkas atau impor data manual.
+- **Tidak ada API key, token, atau kredensial.** Tidak ada variabel lingkungan wajib untuk menjalankan analisis.
+- **Tidak ada kamus manual.** Tidak ada daftar kata sentimen, daftar kata alay, atau kategori keluhan yang ditulis tangan.
+- **Tidak ada pelabelan manual.** Semua label dihasilkan mesin dari data yang ditarik.
+- **Tidak ada impor berkas.** Tidak ada unggah CSV/Excel; sumbernya hanya halaman publik toko aplikasi.
+- **Tidak ada login atau akun.** Workspace disimpan di `localStorage` peramban, bukan di server multi-tenant.
+- **Tidak ada bypass proteksi situs.** Hanya halaman ulasan publik yang dibaca, tanpa menyamar sebagai peramban atau menembus batas anti-bot.
+- **Tidak ada kanal berbayar.** Actor berbayar tidak dipakai dan tidak dapat dipicu dari aplikasi ini.
+
+## Alur
+
+1. **Dua isian.** Pengguna mengisi nama analisis dan nama entitas. Kandidat aplikasi dicari otomatis ke `gplay.search` dan iTunes Search; tidak ada ID yang perlu diketik manual, dan mesin tidak memilihkan kandidat.
+2. **Penarikan paralel.** Kanal Google Play (dua kumpulan bahasa: `id/id` dan `en/us`, urut terbaru, berpaginasi) dan App Store (halaman ulasan publik + feed pelanggan) dibaca bersamaan dengan `Promise.allSettled` dan anggaran waktu di bawah `maxDuration` function, sehingga satu kanal lambat tidak membatalkan kanal lain.
+3. **Analisis korpus.** Seluruh baris yang terbaca dianalisis; tidak ada pembatasan sampel.
+4. **Visualisasi.** Empat grafik, tabel ulasan, dan panel metode mengikuti workspace aktif.
+
+Cache berlaku satu jam per kanal dan per penemuan identitas. Tombol **Perbarui** melewatkan cache (force sync).
 
 ## Menjalankan
 
-Prasyarat: Node.js 20 atau versi yang lebih baru.
-
 ```bash
-npm start
+npm install
+npm run build      # bundel React (esbuild) + Tailwind -> app.js, styles.css
+npm start          # pratinjau lokal di http://localhost:5173
 ```
 
-Buka `http://127.0.0.1:4173/`. Ganti port dengan `PORT=4174 npm start`.
+Tidak ada langkah konfigurasi. `npm run dev` menjalankan build lalu server.
 
-Dasbor mulai tanpa project dan tidak menampilkan angka nol. Tambahkan project lewat tombol **+** di bilah project, lalu tekan **Tarik Analisis**; hasilnya disimpan di `online-data.json` pada direktori proyek. Berkas data versi lama (satu dataset) dipindahkan menjadi satu project saat dibaca, sehingga tidak ada ulasan yang hilang. Hentikan aplikasi dengan `Ctrl+C`.
-
-### Mengisi kredensial kanal sosial
-
-Salin `.env.example` menjadi `.env` (atau `.env.local`) lalu isi nilainya. Kedua berkas sudah di-git-ignore dan tidak pernah disajikan lewat HTTP. Jangan menempelkan kunci ke kolom chat atau commit. Bila kunci Anda tersimpan di suatu lingkungan hosting, tarik sendiri ke folder ini, misalnya `vercel env pull .env.local`.
-
-- `GOOGLE_API_KEY` atau `YOUTUBE_API_KEY` — mengaktifkan konektor komentar YouTube Data API v3.
-- `GOOGLE_PLACES_API_KEY` — mengaktifkan kanal Google Reviews melalui Google Places API (New). Kunci dikirim sebagai header `X-Goog-Api-Key`, tidak pernah masuk URL.
-- `APIFY_API_TOKEN` — mengaktifkan kanal X, Instagram, TikTok, dan Facebook melalui actor Apify. Pemakaian actor memakan kuota berbayar pada akun Anda.
-
-Tanpa kredensial, kanal-kanal itu berstatus **perlu konfigurasi API** dan tidak ada permintaan yang dikirim — bukan nol keluhan dan bukan pula terhubung.
-
-Status **terhubung** berarti permintaan benar-benar dikirim dan dijawab. Apabila sumber mengembalikan penanda "tidak ada hasil" — misalnya actor X mengirim `{ "noResults": true }` atau Instagram mengirim `no_items` — dasbor menuliskan jumlah penanda itu apa adanya. Itu berbeda dari kegagalan, dan berbeda pula dari nol keluhan.
-
-## Menjalankan pada Vercel
-
-`vercel.json` dan `api/*.js` menyiapkan aplikasi untuk Vercel Functions:
-
-- `/api/data`, `/api/status`, `/api/analyze`, `/api/project`, dan `/api/discover` dilayani function Node; halaman statis tetap dari repo.
-- Function membaca environment deployment, jadi `APIFY_API_TOKEN`, `YOUTUBE_API_KEY`, dan `GOOGLE_PLACES_API_KEY` yang Anda pasang di Vercel benar-benar dipakai.
-- Actor Apify dapat berjalan beberapa menit. Actor yang belum selesai saat function habis waktu tidak diulang: `coverage.runId` tersimpan dan penarikan berikutnya melanjutkan run yang sama. Naikkan batas waktu function melalui **Settings → Functions** bila penarikan sering terpotong. Batas waktu function dipasang di dalam berkas function itu sendiri — `api/analyze.js` 60 detik, `api/project.js` 30 detik, dan `api/discover.js` 30 detik — dan `vercel.json` sengaja tidak memasang `maxDuration` supaya build tidak gagal pada plan dengan batas lebih rendah.
-- `/api/analyze`, `/api/project`, dan `/api/discover` berjalan **tanpa login** — atas permintaan pemilik akun. Yang masih diberlakukan: hanya metode POST, hanya permintaan yang datang dari halaman ini, dan satu penarikan pada satu waktu (perubahan project ditolak 409 selama penarikan berjalan).
-  - Gerbangnya begini: permintaan harus membawa `Origin` yang cocok dengan host, atau `Sec-Fetch-Site: same-origin`. Dua header itu dipasang otomatis oleh peramban dan tidak dikirim klien skrip biasa, jadi tombol di dasbor tetap jalan tanpa akun sementara `curl` anonim ditolak 403 sebelum data disentuh.
-  - Jujur tentang batasnya: ini **bukan pengganti autentikasi**. Klien non-peramban yang meniru kedua header itu tetap lolos, dan `x-forwarded-host` yang dikendalikan penyerang dapat membuat `Origin` tampak cocok. Selama situs ini sengaja tanpa login, siapa pun yang mengetahui alamatnya masih bisa memicu penarikan (kuota Apify) atau mengubah project. Pengaman biaya yang sebenarnya: pasang batas pemakaian bulanan di console Apify. Bila suatu saat ingin menutup itu, salin `middleware.edge.js` menjadi `middleware.js` dan isi `DASHBOARD_USER` + `DASHBOARD_PASSWORD`.
-  - Penghapusan project wajib menyebut ID project secara eksplisit; ID yang tidak menghasilkan slug sah (misalnya `###`) ditolak, tidak jatuh ke project aktif. Semua project dapat dihapus, termasuk project pertama hasil pemindahan berkas lama — setelah project terakhir hilang, dasbor kembali kosong dan layar awal yang tampil.
-- Bila suatu saat ingin kembali memakai login, salin `middleware.edge.js` menjadi `middleware.js` dan isi `DASHBOARD_USER` serta `DASHBOARD_PASSWORD` pada environment deployment.
-- `middleware.edge.js` opsional: meminta login sebelum halaman terbuka. Namanya sengaja bukan `middleware.js` karena middleware Vercel berjalan di Edge Runtime (tanpa `Buffer`/`node:crypto`) dan pernah membuat seluruh situs gagal `500 MIDDLEWARE_INVOCATION_FAILED`. Untuk mengaktifkannya, salin berkas itu menjadi `middleware.js`.
-- Middleware berjalan pada Edge Runtime Vercel: hanya API Web yang boleh dipakai (`atob`, `TextDecoder`, `Response`). `Buffer` dan `node:crypto` tidak tersedia di sana — pernah menyebabkan seluruh situs gagal dengan `500 MIDDLEWARE_INVOCATION_FAILED`.
-
-Batas yang perlu diketahui: disk Vercel Function (`/tmp`, atau `DATA_PATH` yang Anda tentukan) hanya hidup selama instance function berjalan. Riwayat penarikan dapat hilang dan dasbor kembali kosong ketika instance berganti. Untuk riwayat jangka panjang, pakai host Node berkelanjutan di bawah dan arahkan `DATA_PATH` ke disk permanen.
-
-## Menjalankan pada host Node berkelanjutan
-
-`server.mjs` menjalankan satu proses Node yang hidup terus, sehingga cocok untuk Render, Railway, Fly.io, atau VPS dan menyimpan riwayat pada `DATA_PATH`.
-
-Cara tercepat di Render: sambungkan repo ini ke akun Anda, lalu pilih service dari `render.yaml` yang sudah tersedia. Render akan meminta nilai `DASHBOARD_USER`, `DASHBOARD_PASSWORD`, `GOOGLE_API_KEY`, `GOOGLE_PLACES_API_KEY`, dan `APIFY_API_TOKEN` saat pembuatan — nilai itu tidak pernah tersimpan di repository. Setelah service dibuat, salin domain yang diberikan Render ke variabel `ALLOWED_HOSTS` lalu redeploy.
-
-| Variabel | Fungsi |
+| Skrip | Fungsi |
 | --- | --- |
-| `PORT` | Port yang disediakan host. |
-| `BIND_HOST` | `0.0.0.0` agar dapat diakses dari luar; bawaannya `127.0.0.1`. |
-| `ALLOWED_HOSTS` | Daftar domain yang dilayani, dipisah koma. |
-| `PUBLIC_SCHEME` | `https` (bawaan saat mode publik) atau `http`. |
-| `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | Wajib pada mode publik. |
-| `DATA_PATH` | Lokasi berkas data, misalnya disk yang dipasang permanen. |
-| `APIFY_WAIT_MS` | Anggaran tunggu actor Apify per penarikan (milidetik). |
+| `npm run build` | Membangun `app.js` (esbuild) dan `styles.css` (Tailwind). |
+| `npm run build:js` / `build:css` | Salah satu tahap build saja. |
+| `npm start` | Server statis lokal + meneruskan `/api/sync`. |
+| `npm test` | `node --test tests` — 47 pengujian mesin, sinkronisasi, API, dan server. |
 
-Mode publik **menolak start** bila kredensial belum diisi. Alasannya: tombol Tarik Analisis memicu actor Apify berbayar, sehingga tanpa autentikasi siapa pun yang mengetahui alamat situs dapat menghabiskan kuota akun Anda. `/api/status` tetap terbuka tanpa kredensial karena host memakai endpoint itu untuk pemeriksaan kesehatan; isinya hanya status hidup dan tidak memuat data ulasan.
+## API
 
-Beri `DATA_PATH` arah disk yang permanen bila host Anda menyimpan filesystem hanya sementara, jika tidak seluruh hasil penarikan akan hilang saat instance berganti.
+Satu-satunya endpoint adalah `POST /api/sync`. Gerbangnya bukan akun, melainkan penolakan permintaan lintas situs (`sec-fetch-site`, `Origin`, `Host`) agar kuota sumber publik tidak dipicu dari halaman lain, ditambah validasi masukan di server.
 
-## Pengujian
+```jsonc
+// penemuan identitas
+{ "action": "discover", "entity": "nama aplikasi", "force": false }
 
-```bash
-npm test
+// penarikan + analisis
+{ "action": "sync", "entity": "nama aplikasi", "playAppId": "com.tes", "appleAppId": "12345", "force": true }
 ```
 
-Suite Node mencakup perhitungan sentimen hybrid, filter, klasifikasi otomatis, benchmark lintas project, pembacaan sumber, API, dan penyimpanan data. Uji peramban (`node --test browser-test.mjs`) memakai Chrome lokal, memeriksa antarmuka dari layar kosong sampai benchmark dua project, dan menulis tangkapan layar ke `test-artifacts/`.
+Respons `sync` memuat `reviews` (setiap baris membawa `analysis`), `model` (metrik korpus, istilah, klaster, agregat harian/kanal), `channels` (status, cakupan, pesan sumber, cache), `summary`, dan `engine`. Batas isi permintaan 16 KB; kesalahan validasi dikembalikan sebagai JSON dengan kode error.
 
-## Sumber Data
+## Mesin korpus
 
-- Google Play: <https://play.google.com/store/apps/details?id=id.bni.wfb&hl=id>
-- Apple App Store: <https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?l=id>
+Versi mesin: `corpus-rating-v1`. Semua angka di bawah dipelajari dari dataset yang sedang dibuka, sehingga berbeda untuk setiap workspace.
 
-Korpus awal per 23 Oktober 2026 memuat 64 ulasan toko — 55 ulasan tertulis Google Play (gabungan 38 ulasan pada kumpulan bahasa Indonesia dan 17 pada kumpulan bahasa Inggris) dan 9 ulasan App Store. Korpus ini dipakai sebagai data uji/baseline dan tidak tampil sebagai project bawaan; aplikasi mulai tanpa project. Halaman toko Google Play menampilkan 74 penilaian dan App Store 17 penilaian. Selisih antara jumlah penilaian dan jumlah ulasan berteks adalah penilaian yang tidak muncul sebagai ulasan berteks pada daftar publik; penyebabnya per ulasan tidak disimpulkan dari selisih tersebut. Jumlah ulasan dan penilaian bertambah sewaktu karena ulasan baru terus masuk; setiap penarikan membaca seluruh halaman yang dikembalikan sumber sampai tidak ada halaman berikutnya.
+1. **Normalisasi algoritmik.** HTML, entity, tautan, dan emoji dibuang; token di-normalisasi NFKD; huruf yang berulang tiga kali atau lebih direduksi (`ngelaggggg` → `ngelag`), dan pengulangan utuh direduksi (`sukasuka` → `suka`). Tidak ada daftar kata.
+2. **Stopwords frekuensi dinamis.** 2% token dengan frekuensi tertinggi pada korpus menjadi kandidat buang. Kandidat yang distribusinya sangat berbeda antara ulasan berbintang rendah dan tinggi (dukungan ≥ 3 dan sinyal ≥ 1,2) **dipertahankan sebagai fitur** — pada korpus nyata kata seperti `tidak` dan `lama` justru pembawa sinyal, bukan kata struktur.
+3. **Bobot berkorelasi bintang.** Bobot kata adalah rasio log kemunculan dokumen pada ulasan 4–5★ terhadap 1–2★, dengan smoothing Jeffreys (α = 0,5) agar tidak bias pada kelas yang tidak seimbang, penyusutan dukungan `n/(n+2)`, dan cekaman ±4.
+4. **Klasifikasi berbatas data.** Skor dokumen adalah jumlah bobot istilah terpelajari dibagi akar jumlah istilah yang cocok. Batas kelas adalah titik tengah median rendah dan median tinggi, dengan pita netral yang lebarnya dipelajari dari sebaran skor ulasan 3★. Skor di luar pita menjadi positif/negatif.
+5. **NSS.** `(positif − negatif) / terklasifikasi × 100`. Ulasan tanpa istilah terpelajari tetap dihitung sebagai baris dan dilaporkan sebagai *tak terklasifikasi*; tidak dipaksa ke kelas mana pun.
+6. **Klaster keluhan.** Dari ulasan 1–2★, istilah berbobot negatif dikelompokkan berdasarkan ko-okurensi satu langkah dengan ambang yang diturunkan dari sebaran kemiripan korpus. Nama klaster diambil dari istilah teratas, bukan kategori buatan.
 
-Google Play hanya mempublikasikan rentang unduhan, saat ini **10K+**. Apple tidak mempublikasikan jumlah unduhan pada halaman publik, sehingga metrik tersebut dilaporkan **tidak tersedia**, bukan nol.
+### Batas klaim (jujur soal ini)
 
-Kanal YouTube memakai YouTube Data API v3, kanal Google Reviews memakai Google Places API (New), sedangkan kanal X, Instagram, TikTok, dan Facebook memakai actor Apify. Kanal berita dan liputan memakai suaka RSS publik (`NEWS_RSS_URLS`) — tanpa biaya dan tanpa dependensi, tetapi judul/ringkasannya hanya dihitung sebagai konteks liputan dan tidak pernah masuk NSS. Semua kanal itu butuh konfigurasi pada environment server; tanpa itu statusnya **perlu konfigurasi API** dan tidak ada satu baris pun yang diambil. Forum dan blog tidak memiliki konektor karena hasil pencarian bukan pengalaman pelanggan. Status **tidak diambil** tidak sama dengan nol keluhan.
+- Bintang 1–5 adalah **sinyal lemah**, bukan label emas. Karena bobot dipelajari dari bintang, mesin ini **tidak sepenuhnya unsupervised** secara ketat.
+- **AUC yang ditampilkan adalah in-sample** — dihitung pada data yang sama yang membentuk bobot. Angka itu mengukur pemisahan internal, **bukan akurasi luar sampel**, dan tidak ada klaim kalibrasi probabilitas.
+- Klaster adalah kelompok statistik, bukan penyebab produk yang terverifikasi. Satu ulasan dapat masuk beberapa klaster.
+- Balasan pengembang tidak dibaca. Jumlah yang dilaporkan toko (mis. jumlah ulasan/penilaian) ditampilkan apa adanya dan **tidak dipaksa sama** dengan jumlah yang benar-benar terbaca.
 
-Google Places API (New) tidak lagi menyertakan teks ulasan pada respons bagi pemanggil baru. Kanal ini melaporkan place yang benar-benar dikembalikan pencarian resmi dan jumlah teks ulasan yang tersedia; bila tidak ada place yang bernama produk, ulasan Google Maps tidak dikarang dan juga tidak dihitung.
+## Workspace dan penyimpanan
 
-Hasil penarikan daring pada 24 Oktober 2026 dengan kredensial pada server, tercatat apa adanya dari respons sumber:
+Kunci `localStorage`: `si.workspaces.v1` (metadata), `si.dataset.v1.<id>` (salinan data penuh), `si.active.v1` (workspace aktif).
 
-| Kanal | Status | Teks tersimpan | Bukti yang dikembalikan sumber |
-| --- | --- | --- | --- |
-| Google Play | berhasil | 55 | 38 baris kumpulan bahasa Indonesia + 17 baris kumpulan bahasa Inggris, masing-masing 1 halaman, tidak ada halaman berikutnya |
-| App Store | berhasil | 9 | 9 ulasan pada halaman ulasan (1 halaman) dan 9 pada feed resmi (1 halaman); 9 dikonfirmasi kedua jalur |
-| YouTube | berhasil | 10 | 10 komentar unik dari 7 video yang metadatanya menyebut wondr merchant; seluruh halaman API diproses termasuk balasan |
-| TikTok | berhasil | 2 | 94 item dataset diperiksa; 91 teks tidak menyebut identitas produk sehingga tidak disimpan, 2 teks tersisa berasal dari akun resmi `bni46` |
-| X / Twitter | berhasil, tanpa hasil | 0 | 10 item dataset seluruhnya penanda `noResults` untuk kueri produk |
-| Instagram | berhasil, tanpa hasil | 0 | 1 item penanda `no_items` ("Empty or private data for provided input") |
-| Facebook | berhasil, tanpa hasil | 0 | 1 item penanda `no_items` ("Empty or private data for provided input") |
-| Google Reviews | berhasil, tanpa hasil | 0 | 2 kueri dijawab, 4 halaman, 59 place; 0 place bernama wondr merchant dan 0 teks ulasan disertakan API |
-| Berita (RSS) | perlu konfigurasi | 0 | `NEWS_RSS_URLS` belum diisi; bila diisi, hanya teks yang menyebut identitas produk disimpan dan diperlakukan sebagai konteks liputan, bukan sentimen. Forum dan blog tetap tanpa konektor |
+- **Create:** dialog dua isian + grid kandidat dua kolom, lalu penarikan pertama berjalan otomatis.
+- **Read:** pemilih workspace di bilah atas berpindah instan tanpa permintaan jaringan.
+- **Update:** force sync per workspace; metadata dan snapshot diperbarui dari hasil terbaru.
+- **Delete:** konfirmasi eksplisit; hanya menghapus salinan lokal, sumber publik tidak berubah.
 
-Pada penarikan itu, dari 76 baris yang tersimpan, 64 ulasan toko membawa label (41 positif, 22 negatif, 1 netral; NSS 29,6875). Dua belas teks sosial disimpan sebagai bukti tetapi **tidak** dinilai sebagai sentimen pelanggan: dua-dua konten akun resmi BNI dan sepuluh komentar YouTube yang membahas BNI secara umum atau belum jelas targetnya. Angka dasar toko tidak berubah karena konten sosial tidak masuk penyebut NSS.
+Bila kuota penyimpanan peramban penuh, aplikasi tetap berjalan di memori dan menampilkan peringatan beserta tombol ekspor JSON — datanya tidak dipotong atau disampel diam-diam. Ekspor berisi seluruh ulasan, analisis per baris, model, dan metadata kanal.
 
-Pencarian sosial bekerja longgar. Kueri `wondr merchant` pada TikTok mengembalikan 94 item yang sebagian besar adalah "Wandering Merchant" (game), "Wonder — Natalie Merchant", dan merek "Wondr" di negara lain; teks seperti itu dibuang pada tahap pengambilan **dan** jumlahnya dilaporkan, sehingga tidak ada penyaringan diam-diam.
+## Dasbor
 
-## Metode
+Empat grafik dibuat sendiri dengan SVG (tanpa pustaka grafik eksternal):
 
-- Analisis menggunakan seluruh teks ulasan yang dapat diakses publik, tanpa pembatasan jumlah ulasan.
-- Pengambilan Google Play membaca setiap kumpulan ulasan yang ditampilkan menurut bahasa antarmuka sampai halaman terakhir, lalu menggabungkan hasilnya berdasarkan ID ulasan.
-- Sentimen ditentukan dari teks, bukan dari jumlah bintang. Mesin `rules-v2` menjalankan aturan domain merchant lebih dulu, lalu leksikon berbobot dengan negasi, penguat/pelemah, klausa kontrastif, dan emoji; aspek, emosi, dan niat memakai aturan kata kunci. Baris dengan sinyal lemah (ambang skor ±1,2) ditandai perlu tinjauan dan tidak dihitung sebagai netral; skor keyakinannya bukan probabilitas terkalibrasi.
-- Tidak ada pelabelan manual. Setiap baris dinilai ulang otomatis dari teks sumber saat data dibaca; label lama, termasuk metadata label manual warisan, tidak dipertahankan. Benchmark memakai baris yang benar-benar tersimpan pada setiap project, bukan sampel atau angka pembanding yang dikarang.
-- Skor keyakinan mesin adalah kekuatan sinyal aturan, bukan probabilitas terkalibrasi, dan mesin tidak dilatih pada label manusia. Karena itu dasbor tidak mengklaim akurasi pada teks baru; benchmark hanya membandingkan keluaran mesin yang sama pada data masing-masing project.
-- NSS dihitung sebagai `(positif − negatif) ÷ jumlah ulasan berlabel × 100`. Ulasan yang perlu tinjauan tidak dihitung sebagai netral. Pita interpretasi pada gauge (−100…−50 tekanan berat sampai 50…100 positif kuat) hanya ambang baca, dan di bawah 20 ulasan berlabel angkanya ditandai belum representatif.
-- Lonjakan ulasan negatif diuji per jendela: minimal 3 ulasan negatif dalam satu jendela dan >200% di atas rata-rata 24 jendela sebelumnya (14 jendela bila jendela diperlebar menjadi harian). Jendela per jam hanya dipakai bila sumber benar-benar mengirim waktu publikasi; distribusi jam tidak pernah dikarang untuk teks yang hanya mengirim tanggal.
-- Penarikan berjalan dengan `Promise.allSettled` per kanal: satu kanal yang lambat atau gagal tidak membatalkan hasil kanal lain, dan kegagalannya dilaporkan sebagai status kanal itu sendiri.
-- Teks dari RSS dan actor dibersihkan dari markup (tag, entitas, CDATA) sebelum disimpan; jumlah teks yang hanya menyebut kata konteks merchant (`merchant`, `qris`, `edc`, `settlement`, `pencairan`, `toko`, `kasir`) tanpa identitas produk dihitung sebagai cakupan dan tidak disimpan sebagai ulasan aplikasi ini.
-- Duplikasi dicegah berdasarkan platform dan ID ulasan, dengan pencocokan tambahan berdasarkan nama pengguna, tanggal, dan teks; menekan **Tarik Analisis** berulang kali tidak menambah baris ganda.
-- Pada Vercel, function penarikan memakai `maxDuration` 60 detik dan anggaran tunggu actor dipotong ke 45 detik, sehingga run yang belum selesai dicatat lalu dilanjutkan pada penarikan berikutnya — bukan dimulai ulang dan dibayar ulang.
-- Perubahan pada ulasan tersimpan sebagai versi sebelumnya; versi lama tidak dihitung sebagai ulasan baru.
-- Tidak ada upaya melewati proses masuk atau perlindungan akses. Konten promosi resmi tidak diperlakukan sebagai sentimen pelanggan.
+1. **Tren harian** — batang bertumpuk positif/netral/negatif/tak terklasifikasi per tanggal publikasi, dengan rincian saat disorot atau difokuskan.
+2. **Sebaran kanal** — donut jumlah ulasan terbaca per kanal; kanal yang gagal tidak diisi angka perkiraan.
+3. **Peta keluhan** — treemap squarified dari klaster istilah ulasan 1–2★; blok dapat dipilih untuk melihat istilah penyusunnya.
+4. **Kanal × sentimen** — batang berkelompok per kanal beserta NSS kanal.
+
+Setiap keadaan kosong ditampilkan sebagai keadaan kosong yang menjelaskan alasannya (kanal tidak dipilih, sumber mengembalikan nol ulasan, kanal gagal, atau ambang statistik belum terpenuhi) — bukan angka nol yang menyamar sebagai hasil.
+
+## Struktur
+
+```
+api/sync.js              function Vercel, satu pintu API
+lib/corpus-engine.mjs    normalisasi, stopword, bobot, klaster, agregat
+lib/googleplay.mjs       penemuan + penarikan ulasan Play publik
+lib/appstore.mjs         penemuan iTunes + halaman ulasan + feed publik
+lib/sync-core.mjs        orkestrasi, cache 1 jam, anggaran waktu, ringkasan
+server.mjs               server statis lokal + penerusan /api/sync
+build.mjs                bundel esbuild -> app.js
+src/                     React (workspace, dialog, 4 grafik, tabel ulasan, panel metode)
+tests/                   node:test untuk mesin, sinkronisasi, API, dan server
+```
+
+## Deploy ke Vercel
+
+Proyek ini statis + function serverless; **tidak memerlukan environment variable apa pun**. `vercel.json` memasang header keamanan dan CSP `self` (font dilayani dari `assets/fonts/`, tanpa aset eksternal). Function `api/sync.js` memakai `maxDuration: 60` dengan anggaran internal Play 30 detik dan App Store 24 detik.
+
+Cache satu jam bersifat *per instance* function: setelah instance baru, penarikan pertama kembali penuh. Ini disengaja — tidak ada penyimpanan bersama yang perlu kredensial.
 
 ## Keterbatasan
 
-- Ulasan publik tidak mewakili seluruh pengguna aplikasi.
-- Pembagian kumpulan ulasan oleh Google Play dapat berubah; jika berubah, metode pengambilan perlu diperiksa ulang agar cakupan tetap lengkap.
-- Ulasan App Store berjumlah kecil dan seluruhnya positif; jumlah ini tidak cukup untuk membandingkan mutu platform.
-- Data publik tidak menyediakan informasi lokasi yang dapat diverifikasi.
-- Pelabelan otomatis dapat keliru pada sarkasme, campur bahasa, atau ulasan dengan beberapa aspek; negasi dan klausa kontrastif sudah ditangani tetapi tidak sempurna. Teks yang tidak cukup kuat ditandai perlu tinjauan, bukan dipaksa netral.
-- Uji luar sampel membutuhkan penilaian manusia yang independen; karena tidak ada pelabelan manual, angka akurasi, kappa, dan macro-F1 tidak dihitung maupun diklaim.
-- Benchmark membandingkan project yang Anda tambahkan sendiri. Jumlah teks, periode, kanal, dan kategori aplikasi dapat berbeda, sehingga selisih NSS bukan uji signifikansi dan bukan peringkat mutu aplikasi secara umum.
-- Keluhan dalam ulasan merupakan pernyataan pengguna, bukan insiden yang telah terverifikasi.
+- Hanya ulasan tertulis publik yang dapat dibaca; halaman ulasan umumnya membatasi riwayat yang ditampilkan, dan aplikasi melaporkan hasil parsial apa adanya.
+- Bahasa campuran (Indonesia/Inggris) diproses dalam satu korpus; bobot bersifat per-korpus, bukan model bahasa.
+- Tanpa akun berarti tanpa sinkronisasi antar-perangkat: workspace hanya ada di peramban tempat ia dibuat.
+- Angka toko bisa berubah antar penarikan; snapshot menyimpan waktu tarik agar selalu jelas data mana yang sedang dibaca.
 
-## Struktur Proyek
+## Pernyataan independensi
 
-- `server.mjs` — server lokal, API, penyimpanan data, dan konfigurasi deployment.
-- `dashboard-core.mjs` — penyusun dataset yang sama untuk server lokal dan function serverless.
-- `dashboard-store.mjs`, `api/*.js`, `vercel.json` — lapisan Vercel Function; `middleware.edge.js` opsional bila login halaman ingin diaktifkan kembali.
-- `collectors.mjs` — pengambilan dan penguraian ulasan publik serta komentar kanal yang berkredensial.
-- `local-env.mjs` — pembacaan `.env` / `.env.local` tanpa pernah menampilkan nilainya.
-- `model.js` — perhitungan sentimen hybrid, kategori, filter, dan ekspor CSV.
-- `benchmark.mjs` — metrik lintas project dan komposisi otak analisis dari baris tersimpan.
-- `projects.mjs`, `target.mjs`, `discovery.mjs` — penyimpanan multi-project, target analisis, dan penemuan identitas aplikasi.
-- `data.js` — korpus baseline pengujian dan daftar platform.
-- `charts.js`, `format.js` — grafik SVG dan pemformatan angka.
-- `app.js`, `index.html`, `styles.css` — antarmuka dasbor.
-- `tests.mjs`, `browser-test.mjs` — uji Node dan uji antarmuka peramban.
-
-## Pernyataan Independensi
-
-Dasbor dan laporan ini merupakan produk independen, bukan produk resmi BNI, dan tidak mewakili pandangan atau kebijakan PT Bank Negara Indonesia (Persero) Tbk.
+Aplikasi ini tidak berafiliasi dengan Google LLC, Apple Inc., atau penerbit aplikasi yang dianalisis. Nama dan angka aplikasi ditampilkan sebagai data publik dari halaman toko resmi; ikon toko digambar ulang secara umum, bukan menggunakan aset berhak milik toko.
