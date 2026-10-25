@@ -2483,7 +2483,7 @@ test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengiku
   const server = await createDashboardServer({
     storagePath, env: {}, collector: async () => [],
     collectOne: async (id, options) => { asked.push({ id, target: options.target }); return { id, status: 'success', fetched: 1, message: '1 teks fixture dibaca', reviews: [{ ...storedReview, platform: id === 'play' ? 'play' : 'appstore' }] }; },
-    discover: async ({ entityName }) => ({ entityName, ok: true, play: { status: 'confirmed', candidates: [], chosen: { appId: 'com.toko.kasir' } }, appstore: { status: 'not-found', candidates: [], chosen: null }, category: 'app', keywords: [], needsConfirmation: false, note: 'fixture' }),
+    discover: async ({ entityName }) => ({ ok: true, queries: [entityName], partial: null, discovery: { entityName, category: 'app', keywords: {"entity":"Kasir Saya","compact":"KasirSaya","terms":["kasir","saya","KasirSaya"],"phrases":["Kasir Saya","KasirSaya"],"quoted":["\"Kasir Saya\""],"searchTerms":["\"Kasir Saya\"","KasirSaya"]}, needsConfirmation: false, note: 'fixture', play: { status: 'confirmed', candidates: [], chosen: { appId: 'com.toko.kasir' } }, appstore: { status: 'not-found', candidates: [], chosen: null } } }),
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -2527,6 +2527,11 @@ test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengiku
     const discovered = await projectFetch(base, '/api/discover?entity=Kasir%20Toko');
     assert.equal(discovered.status, 200);
     assert.equal(discovered.body.discovery.play.chosen.appId, 'com.toko.kasir');
+    // Antarmuka membaca payload.discovery sebagai hasil penemuan. Mengirim pembungkus
+    // { ok, discovery, queries, partial } di dalamnya membuat panel identitas kosong melompong.
+    assert.equal(discovered.body.discovery.ok, undefined, 'yang dikirim isi pembungkus, bukan pembungkusnya');
+    assert.equal(discovered.body.partial, null, 'keterangan sebagian sumber ikut dikirim');
+    assert.deepEqual(discovered.body.queries, ['Kasir Toko'], 'kueri yang dipakai dikirim apa adanya');
     assert.equal((await projectFetch(base, '/api/discover?entity=a')).status, 400);
 
     const saved = JSON.parse(await readFile(storagePath, 'utf8'));

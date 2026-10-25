@@ -42,7 +42,7 @@ async function mockResults(){
 // Penarikan berjalan satu kanal per permintaan; keduanya di-mock agar pengujian tidak
 // pernah mengirim permintaan nyata ke Google, Apple, YouTube, atau Apify.
 const unemulatedResult=id=>({id,status:'needs_setup',fetched:null,message:id==='youtube'?'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY atau GOOGLE_API_KEY belum tersedia pada environment server. Belum ada komentar yang diambil.':'Kanal uji tanpa fixture; tidak ada permintaan nyata dikirim.',reviews:[]});
-const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:mockResults,collectOne:async id=>(await mockResults()).find(result=>result.id===id)??unemulatedResult(id),discover:async ({entityName})=>({entityName,resolvedAt:'2026-10-25T00:00:00.000Z',method:'fixture',country:'id',category:'app',keywords:['kasir saya'],titleAgreement:false,needsConfirmation:true,note:'Fixture penemuan identitas; tidak ada permintaan nyata ke Google atau Apple.',play:{status:'ambiguous',candidates:[{appId:'com.toko.kasir',title:'Kasir Saya — Toko Retail',sourceUrl:'https://play.google.com/store/apps/details?id=com.toko.kasir',similarity:0.82},{appId:'com.lain.kasir',title:'Kasir Lain',sourceUrl:'https://play.google.com/store/apps/details?id=com.lain.kasir',similarity:0.6}],chosen:null},appstore:{status:'not-found',candidates:[],chosen:null}})});
+const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:mockResults,collectOne:async id=>(await mockResults()).find(result=>result.id===id)??unemulatedResult(id),discover:async ({entityName})=>({ok:true,queries:['kasir saya'],partial:'1 dari 3 permintaan pencarian tidak terjawab; kandidat yang ada tetap ditampilkan.',discovery:{entityName,resolvedAt:'2026-10-25T00:00:00.000Z',method:'fixture',country:'id',category:'app',keywords:{entity:'Kasir Saya',compact:'KasirSaya',terms:['kasir','saya'],phrases:['Kasir Saya'],quoted:['"Kasir Saya"'],searchTerms:['"Kasir Saya"','KasirSaya']},titleAgreement:false,needsConfirmation:true,note:'Fixture penemuan identitas; tidak ada permintaan nyata ke Google atau Apple.',play:{status:'ambiguous',candidates:[{appId:'com.toko.kasir',title:'Kasir Saya — Toko Retail',artist:'PT Contoh Retail',ratingCount:1204,averageRating:4.2,sourceUrl:'https://play.google.com/store/apps/details?id=com.toko.kasir',similarity:0.82},{appId:'com.lain.kasir',title:'Kasir Lain',artist:'Vendor Lain',ratingCount:3,averageRating:1,sourceUrl:'https://play.google.com/store/apps/details?id=com.lain.kasir',similarity:0.6},{appId:'com.game.kasir',title:'Cash Register Game',artist:'Game Studio',ratingCount:9,averageRating:3,sourceUrl:'https://play.google.com/store/apps/details?id=com.game.kasir',similarity:0}],chosen:null},appstore:{status:'not-found',candidates:[],chosen:null}}})});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const baseUrl=`http://127.0.0.1:${server.address().port}`;
 const output = new URL('./test-artifacts/',import.meta.url);
@@ -578,6 +578,14 @@ try {
   await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.getAttribute('aria-label'))`),navigationLabels);
   assert.equal(await evaluate(`document.querySelectorAll('.profile,.profile-avatar,.avatar-light,.sidebar-bottom').length`),0);
+  // Rail sidebar hanya 70px: kedua tombol project harus tetap di dalam bilah dan benar-benar
+  // tertimpa jari — sebelumnya tombol kelola keluar jalur sehingga tak dapat disentuh.
+  const projectTaps = await evaluate(`[...document.querySelectorAll('.project-bar .project-actions button')].map(b=>{const r=b.getBoundingClientRect(),bar=document.querySelector('.project-bar').getBoundingClientRect(),side=document.querySelector('#sidebar').getBoundingClientRect();return {action:b.dataset.action,middle:[Math.round(r.left+r.width/2),Math.round(r.top+r.height/2)],inside:r.right<=side.right+1&&r.left>=bar.left-1&&r.width>0&&r.height>=30};})`);
+  assert.equal(projectTaps.length,2,'dua tombol project tampil pada rail sempit');
+  for (const tap of projectTaps) {
+    assert.equal(tap.inside,true,`tombol ${tap.action} berada di dalam rail sidebar 390px`);
+    assert.equal(await evaluate(`(()=>{const e=document.elementFromPoint(${tap.middle[0]},${tap.middle[1]});return e?e.closest('button')?.dataset.action||e.tagName:'kosong'})()`),tap.action,`tombol ${tap.action} dapat disentuh di layar 390px`);
+  }
   await click('[data-view="reviews"]');
   assert.equal(await evaluate(`document.querySelector('h1').textContent`),'Review');
   assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),10);
@@ -679,8 +687,13 @@ try {
   await until(`Boolean(document.querySelector('.discover-item'))`,'pencarian identitas tidak berjalan otomatis');
   assert.doesNotMatch(await evaluate(`document.querySelector('#project-dialog').textContent`),/\bentitas\b/i,'dialog project tidak lagi memakai kata entitas');
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.discover-item strong')].map(e=>e.textContent)`),['Kasir Saya — Toko Retail','Kasir Lain'],'kandidat ditampilkan apa adanya untuk dikonfirmasi');
+  assert.equal(await evaluate(`document.querySelectorAll('.discover-item').length`),2,'judul tanpa kemiripan sama sekali tidak ditawarkan sebagai aplikasi');
   assert.match(await evaluate(`document.querySelector('.discover-note').textContent`),/Fixture penemuan identitas/,'keterangan metode penemuan dibaca dari hasil server');
-  assert.match(await evaluate(`document.querySelector('.discover-col .badge').textContent`),/beberapa judul mirip/,'kandidat yang seri dinyatakan, bukan dipilih diam-diam');
+  assert.match(await evaluate(`document.querySelector('.discover-note').textContent`),/Aplikasi umum/,'kategori dibaca sebagai bahasa manusia');
+  assert.match(await evaluate(`document.querySelector('.discover-partial').textContent`),/tidak terjawab/,'sebagian sumber yang tidak menjawab ikut dinyatakan');
+  assert.match(await evaluate(`document.querySelector('.discover-item small').textContent`),/1\.204 penilaian · ★ 4,2/,'jumlah penilaian toko tampil agar pengguna bisa memastikan aplikasinya');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.discover-open')].every(a=>a.target==='_blank'&&a.rel.includes('noopener')&&/^https:/.test(a.href))`),true,'tautan halaman toko aman dan dapat dibuka');
+  assert.match(await evaluate(`document.querySelector('.discover-col .badge').textContent`),/nama mirip/,'kandidat yang seri dinyatakan, bukan dipilih diam-diam');
   assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),true,'sistem tidak memilih sendiri saat dua judul sama mirip');
   await click('.discover-item input[value="com.lain.kasir"]');
   assert.match(await evaluate(`document.querySelector('.discover-target').textContent`),/Google Play com\.lain\.kasir/,'pilihan pengguna yang dipakai, bukan tebakan sistem');
@@ -724,6 +737,10 @@ try {
   assert.equal(await evaluate(`document.querySelector('#manage-dialog').open`),true,'dialog kelola project terbuka');
   assert.match(await evaluate(`document.querySelector('#manage-dialog .dialog-body').textContent`),/Google Play com\.toko\.kasir/,'identitas toko project dibaca dari data');
   await screenshot('project-manage.png');
+  await click('#manage-dialog [data-close="manage-dialog"]');
+  assert.equal(await evaluate(`document.querySelector('#manage-dialog').open`),false,'X menutup dialog kelola project');
+  await click('[data-action="manage-project"]');
+  assert.equal(await evaluate(`document.querySelector('#manage-dialog').open`),true,'dialog kelola dapat dibuka lagi setelah ditutup');
   await evaluate(`document.querySelector('#manage-name').value='Kasir Toko Baru';`);
   await click('[data-action="rename-project"]');
   await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('.topbar-brand')?.textContent==='KASIR TOKO BARU')resolve(true);else if(Date.now()>end)reject(Error('Nama project tidak berubah: '+document.querySelector('.topbar-brand')?.textContent));else requestAnimationFrame(check);}check();})`);
@@ -735,6 +752,11 @@ try {
   assert.match(await evaluate(`document.querySelector('#delete-dialog .dialog-body').textContent`),/Yang hilang: 0 teks ulasan/,'konfirmasi merinci data yang akan dihapus');
   assert.match(await evaluate(`document.querySelector('#delete-dialog .delete-target').textContent`),/Kasir Toko Baru/,'project yang dihapus disebut namanya');
   await screenshot('project-delete.png');
+  await click('#delete-dialog [data-close="delete-dialog"]');
+  assert.equal(await evaluate(`document.querySelector('#delete-dialog').open`),false,'Batal menutup konfirmasi hapus');
+  assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),2,'membatalkan konfirmasi tidak menghapus apa pun');
+  await click('[data-action="manage-project"]');
+  await click('#manage-dialog [data-action="delete-project"]');
   await click('[data-action="confirm-delete-project"]');
   await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelectorAll('.project-bar .project-select option').length===1)resolve(true);else if(Date.now()>end)reject(Error('Project tidak berkurang'));else requestAnimationFrame(check);}check();})`);
   assert.equal(await evaluate(`document.querySelector('.project-bar .project-select').value`),'wondr-merchant','project aktif dipindahkan ke bawaan');

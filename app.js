@@ -124,7 +124,7 @@ const projects = { list:[], active:null, target:null };
 // hasil unduhan project lain tidak diberi merek project bawaan.
 const projectName = () => projects.list.find(project => project.id === projects.active)?.name || 'project';
 const projectSlug = () => projects.active || 'project';
-const discovery = { name:'', entity:'', payload:null, busy:false, error:'', picked:{ play:'', appstore:'' }, searched:'' };
+const discovery = { name:'', entity:'', payload:null, busy:false, error:'', picked:{ play:'', appstore:'' }, searched:'', partial:'' };
 const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
 const isBusy = () => sync.loading || sync.busy || sync.running;
@@ -235,7 +235,7 @@ function heading() {
   months.sort();
   return `<section class="page-heading"><div><h1 tabindex="-1">${esc(title)}</h1><p>${esc(subtitles[state.view])}</p></div>${state.view!=='methodology'?`<div class="heading-actions">
     <label class="range-button">${icon('calendar')}<select id="period" aria-label="Periode ulasan"><option value="all" ${state.period==='all'?'selected':''}>Semua tanggal</option>${months.map(month=>`<option value="${esc(month)}" ${state.period===month?'selected':''}>${esc(dateLabel(month+'-01',{day:undefined,month:'long',year:'numeric'}))}</option>`).join('')}<option value="custom" ${state.period==='custom'?'selected':''}>Rentang khusus</option></select></label>
-    ${state.view==='platforms'?`<button class="btn btn-primary" data-action="analyze" ${isBusy()?'disabled aria-busy="true"':''}>${isBusy()?'<span class="spinner" aria-hidden="true"></span>':icon('pulse')}${isBusy()?'Mengambil dan menganalisis…':'Tarik Analisis'}</button>`:''}
+    ${state.view==='platforms'||!reviews.length?`<button class="btn btn-primary" data-action="analyze" ${isBusy()?'disabled aria-busy="true"':''}>${isBusy()?'<span class="spinner" aria-hidden="true"></span>':icon('pulse')}${isBusy()?'Mengambil dan menganalisis…':'Tarik Analisis'}</button>`:''}
   </div>`:''}</section>${state.view!=='methodology'&&state.period==='custom'?`<div class="custom-dates"><label>Dari tanggal<input id="date-from" type="date" value="${esc(state.from)}"></label><label>Sampai tanggal<input id="date-to" type="date" value="${esc(state.to)}"></label><button class="btn" data-action="apply-dates">Terapkan</button><span class="filter-error" id="date-error" role="alert"></span></div>`:''}`;
 }
 function filters() {
@@ -800,13 +800,24 @@ function openReview(key) {
 // diambil dari dua sumber gratis (iTunes Search + pencarian Google Play) dan WAJIB dikonfirmasi
 // pengguna sebelum penarikan berjalan. Sistem tidak menebak aplikasi yang mirip.
 const discoveryStoreNames = { play:'Google Play', appstore:'App Store' };
-const discoveryStatusNames = { confirmed:'satu judul unggul jauh', ambiguous:'beberapa judul mirip — pilih sendiri', 'not-found':'tidak ada judul yang terbaca' };
+const categoryLabels = { fintech:'Banking & Fintech', ecommerce:'E-Commerce', app:'Aplikasi umum' };
+const discoveryStatusNames = { confirmed:'satu judul paling cocok', ambiguous:'nama mirip — centang yang benar', 'not-found':'tidak ada hasil' };
 function discoveryColumn(store) {
   const block = discovery.payload?.[store];
   if (!block) return '';
   const picked = discovery.picked[store];
-  const rows = (block.candidates || []).slice(0, 6).map(candidate => `<label class="discover-item${picked === candidate.appId ? ' picked' : ''}"><input type="radio" name="discover-${store}" value="${esc(candidate.appId)}" ${picked === candidate.appId ? 'checked' : ''}><span><strong>${esc(candidate.title || 'judul tidak terbaca')}</strong><small>${esc(candidate.appId)}${candidate.artist ? ` · ${esc(candidate.artist)}` : ''}</small></span></label>`).join('');
-  return `<div class="discover-col"><h4>${esc(discoveryStoreNames[store])} <span class="badge ${block.status === 'confirmed' ? 'positive' : 'neutral'}">${esc(discoveryStatusNames[block.status] || block.status)}</span></h4>${rows ? `<div class="discover-list">${rows}</div>` : `<p class="discover-empty">Tidak ada judul yang dapat dibaca dari sumber ini. Isi ID manual bila identitas aplikasinya diketahui.</p>`}</div>`;
+  // Kemiripan nol berarti judulnya hanya kebetulan memuat kata yang sama (permainan, aplikasi
+  // lain). Menampilkannya sebagai "nama mirip" menyesatkan, jadi tidak ditawarkan.
+  const usable = (block.candidates || []).filter(candidate => !(Number(candidate.similarity) <= 0));
+  const rows = usable.slice(0, 6).map(candidate => {
+    const publisher = candidate.artist && candidate.artist !== 'N/A' ? candidate.artist : '';
+    const rating = Number.isFinite(candidate.ratingCount)
+      ? `${integer(candidate.ratingCount)} penilaian${Number.isFinite(candidate.averageRating) ? ` · ★ ${number(candidate.averageRating)}` : ''}` : '';
+    const facts = [publisher, rating].filter(Boolean).join(' · ');
+    const link = safeHttps(candidate.sourceUrl);
+    return `<div class="discover-item${picked === candidate.appId ? ' picked' : ''}"><label><input type="radio" name="discover-${store}" value="${esc(candidate.appId)}" ${picked === candidate.appId ? 'checked' : ''}><span><strong>${esc(candidate.title || 'judul tidak terbaca')}</strong><small>${esc(candidate.appId)}${facts ? ` · ${esc(facts)}` : ''}</small></span></label>${link ? `<a class="discover-open" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Buka halaman tokonya</a>` : ''}</div>`;
+  }).join('');
+  return `<div class="discover-col"><h4>${esc(discoveryStoreNames[store])} <span class="badge ${block.status === 'confirmed' ? 'positive' : 'neutral'}">${esc(discoveryStatusNames[block.status] || block.status)}</span></h4>${rows ? `<div class="discover-list">${rows}</div>` : `<p class="discover-empty">${esc(discoveryStoreNames[store])} tidak mengirim judul yang mirip. Periksa ejaan nama aplikasinya, atau tulis nama paketnya di kolom bawah bila Anda tahu.</p>`}</div>`;
 }
 // ID terpilih: isian manual selalu menang di atas kandidat, lalu kandidat yang dipilih,
 // lalu kandidat unggul dari sumber. Tidak ada ID yang dikarang bila ketiganya kosong.
@@ -822,8 +833,8 @@ function updateProjectReadout() {
   const line = $('.discover-target');
   if (line) {
     line.textContent = targets.play || targets.appstore
-      ? `Akan dianalisis: ${[targets.play ? `Google Play ${targets.play}` : null, targets.appstore ? `App Store ${targets.appstore}` : null].filter(Boolean).join(' · ')}`
-      : 'Pilih satu kandidat atau isi minimal satu ID toko terlebih dahulu. Penarikan tidak dijalankan tanpa identitas.';
+      ? `Ulasan akan diambil dari: ${[targets.play ? `Google Play ${targets.play}` : null, targets.appstore ? `App Store ${targets.appstore}` : null].filter(Boolean).join(' · ')}`
+      : 'Centang salah satu aplikasi di atas lebih dulu. Penarikan tidak dijalankan tanpa identitas.';
   }
   const create = $('[data-action="create-project"]');
   if (create) create.disabled = !(discovery.name.trim().length >= 2 && discovery.entity.trim().length >= 2 && (targets.play || targets.appstore));
@@ -836,11 +847,11 @@ function renderProjectDiscovery() {
   host.innerHTML = discovery.busy
     ? `<p class="discover-wait">${icon('clock')} Mencari otomatis di Google Play dan App Store…</p>`
     : d
-      ? `<p class="discover-note">${esc(d.note)}${d.ok === false ? '' : ` Kategori terdeteksi: <strong>${esc(d.category === 'fintech' ? 'Banking &amp; Fintech' : d.category === 'ecommerce' ? 'E-Commerce' : 'General App')}</strong>. Kata kunci turunan: ${esc((d.keywords || []).join(', ') || 'tidak ada')}.`}</p><div class="discover-grid">${discoveryColumn('play')}${discoveryColumn('appstore')}</div>
+      ? `<p class="discover-note">${esc(d.note)}${d.ok === false ? '' : ` Dibaca sebagai kategori: <strong>${esc(categoryLabels[d.category] || 'umum')}</strong>.`}</p>${discovery.partial ? `<p class="discover-partial" role="status">${esc(discovery.partial)}</p>` : ''}<div class="discover-grid">${discoveryColumn('play')}${discoveryColumn('appstore')}</div>
         <details class="discover-manual"><summary>Tidak ketemu? Isi ID toko manual</summary><div class="discover-manual-fields">
-          <label>ID paket Google Play<input id="manual-play" type="text" value="${esc(targets.play)}" placeholder="com.contoh.aplikasi" autocomplete="off"></label>
-          <label>ID App Store<input id="manual-appstore" type="text" inputmode="numeric" value="${esc(targets.appstore)}" placeholder="1234567890" autocomplete="off"></label>
-        </div><p>Jalan pintas bila pencarian otomatis tidak menemukan aplikasinya — misalnya nama tokonya berbeda di tiap toko. ID yang diisi manual tetap ditampilkan pada konfirmasi sebelum data ditarik.</p></details>
+          <label>Nama paket di Google Play<input id="manual-play" type="text" value="${esc(targets.play)}" placeholder="com.contoh.aplikasi" autocomplete="off"></label>
+          <label>Nomor App Store<input id="manual-appstore" type="text" inputmode="numeric" value="${esc(targets.appstore)}" placeholder="1234567890" autocomplete="off"></label>
+        </div><p>Pakai ini bila pencarian otomatis tidak menemukan aplikasinya — misalnya namanya berbeda di tiap toko. ID yang ditulis manual tetap ditampilkan sebelum data ditarik.</p></details>
         <p class="discover-target" role="status"></p>`
       : `<p class="discover-idle">Kandidat toko dicari otomatis begitu nama aplikasi diisi di atas. Aplikasi membaca dua sumber gratis (iTunes Search dan halaman pencarian Google Play) tanpa kunci API.</p>`;
   updateProjectReadout();
@@ -848,11 +859,11 @@ function renderProjectDiscovery() {
 function openProjectDialog() {
   const dialog = $('#project-dialog');
   if (!dialog) return;
-  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="project-heading">Tambah project analisis</h2><p>Nama project dan aplikasi yang akan dianalisis. Data ditarik dari identitas toko yang Anda konfirmasi.</p></div><button class="icon-button" data-close="project-dialog" aria-label="Tutup tambah project">${icon('close')}</button></div>
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="project-heading">Tambah project analisis</h2><p>Nama project dan aplikasi yang akan dianalisis. Ulasan diambil dari aplikasi yang Anda centang di bawah ini.</p></div><button class="icon-button" data-close="project-dialog" aria-label="Tutup tambah project">${icon('close')}</button></div>
   <div class="dialog-body"><div class="dialog-form">
     <label>Nama project<input id="project-name" type="text" value="${esc(discovery.name)}" placeholder="Misalnya aplikasi kasir terbaru" autocomplete="off" maxlength="80"></label>
     <label>Aplikasi yang akan dianalisis<input id="project-entity" type="text" value="${esc(discovery.entity)}" placeholder="Nama aplikasi persis seperti di toko" autocomplete="off" maxlength="80"><small>Nama ini yang dicari otomatis di Google Play dan App Store; kandidat muncul di bawah tanpa perlu menekan tombol.</small></label>
-    <button class="btn" type="button" data-action="discover-project">${icon('search')}${discovery.busy ? 'Memeriksa…' : 'Cari ulang di toko'}</button>
+    <button class="btn" type="button" data-action="discover-project">${icon('search')}${discovery.busy ? 'Memeriksa…' : 'Cari ulang'}</button>
     <p class="filter-error" id="project-error" role="alert">${esc(discovery.error)}</p>
     <div id="project-discovery" class="project-discovery"></div>
   </div></div>
@@ -870,7 +881,7 @@ let discoverTimer;
 function scheduleDiscovery() {
   clearTimeout(discoverTimer);
   const entity = String($('#project-entity')?.value || discovery.entity).trim();
-  if (entity.length < 3 || discovery.busy || entity === discovery.searched) return;
+  if (entity.length < 2 || discovery.busy || entity === discovery.searched) return;
   discoverTimer = setTimeout(() => void discoverIdentity(), 700);
 }
 // Mengirim permintaan project lalu memakai respons yang sama seperti data dasbor lainnya.
@@ -879,7 +890,7 @@ async function requestProject(body) {
   let payload;
   try { payload = await response.json(); }
   catch { throw new Error(`Balasan sistem tidak dapat dibaca (kode HTTP ${response.status}).`); }
-  if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : `Permintaan project gagal (kode HTTP ${response.status}).`);
+  if (!response.ok) throw new Error(String(typeof payload?.error === 'string' ? payload.error : `Permintaan project gagal (kode HTTP ${response.status}).`).replace(/^[a-z_]+: /, ''));
   if (!payload || !Array.isArray(payload.reviews) || !Array.isArray(payload.sources)) throw new Error('Balasan project tidak memuat dataset yang dapat dipakai.');
   return payload;
 }
@@ -890,13 +901,16 @@ async function discoverIdentity() {
   const errorHost = $('#project-error');
   if (errorHost) errorHost.textContent = '';
   if (entity.length < 2) { discovery.error = 'Isi nama aplikasi terlebih dahulu (minimal dua karakter).'; if (errorHost) errorHost.textContent = discovery.error; return; }
-  discovery.busy = true; discovery.payload = null; discovery.picked = { play: '', appstore: '' }; discovery.searched = entity;
+  discovery.busy = true; discovery.payload = null; discovery.picked = { play: '', appstore: '' }; discovery.searched = entity; discovery.partial = '';
   renderProjectDiscovery();
   try {
     const response = await fetch(`/api/discover?entity=${encodeURIComponent(entity)}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.error || `Pemeriksaan identitas gagal (kode HTTP ${response.status}).`);
     discovery.payload = payload?.discovery || null;
+    // Keterangan "sebagian sumber tidak menjawab" berasal dari server dan harus tetap terlihat:
+    // daftar kandidat yang pendek bisa berarti pencariannya gagal, bukan aplikasinya tidak ada.
+    discovery.partial = String(payload?.partial || '');
     discovery.picked = { play: discovery.payload?.play?.chosen?.appId || '', appstore: discovery.payload?.appstore?.chosen?.appId || '' };
   } catch (error) {
     discovery.error = error instanceof Error ? error.message : 'Kesalahan tidak dikenal.';
@@ -905,7 +919,9 @@ async function discoverIdentity() {
     discovery.busy = false;
     renderProjectDiscovery();
     const button = $('[data-action="discover-project"]');
-    if (button) button.innerHTML = `${icon('search')}Cari ulang di toko`;
+    if (button) button.innerHTML = `${icon('search')}Cari ulang`;
+    // Nama yang diketik saat pemeriksaan sebelumnya masih berjalan tidak boleh hilang begitu saja.
+    if (String($('#project-entity')?.value || '').trim() !== discovery.searched) scheduleDiscovery();
   }
 }
 async function createProjectFromDialog() {
@@ -1023,9 +1039,9 @@ function openManageDialog() {
   <div class="dialog-body"><div class="dialog-form">
     <label>Nama project<input id="manage-name" type="text" value="${esc(active.name)}" maxlength="80" autocomplete="off"></label>
     <p class="manage-facts"><span>Aplikasi dianalisis</span><strong>${esc(active.entity)}</strong></p>
-    <p class="manage-facts"><span>Identitas toko</span><strong>${esc(active.stores)}</strong></p>
+    <p class="manage-facts"><span>Aplikasi sumber</span><strong>${esc(active.stores)}</strong></p>
     <p class="manage-facts"><span>Data tersimpan</span><strong>${integer(reviews.length)} teks · penarikan ${esc(lastPull)}</strong></p>
-    <p class="note-inline">Identitas toko tidak diubah di sini. Untuk menganalisis aplikasi lain, buat project baru agar datanya tetap terpisah.</p>
+    <p class="note-inline">Aplikasi sumber tidak diganti di sini. Kalau salah pilih aplikasi, hapus project ini lalu buat project baru agar datanya tetap terpisah.</p>
     <div class="manage-danger">
       <div><h3>Hapus project</h3><p>${active.builtIn ? 'Project bawaan tidak dapat dihapus; datanya adalah dasar analisis yang selama ini dipakai.' : 'Penghapusan membuang seluruh teks ulasan dan riwayat penarikan project ini. Unduh laporan terlebih dahulu bila masih diperlukan.'}</p></div>
       ${active.builtIn ? '' : `<button class="btn btn-danger" data-action="delete-project">${icon('trash')}Hapus project</button>`}
@@ -1212,9 +1228,14 @@ document.addEventListener('click',event=>{
     return;
   }
   if (button.dataset.review) { openReview(button.dataset.review); return; }
-  if (button.dataset.close==='detail-dialog') { $('#detail-dialog').close(); return; }
-  if (button.dataset.close==='pull-dialog') { $('#pull-dialog').close(); sync.pull=null; return; }
-  if (button.dataset.close==='project-dialog') { $('#project-dialog').close(); return; }
+  // Semua tombol tutup dialog memakai satu jalur: dialog yang baru ditambah tidak boleh
+  // kehilangan Batal dan X-nya hanya karena penanganannya ditulis per-nama.
+  if (button.dataset.close) {
+    const target = document.getElementById(button.dataset.close);
+    target?.close();
+    if (button.dataset.close === 'pull-dialog') sync.pull = null;
+    return;
+  }
   if (button.dataset.complaint) {
     const group=complaintStats(analyticalReviews()).find(g=>g.id===button.dataset.complaint);
     if (!group) return;

@@ -18,9 +18,12 @@ export default async function handler(request, response, run = discover) {
     return;
   }
   const entity = String(new URL(request.url, 'http://internal').searchParams.get('entity') || '').trim();
-  if (entity.length < 2) { json(response, 400, { error: 'Nama entitas minimal dua karakter.' }); return; }
+  if (entity.length < 2) { json(response, 400, { error: 'Nama aplikasi minimal dua karakter.' }); return; }
   try {
-    json(response, 200, { discovery: await run({ entity, fetcher: fetch }) });
+    // Sama seperti server.mjs: yang dikirim ke antarmuka adalah isi pembungkus
+    // { ok, discovery, queries, partial }, bukan objek pembungkusnya.
+    const { discovery, queries = [], partial = null } = await run({ entity, fetcher: fetch });
+    json(response, 200, { discovery, queries, partial });
   } catch (error) {
     if (String(error.message).startsWith('project_')) { json(response, 400, { error: error.message }); return; }
     console.error('Penemuan identitas gagal:', error.message);

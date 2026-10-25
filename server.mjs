@@ -208,7 +208,10 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       const entity = String(url.searchParams.get('entity') || '').trim();
       if (entity.length < 2) { json(400, { error: 'Nama aplikasi minimal dua karakter.' }); return; }
       try {
-        json(200, { discovery: await discover({ entityName: entity }) });
+        // discover() mengembalikan pembungkus { ok, discovery, queries, partial }; yang dipakai
+        // antarmuka adalah isi pembungkusnya, bukan objek pembungkus itu sendiri.
+        const { discovery, queries = [], partial = null } = await discover({ entityName: entity });
+        json(200, { discovery, queries, partial });
       } catch (error) {
         console.error('Penemuan identitas gagal:', error.message);
         json(502, { error: 'Identitas aplikasi tidak dapat diperiksa saat ini. Data yang sudah tersimpan tidak diubah.' });
