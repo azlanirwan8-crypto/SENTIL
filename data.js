@@ -88,7 +88,7 @@ const rows = [
 ];
 export const seedReviews = rows.map(([id, author, date, rating, sentiment, reviewTags, text, rationale]) => ({
   id, author, date, rating, sentiment, tags: reviewTags, text, rationale, platform: 'play', sourceUrl: playUrl,
-  observedAt: observationDate, labeling: 'manual', provenance: 'Halaman publik Google Play; diambil dengan urutan terbaru',
+  observedAt: observationDate, labeling: 'manual', labelOrigin: 'seed', provenance: 'Halaman publik Google Play; diambil dengan urutan terbaru',
 }));
 const appleRows = [
   ['14579262452','Avengers1403','2026-09-22','QRIS Merchant','Tampilan menarik, modern, pencairan dana lebih cepat',['ux','settlement'],'Memuji tampilan dan kecepatan pencairan dana menurut pengalamannya; bukan pemeriksaan standar layanan.'],
@@ -104,5 +104,5 @@ const appleRows = [
 seedReviews.push(...appleRows.map(([id,author,date,title,text,reviewTags,rationale]) => ({
   id: `apple-${id}`, author, date, title, text, tags: reviewTags, rationale, rating: 5, sentiment: 'positive', platform: 'appstore',
   sourceUrl: 'https://apps.apple.com/id/app/wondr-merchant-by-bni/id6741567238?see-all=reviews&platform=iphone',
-  labeling: 'manual', observedAt: observationDate, provenance: 'Halaman ulasan publik App Store; ID dan tanggal mengikuti data ulasan Apple',
+  labeling: 'manual', labelOrigin: 'seed', observedAt: observationDate, provenance: 'Halaman ulasan publik App Store; ID dan tanggal mengikuti data ulasan Apple',
 })));

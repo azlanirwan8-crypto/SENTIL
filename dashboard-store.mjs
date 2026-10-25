@@ -5,7 +5,7 @@
 import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
-import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
+import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap, applyManualLabel } from './dashboard-core.mjs';
 import { withAbsa } from './model.js';
 import { discoverTarget } from './discovery.mjs';
 import { defaultTarget, normalizeTarget, targetFromDiscovery } from './target.mjs';
@@ -228,6 +228,28 @@ export function dropProject(project) {
   cache = store;
   await writeStored(store);
   return view(undefined);
+  });
+}
+
+// Simpan atau reset label sentimen buatan analis. Aksi ini menulis berkas data dengan antrean
+// yang sama seperti penarikan, sehingga label tidak dapat tertimpa salinan pull yang sedang
+// berjalan. Hanya baris yang lolos penyaring relevansi yang boleh dilabeli.
+export function labelReview({ project, platform, id, sentiment, action = 'set' } = {}) {
+  if (running) throw new Error('busy');
+  return serialized(async () => {
+    if (running) throw new Error('busy');
+    const store = await loadStore();
+    const projectId = strictProjectId(store, project);
+    const dataset = datasetFor(store, projectId);
+    const target = projectTarget(store, projectId);
+    const result = applyManualLabel(dataset.reviews, { platform, id, sentiment, action }, new Date().toISOString(), target);
+    const next = {
+      ...store,
+      datasets: { ...store.datasets, [projectId]: { ...dataset, reviews: withAbsa(result.rows) } },
+    };
+    cache = next;
+    await writeStored(next);
+    return { ...(await view(projectId)), labelAction: result.action, labelId: `${platform}|${id}` };
   });
 }
 

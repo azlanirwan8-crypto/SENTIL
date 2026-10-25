@@ -139,6 +139,13 @@ try {
     assert.doesNotMatch(await evaluate(`document.querySelector('#main').textContent`),/Metode & data/);
     if(view!=='overview')assert.equal(await evaluate(`document.querySelector('h1').textContent`),label);
   }
+  await click('[data-view="methodology"]');
+  const methodText = await evaluate(`document.querySelector('#main').textContent`);
+  assert.match(methodText,/Kalibrasi awal \(in-sample\)/,'panel kualitas memisahkan kalibrasi');
+  assert.match(methodText,/64 label awal/,'jumlah label kalibrasi dibaca dari data, bukan diklaim');
+  assert.match(methodText,/Uji luar sampel dari label Anda/,'uji luar sampel punya bagian sendiri');
+  assert.match(methodText,/Belum dapat diukur/,'tanpa label analis, akurasi luar sampel tidak dikarang');
+  assert.match(methodText,/bukan akurasi pada teks baru/,'angka in-sample tidak dipasarkan sebagai akurasi');
   await click('[data-view="overview"]');
   completed.push('Five menus including the reachable methodology page, no workspace or profile chrome');
   assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
@@ -199,7 +206,7 @@ try {
   await screenshot('sentiment-analysis.png');
   await click('[data-driver="Pendaftaran belum tuntas"]');assert.equal(await evaluate(`document.querySelectorAll('tbody tr').length`),8);
   await click('[data-review]');assert.equal(await evaluate(`document.querySelector('#detail-dialog').open`),true);
-  assert.match(await evaluate(`document.querySelector('.detail-section p').textContent`),/pendaftaran|pengajuan/i);
+  assert.match(await evaluate(`document.querySelector('#detail-dialog .detail-section:not(.label-editor) p').textContent`),/pendaftaran|pengajuan/i);
   // Rincian disusun sebagai kartu metadata dua kolom dengan judul berikon; jejak teknis di footer.
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#detail-dialog .detail-grid')).display`),'grid','rincian memakai kartu metadata dua kolom');
   assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .detail-section h3 .icon').length>=3`),true,'setiap bagian rincian diberi ikon');
@@ -208,7 +215,7 @@ try {
   assert.match(await evaluate(`document.querySelector('#detail-dialog .detail-author').textContent`),/★/,'penilaian bintang tampil di kepala');
   assert.match(await evaluate(`document.querySelector('#detail-dialog .action-tag').textContent`),/Perlu (eskalasi layanan pelanggan|penelusuran teknis|ditindaklanjuti)|Masukan untuk produk/,'tag tindakan hasil ABSA');
   assert.match(await evaluate(`[...document.querySelectorAll('#detail-dialog .source-facts dt')].map(e=>e.textContent).join(' | ')`),/Aspek pengalaman/,'aspek target ditampilkan sebagai metadata');
-  assert.equal(await evaluate(`document.querySelector('#detail-dialog .detail-section .btn-primary')!==null`),true,'tombol utama membuka sumber asli');
+  assert.equal(await evaluate(`document.querySelector('#detail-dialog .detail-section:not(.label-editor) .btn-primary[href]')!==null`),true,'tombol utama membuka sumber asli');
   assert.equal(await evaluate(`/ID ulasan/.test(document.querySelector('#detail-dialog .detail-audit').textContent)`),true,'ID teknis disembunyikan di jejak audit');
   assert.ok((await evaluate(`new Set([...document.querySelectorAll('#detail-dialog .tag')].map(t=>t.getAttribute('style'))).size`))>=2,'chip rincian memakai tinta berbeda');
   await screenshot('review-detail.png',false);
@@ -318,7 +325,7 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('.heading-actions button').length`),1);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.btn-primary')).borderRadius`),'4px');
   collectorMode='wait';await click('[data-action="analyze"]');
-  assert.equal(await evaluate(`document.querySelector('[data-action="analyze"]').disabled`),true);
+  await until(`document.querySelector('[data-action="analyze"]')?.disabled===true`,'tombol Tarik Analisis tidak terkunci saat penarikan berjalan');
   // Modal progres: satu baris per kanal yang punya konektor, kanal tanpa konektor tidak ikut.
   assert.equal(await evaluate(`document.querySelector('#pull-dialog').open`),true,'modal progres muncul saat penarikan berjalan');
   assert.equal(await evaluate(`document.querySelectorAll('#pull-dialog .pull-row').length`),9,'hanya kanal berkonektor yang diantrikan');
@@ -694,6 +701,32 @@ try {
   assert.match(await evaluate(`document.querySelector('.dialog-body').textContent`),/2026-10-23T12:30:00Z/);
   assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog script').length`),0);
   assert.equal(await evaluate('Boolean(window.__xss)'),false);
+  // Panel label manual: baris relevan dapat dikoreksi analis, hasilnya langsung dibaca server,
+  // dan reset mengembalikan label otomatis. Label sementara ini direset sebelum metrik diuji.
+  assert.equal(await evaluate(`document.querySelectorAll('#detail-dialog .label-editor [data-label-sentiment]').length`),3,'panel koreksi menawarkan tiga kelas sentimen');
+  assert.match(await evaluate(`document.querySelector('#detail-dialog .aspect-polarity').textContent`),/Pendaftaran, masuk & keamanan akun/,'polaritas per aspek menyebut nama aspek');
+  assert.match(await evaluate(`document.querySelector('#detail-dialog .aspect-polarity').textContent`),/dari kalimat yang menyebut aspek ini/,'polaritas aspek menyebut dasar kalimatnya');
+  await click('#detail-dialog [data-label-sentiment="positive"]');
+  await until(`document.querySelector('#detail-dialog .detail-author .badge')?.textContent.trim()==='Positif' && Boolean(document.querySelector('#detail-dialog [data-label-reset]'))`,'label manual tidak diterapkan pada dialog');
+  assert.match(await evaluate(`document.querySelector('#detail-dialog .label-editor').textContent`),/Riwayat label manual \(1\)/,'riwayat label manual dicatat');
+  const labeledRow = (await (await fetch(`${baseUrl}/api/data?project=${defaultProjectId}`)).json()).reviews.find(row => `${row.platform}|${row.id}`==='youtube|yt-a');
+  assert.equal(labeledRow.sentiment,'positive');
+  assert.equal(labeledRow.labeling,'manual');
+  assert.equal(labeledRow.labelOrigin,'user');
+  assert.equal(labeledRow.text,'wondr merchant login gagal','label manual tidak mengubah teks sumber');
+  await screenshot('review-label-editor.png',false);
+  await click('[data-close="detail-dialog"]');
+  await click('[data-view="methodology"]');
+  const holdoutText = await evaluate(`document.querySelector('#main').textContent`);
+  assert.match(holdoutText,/1 label manual/,'label analis masuk uji luar sampel setelah disimpan');
+  assert.match(holdoutText,/baris = label manusia/,'matriks kesesuaian ditampilkan bersama label analis');
+  await click('[data-view="reviews"]');
+  await click('[data-review="youtube|yt-a"]');
+  await click('#detail-dialog [data-label-reset]');
+  await until(`document.querySelector('#detail-dialog .detail-author .badge')?.textContent.trim()==='Negatif' && !document.querySelector('#detail-dialog [data-label-reset]')`,'reset label tidak mengembalikan penilaian otomatis');
+  const resetRow = (await (await fetch(`${baseUrl}/api/data?project=${defaultProjectId}`)).json()).reviews.find(row => `${row.platform}|${row.id}`==='youtube|yt-a');
+  assert.equal(resetRow.labeling,'rules-v2');
+  assert.equal('labelOrigin' in resetRow,false,'reset menghapus metadata label manual');
   await click('[data-close="detail-dialog"]');
   await click('[data-review="youtube|yt-owner"]');
   assert.match(await evaluate(`document.querySelector('.dialog-body').textContent`),/Di luar penilaian pelanggan/);
