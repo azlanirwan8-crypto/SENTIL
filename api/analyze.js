@@ -38,18 +38,19 @@ export default async function handler(request, response, run = runPull) {
   }
   const params = new URL(request.url, 'http://internal').searchParams;
   try {
-    json(response, 200, await run({ platform: params.get('platform'), finish: params.get('finish') === '1' }));
+    json(response, 200, await run({ project: params.get('project'), platform: params.get('platform'), finish: params.get('finish') === '1' }));
   } catch (error) {
     if (error.message === 'busy') { json(response, 409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
     if (error.message === 'unknown-platform') { json(response, 400, { error: 'Kanal yang diminta tidak dikenal, sehingga tidak ada permintaan yang dikirim.' }); return; }
+    if (String(error.message).startsWith('project_')) { json(response, 400, { error: 'Project yang diminta tidak terdaftar.' }); return; }
     console.error('Penarikan data gagal:', error.message);
     json(response, 500, { error: 'Pengambilan atau penyimpanan data gagal. Data sebelumnya tetap tersimpan; silakan coba lagi.' });
   }
 }
 
 // ?platform=x mengambil satu kanal; ?finish=1 menutup batch dan mencatat riwayat;
-// tanpa keduanya seluruh kanal diambil sekaligus.
-function runPull({ platform, finish }) {
-  if (finish) return finishPull();
-  return platform ? pullPlatform(platform) : pull();
+// tanpa keduanya seluruh kanal diambil sekaligus. ?project= menentukan project yang ditarik.
+function runPull({ project, platform, finish }) {
+  if (finish) return finishPull({ project });
+  return platform ? pullPlatform(platform, { project }) : pull({ project });
 }

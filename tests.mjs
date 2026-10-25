@@ -11,6 +11,13 @@ import { parseGoogleListing, parsePlayRatingHistogram, parseGoogleReviews, parse
 import { loadLocalEnv } from './local-env.mjs';
 import { parsePlaySearchResults, parseItunesResults, buildDiscovery, discoverTarget, detectCategory, deriveKeywords, titleSimilarity, queryVariants, decideStatus, playSearchUrl, itunesSearchUrl } from './discovery.mjs';
 import { defaultTarget, normalizeTarget, identityPattern, targetFromDiscovery } from './target.mjs';
+import {
+  storeVersion, migrateStore, initialStore, emptyDataset, projectList, resolveProjectId,
+  projectTarget, createProject, projectIdFrom, defaultProjectId, defaultProject,
+} from './projects.mjs';
+
+// Berkas tersimpan kini memuat beberapa project; pemeriksaan lama cukup membuka dataset project aktif.
+const storedDataset = saved => saved.datasets?.[saved.activeProject] ?? saved;
 
 const sample = { id:'unit-test-only', platform:'play', author:'Test fixture', date:'2026-10-23', text:'Login gagal dan loading lama', rating:null, sourceUrl:'https://play.google.com/store/apps/details?id=id.bni.wfb' };
 test('baseline totals include both stores and preserve neutral denominator', () => {
@@ -542,7 +549,7 @@ test('online API preserves history across partial success, failure and restart',
     assert.equal((await fetch(url+'/api/analyze',{method:'POST'})).status,409);
     assert.equal((await (await fetch(url+'/api/data')).json()).running,true);release();await request;
     assert.equal((await fetch(url+'/online-data.json')).status,404);
-    assert.equal(JSON.parse(await readFile(storagePath,'utf8')).runs.length,4);
+    assert.equal(storedDataset(JSON.parse(await readFile(storagePath,'utf8'))).runs.length,4);
     await close();server=await createDashboardServer({storagePath,collector,env:{}});url=await listen();
     assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,65);
     const blocked=await new Promise((resolve,reject)=>get(url+'/api/data',{headers:{Host:'attacker.invalid'}},res=>{res.resume();resolve(res.statusCode);}).on('error',reject));
@@ -1309,7 +1316,7 @@ test('Server marks two successful stores as partial full-channel coverage, not a
     }
     assertTimestamp(result.lastRun.startedAt);assertTimestamp(result.lastRun.finishedAt);
     assert.equal(result.reviews.length,seedReviews.length);
-    const saved = JSON.parse(await readFile(storagePath,'utf8'));
+    const saved = storedDataset(JSON.parse(await readFile(storagePath,'utf8')));
     assert.deepEqual(saved.lastRun,result.lastRun);assert.equal(saved.runs.length,1);
   });
 });
@@ -1368,7 +1375,7 @@ test('Server persists mocked YouTube updates and raw evidence through partial fa
       assert.deepEqual(failed.lastRun.coverage.fetchedSources,['play','appstore']);
       assert.ok(failed.lastRun.coverage.unavailableSources.includes('youtube'));
     }
-    const savedText = await readFile(storagePath,'utf8'), saved = JSON.parse(savedText);
+    const savedText = await readFile(storagePath,'utf8'), saved = storedDataset(JSON.parse(savedText));
     assert.equal(savedText.includes(youtubeTestKey),false);assert.equal(savedText.includes('HOSTILE_ERROR'),false);
     assert.equal(saved.runs.length,4);assert.deepEqual(saved.reviews,update.reviews);
     assert.equal(saved.sources.find(s => s.id === 'youtube').fetched,null);
@@ -2347,3 +2354,125 @@ test('Serverless API functions refuse other methods, other origins, and unknown 
   assert.equal(statusRes.headers['content-type'], 'application/json; charset=utf-8');
 });
 
+// ---------- Project analisis: penyimpanan, isolasi data, dan rute HTTP ----------
+test('Berkas lama dengan satu dataset dipindahkan menjadi project bawaan tanpa mengubah baris', () => {
+  const legacy = { reviews: seedReviews, sources: [{ id: 'play', status: 'success', fetched: 1 }], runs: [], lastRun: null };
+  const store = migrateStore(JSON.parse(JSON.stringify(legacy)));
+  assert.equal(store.version, storeVersion);
+  assert.deepEqual(store.projects.map(project => project.id), [defaultProjectId]);
+  assert.equal(store.activeProject, defaultProjectId);
+  assert.deepEqual(store.datasets[defaultProjectId].reviews, legacy.reviews, 'seluruh baris lama dipindah apa adanya');
+  assert.equal(store.datasets[defaultProjectId].sources.length, 1);
+});
+test('Store baru memulai dengan satu project bawaan beserta dataset awal', () => {
+  const store = initialStore();
+  assert.equal(store.projects.length, 1);
+  assert.equal(store.datasets[defaultProjectId].reviews.length, seedReviews.length);
+  assert.deepEqual(projectList(store).map(project => [project.name, project.reviewCount]), [['wondr merchant by BNI', seedReviews.length]]);
+});
+test('Project baru wajib punya nama, entitas, dan minimal satu ID toko', () => {
+  assert.throws(() => createProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya' }), /project_target/);
+  assert.throws(() => createProject({ name: 'a', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }), /project_name/);
+  assert.throws(() => createProject({ name: 'Kasir Toko', entity: 'a', playAppId: 'com.toko.kasir' }), /project_entity/);
+  assert.throws(() => createProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'bukan paket' }), /target_invalid/);
+  const project = createProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' });
+  assert.equal(project.id, 'kasir-toko');
+  assert.equal(project.target.play.appId, 'com.toko.kasir');
+  assert.equal(projectIdFrom('  Kasir Toko!! '), 'kasir-toko');
+});
+test('Dataset project baru kosong dan setiap kanal diberi keterangan belum ditarik', () => {
+  const dataset = emptyDataset();
+  assert.equal(dataset.reviews.length, 0);
+  assert.equal(dataset.runs.length, 0);
+  assert.ok(dataset.sources.every(source => source.status === 'belum_ditarik'));
+  assert.match(dataset.sources.find(source => source.id === 'play').message, /Project baru belum pernah ditarik/);
+});
+test('Target project lain tidak memakai identitas aplikasi bawaan', () => {
+  const store = initialStore();
+  store.projects.push(createProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }));
+  const target = projectTarget(store, 'kasir-toko');
+  assert.equal(target.play.appId, 'com.toko.kasir');
+  assert.equal(identityPattern(target).test('wondr merchant'), false, 'pola project lain tidak boleh cocok dengan aplikasi bawaan');
+  assert.equal(identityPattern(target).test('Kasir Toko Saya lambat'), true);
+  assert.equal(projectTarget(store, defaultProjectId).play.appId, defaultTarget.play.appId);
+  assert.throws(() => resolveProjectId(store, 'tidak-ada'), /project_unknown/);
+  assert.equal(resolveProjectId(store, null), defaultProjectId);
+});
+test('Berkas v2 yang cacat diperbaiki tanpa menghapus dataset yang tidak dikenal', () => {
+  const base = initialStore();
+  base.datasets['peninggalan-lama'] = { reviews: seedReviews, sources: [], runs: [], lastRun: null, batch: null };
+  base.activeProject = 'peninggalan-lama';
+  const repaired = migrateStore(JSON.parse(JSON.stringify(base)));
+  assert.equal(repaired.activeProject, defaultProjectId, 'project aktif yang tidak dikenal dikembalikan ke project bawaan');
+  assert.equal(repaired.datasets['peninggalan-lama'].reviews.length, seedReviews.length, 'dataset tanpa entri project tidak dibuang');
+  assert.equal(repaired.datasets[defaultProjectId].reviews.length, seedReviews.length);
+  const missing = migrateStore({ version: storeVersion, activeProject: defaultProjectId, projects: [defaultProject(), { id: 'kosong', name: 'Kosong', entity: 'Kosong', target: defaultTarget }] });
+  assert.equal(missing.datasets.kosong.reviews.length, 0, 'project tanpa dataset dibuatkan dataset kosong');
+});
+
+const projectFetch = async (base, path, options) => {
+  const response = await fetch(base + path, options);
+  return { status: response.status, body: await response.json().catch(() => null) };
+};
+test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengikuti target project', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-projects-'));
+  const storagePath = join(dir, 'data.json');
+  const asked = [];
+  const server = await createDashboardServer({
+    storagePath, env: {}, collector: async () => [],
+    collectOne: async (id, options) => { asked.push({ id, target: options.target }); return { id, status: 'success', fetched: 1, message: '1 teks fixture dibaca', reviews: [{ ...storedReview, platform: id === 'play' ? 'play' : 'appstore' }] }; },
+    discover: async ({ entityName }) => ({ entityName, ok: true, play: { status: 'confirmed', candidates: [], chosen: { appId: 'com.toko.kasir' } }, appstore: { status: 'not-found', candidates: [], chosen: null }, category: 'app', keywords: [], needsConfirmation: false, note: 'fixture' }),
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const initial = (await projectFetch(base, '/api/data')).body;
+    assert.equal(initial.projects.length, 1, 'jumlah project awal tampil untuk antarmuka');
+    assert.equal(initial.activeProject, defaultProjectId);
+    assert.equal(initial.reviews.length, seedReviews.length);
+
+    const created = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }) });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.projects.length, 2);
+    assert.equal(created.body.activeProject, 'kasir-toko');
+    assert.equal(created.body.reviews.length, 0, 'project baru dimulai tanpa satu baris pun');
+    assert.equal(created.body.target.play.appId, 'com.toko.kasir');
+    assert.ok(created.body.sources.every(source => ['belum_ditarik', 'needs_setup', 'unsupported'].includes(source.status)), 'kanal project baru tidak mewarisi hasil penarikan project lain');
+    assert.equal(created.body.sources.find(source => source.id === 'play').status, 'belum_ditarik');
+
+    const original = (await projectFetch(base, `/api/data?project=${defaultProjectId}`)).body;
+    assert.equal(original.reviews.length, seedReviews.length, 'dataset project lama tidak tercampur');
+
+    const pulled = await projectFetch(base, '/api/analyze?project=kasir-toko&platform=play', { method: 'POST' });
+    assert.equal(pulled.body.reviews.length, 1, 'hasil penarikan masuk ke dataset project yang diminta');
+    assert.equal(pulled.body.activeProject, 'kasir-toko');
+    assert.equal(asked.at(-1).target.play.appId, 'com.toko.kasir', 'kolektor menerima target project, bukan target bawaan');
+    const untouched = (await projectFetch(base, `/api/data?project=${defaultProjectId}`)).body;
+    assert.equal(untouched.reviews.length, seedReviews.length, 'penarikan project lain tidak menambah baris pada project bawaan');
+    assert.equal(untouched.runs.length, 0);
+
+    const noStore = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Habis', entity: 'Aplikasi Habis' }) });
+    assert.equal(noStore.status, 400);
+    assert.match(noStore.body.error, /project_target/);
+    const duplicate = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }) });
+    assert.equal(duplicate.status, 400);
+    assert.match(duplicate.body.error, /project_exists/);
+    const unknown = await projectFetch(base, '/api/data?project=tidak-ada');
+    assert.equal(unknown.status, 400);
+    const activated = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'activate', project: defaultProjectId }) });
+    assert.equal(activated.body.activeProject, defaultProjectId);
+    assert.equal(activated.body.reviews.length, seedReviews.length);
+    const discovered = await projectFetch(base, '/api/discover?entity=Kasir%20Toko');
+    assert.equal(discovered.status, 200);
+    assert.equal(discovered.body.discovery.play.chosen.appId, 'com.toko.kasir');
+    assert.equal((await projectFetch(base, '/api/discover?entity=a')).status, 400);
+
+    const saved = JSON.parse(await readFile(storagePath, 'utf8'));
+    assert.equal(saved.version, storeVersion);
+    assert.equal(saved.datasets['kasir-toko'].reviews.length, 1);
+    assert.equal(saved.datasets[defaultProjectId].reviews.length, seedReviews.length);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});

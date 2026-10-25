@@ -64,14 +64,20 @@ export function nestedDonut({ inner, outer, total }) {
     const span = slice.value / total * Math.PI * 2, from = outerAngle; outerAngle += span;
     return `<path d="${ringArc(108, from, Math.max(from + 0.001, outerAngle - 0.012))}" stroke="${slice.color || innerColor.get(slice.aspect)}" stroke-opacity=".85" stroke-width="22" fill="none"><title>${esc(`${slice.aspectName} · ${slice.name}: ${slice.value} ulasan`)}</title></path>`;
   }).join('');
-  const list = inner.map((slice, index) => `<div class="distribution-item"><span class="legend-item"><span class="donut-swatch" style="background:${innerColor.get(slice.id)}"></span>${esc(slice.name)}</span><strong>${integer(slice.value)}<small>${number(pct(slice.value, total))}%</small></strong></div>`).join('');
-  return `<div class="donut-grid"><div class="donut-wrap"><svg viewBox="0 0 320 320" role="img" aria-label="${esc(`Donut berjenjang: ${inner.length} aspek pada cincin dalam dan ${outer.length} potongan kanal pada cincin luar.`)}">${innerArcs}${outerArcs}<text x="160" y="154" text-anchor="middle" font-size="26" font-weight="600" fill="#2f3842">${integer(total)}</text><text x="160" y="174" text-anchor="middle" font-size="11" fill="#878a99">keanggotaan aspek</text></svg></div><div class="distribution-list">${list}</div></div>`;
+  const list = inner.map((slice, index) => `<div class="distribution-item donut-item"><span class="legend-item"><span class="donut-swatch" style="background:${innerColor.get(slice.id)}"></span>${esc(slice.name)}</span><strong>${integer(slice.value)}<small>${number(pct(slice.value, total))}%</small></strong></div>`).join('');
+  return `<div class="donut-grid"><div class="donut-wrap"><svg viewBox="0 0 320 320" role="img" aria-label="${esc(`Donut berjenjang: ${inner.length} aspek pada cincin dalam dan ${outer.length} potongan kanal pada cincin luar.`)}">${innerArcs}${outerArcs}<text x="160" y="154" text-anchor="middle" font-size="26" font-weight="600" fill="#2f3842">${integer(total)}</text><text x="160" y="174" text-anchor="middle" font-size="11" fill="#878a99">keanggotaan aspek</text></svg></div><div class="distribution-list donut-list">${list}</div></div>`;
 }
 
 // Grafik 3 — peta kotak klaster keluhan.
 export function painTreemap({ nodes, width = 1000, height = 420 }) {
   if (!nodes.length) return '<div class="chart-empty" role="img" aria-label="Belum ada klaster keluhan">Belum ada klaster keluhan yang cocok pada filter ini.</div>';
-  const cells = nodes.map(node => `<button class="treemap-cell severity-${node.severity}" data-cluster="${esc(node.id)}" style="left:${node.x}%;top:${node.y}%;width:${node.width}%;height:${node.height}%" aria-label="${esc(`${node.name}: ${node.value} ulasan negatif, kategori ${severityNames[node.severity]}. Buka ulasan terkait.`)}"><span class="treemap-name">${esc(node.name)}</span><span class="treemap-value">${integer(node.value)} negatif</span><span class="treemap-sev">${esc(severityNames[node.severity])}</span></button>`).join('');
+  // Kotak kecil hanya memuat nama; jumlah dan kategori tetap terbaca lewat aria-label, jadi
+  // tidak ada angka yang hilang — hanya tidak digambar dua kali pada ruang yang sempit.
+  const cells = nodes.map(node => {
+    const showValue = node.width >= 12 && node.height >= 16;
+    const showSeverity = node.width >= 18 && node.height >= 26;
+    return `<button class="treemap-cell severity-${node.severity}" data-cluster="${esc(node.id)}" style="left:${node.x}%;top:${node.y}%;width:${node.width}%;height:${node.height}%" aria-label="${esc(`${node.name}: ${node.value} ulasan negatif, kategori ${severityNames[node.severity]}. Buka ulasan terkait.`)}"><span class="treemap-name">${esc(node.name)}</span>${showValue ? `<span class="treemap-value">${integer(node.value)} negatif</span>` : ''}${showSeverity ? `<span class="treemap-sev">${esc(severityNames[node.severity])}</span>` : ''}</button>`;
+  }).join('');
   const legend = Object.entries(severityNames).map(([id, label]) => `<span class="legend-item"><span class="legend-swatch severity-${id}"></span>${esc(label)}</span>`).join('');
   return `<div class="treemap-plot" style="--treemap-ar:${width} / ${height}">${cells}</div><div class="legend">${legend}</div>`;
 }

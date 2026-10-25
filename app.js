@@ -1,4 +1,4 @@
-import { seedReviews, platforms, tags, tagColors, observationDate } from './data.js';
+﻿import { seedReviews, platforms, tags, tagColors, observationDate } from './data.js';
 import { summary, filterReviews, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, nssBand, nssBands, nssMinSample, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
 import { esc, number, decimal, integer, pct, signed, colors, sentimentKeys } from './format.js';
 import { comboChart, nestedDonut, painTreemap, matrixChart, statCard } from './charts.js';
@@ -20,9 +20,9 @@ const reviewTags = r => Array.isArray(r.tags) ? r.tags : [];
 const reviewHistory = r => Array.isArray(r.history) ? r.history : [];
 const hasRating = rating => Number.isInteger(rating) && rating >= 1 && rating <= 5;
 const color = value => /^#[\da-f]{3,8}$/i.test(value || '') ? value : '#878a99';
-const sourceStatusNames = { success:'Pengambilan selesai', partial:'Berhasil sebagian', error:'Gagal', unsupported:'Konektor belum tersedia', needs_setup:'Perlu konfigurasi API', ready:'Akses API belum diuji', snapshot:'Data tersimpan · belum diperbarui' };
+const sourceStatusNames = { success:'Pengambilan selesai', partial:'Berhasil sebagian', error:'Gagal', unsupported:'Konektor belum tersedia', needs_setup:'Perlu konfigurasi API', ready:'Akses API belum diuji', snapshot:'Data tersimpan · belum diperbarui', belum_ditarik:'Belum diambil pada project ini' };
 const activeSourceIds = new Set(['play','appstore']);
-const awaitingSource = source => ['unsupported','needs_setup','ready'].includes(source.status);
+const awaitingSource = source => ['unsupported','needs_setup','ready','belum_ditarik'].includes(source.status);
 function safeHttps(value) {
   try {
     const url = new URL(value);
@@ -89,6 +89,8 @@ const paths = {
   frown:'<circle cx="12" cy="12" r="9"/><path d="M8 17s1-3 4-3 4 3 4 3M8 9h.1M16 9h.1"/>',
   pulse:'<path d="M2 12h5l3-7 4 14 3-7h5"/>',
   spark:'<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  check:'<path d="m5 13 4 4L19 7"/>',
   search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   close:'<path d="m6 6 12 12M6 18 18 6"/>',
   home:'<path d="m3 10 9-7 9 7v11h-7v-7h-4v7H3V10Z"/>',
@@ -114,6 +116,10 @@ function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden=
 let reviews = [...seedReviews];
 const state = { view:'overview', platform:'all', period:'all', from:'', to:'', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', cluster:'', aspect:'', page:1, size:10, sort:{ key:'date', dir:'desc' } };
 const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null };
+// Project analisis: satu berkas data dapat memuat beberapa project, masing-masing dengan
+// dataset dan target tokonya sendiri. Penarikan selalu mengikuti project aktif.
+const projects = { list:[], active:null, target:null };
+const discovery = { name:'', entity:'', payload:null, busy:false, error:'', picked:{ play:'', appstore:'' } };
 const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
 const isBusy = () => sync.loading || sync.busy || sync.running;
@@ -177,9 +183,25 @@ const fetchedCount = source => numericCount(source?.fetched);
 function wasFetched(source) {
   return source && !awaitingSource(source) && source.status !== 'snapshot' && (source.fetched === true || fetchedCount(source) > 0 || (['success','partial'].includes(source.status) && source.fetched !== false));
 }
+// Bilah project di atas menu: jumlah project, pemilih project aktif, dan tombol tambah.
+// Semua angka pada baris ini dihitung dari daftar project yang dikirim server, bukan
+// perkiraan, sehingga "3 project" selalu berarti tiga dataset yang benar-benar tersimpan.
+const projectOptions = () => projects.list.map(project => `<option value="${esc(project.id)}" ${project.id === projects.active ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
+function projectBar() {
+  const count = projects.list.length;
+  const active = projects.list.find(project => project.id === projects.active) || null;
+  return `<section class="project-bar" aria-label="Project analisis">
+    <div class="project-count"><strong>${sync.loaded ? integer(count) : '—'}</strong><span>project dibuat</span></div>
+    <label class="project-pick"><span class="sr-only">Project aktif</span>
+      <select class="project-select" aria-label="Pilih project aktif">${projectOptions()}</select>
+      <span class="project-entity">${esc(active ? `${active.entity} · ${active.stores}` : 'Belum ada project terbuka')}</span>
+    </label>
+    <button class="btn project-add" data-action="add-project" title="Tambah project analisis">${icon('plus')}<span class="project-add-label">Tambah project</span></button>
+  </section>`;
+}
 function nav() {
-  $('#sidebar').innerHTML = `<nav>${Object.entries(views).filter(([id]) => id !== 'methodology').map(([id,label],i) => `<button class="nav-item ${state.view===id?'active':''}" data-view="${id}" aria-label="${esc(label)}" ${state.view===id?'aria-current="page"':''} title="${esc(label)}">${icon(['grid','pulse','message','layers'][i])}<span>${esc(label)}</span>${id==='reviews'?`<span class="nav-count">${reviews.length}</span>`:''}</button>`).join('')}</nav>`;
-  $('#topbar').innerHTML = `<div class="breadcrumb">${icon('home')}<strong>${esc(views[state.view])}</strong></div><div class="topbar-right"><span class="topbar-brand">WONDR MERCHANT</span></div>`;
+  $('#sidebar').innerHTML = `${projectBar()}<nav>${Object.entries(views).filter(([id]) => id !== 'methodology').map(([id,label],i) => `<button class="nav-item ${state.view===id?'active':''}" data-view="${id}" aria-label="${esc(label)}" ${state.view===id?'aria-current="page"':''} title="${esc(label)}">${icon(['grid','pulse','message','layers'][i])}<span>${esc(label)}</span>${id==='reviews'?`<span class="nav-count">${reviews.length}</span>`:''}</button>`).join('')}</nav>`;
+  $('#topbar').innerHTML = `<div class="breadcrumb">${icon('home')}<strong>${esc(views[state.view])}</strong></div><div class="topbar-right"><label class="topbar-project"><span class="sr-only">Project aktif</span><select class="project-select" aria-label="Pilih project aktif">${projectOptions()}</select></label><span class="topbar-brand">${esc((projects.list.find(project => project.id === projects.active)?.name || 'belum ada project').toUpperCase())}</span></div>`;
 }
 function heading() {
   const subtitles = {
@@ -603,7 +625,9 @@ function coverage() {
   const scoped=filterReviews(reviews,{from:state.from,to:state.to});
   const socialCount = reviews.filter(r=>platformById(r.platform)?.type==='Media sosial').length;
   const readSources = sync.sources.filter(source=>['success','partial'].includes(source.status)).length;
-  return `<p class="coverage-intro">${readSources} dari ${platforms.length} sumber memiliki hasil pengambilan berhasil atau sebagian pada status terakhir. ${socialCount?`${socialCount} komentar sosial tersimpan; hanya teks dengan relevansi dan sentimen yang cukup jelas masuk perhitungan NSS.`:'Belum ada komentar media sosial yang tersimpan. Angka sentimen saat ini bukan analisis media sosial.'} Konfigurasi API tidak sama dengan akses yang sudah berhasil. Kegagalan pengambilan tidak menghapus data tersimpan.</p><div class="coverage-grid">${platforms.filter(p=>state.platform==='all'||p.id===state.platform).map(p=>{
+  const activeProject = projects.list.find(project => project.id === projects.active) || null;
+  const targetIds = [projects.target?.play?.appId ? `Google Play ${projects.target.play.appId}` : null, projects.target?.appstore?.appId ? `App Store ${projects.target.appstore.appId}` : null].filter(Boolean).join(' · ');
+  return `<p class="coverage-intro"><strong>Project aktif: ${esc(activeProject?.name || 'belum ada project')}</strong> — penarikan mengikuti ${esc(targetIds || 'identitas toko yang belum lengkap')}. ${readSources} dari ${platforms.length} sumber memiliki hasil pengambilan berhasil atau sebagian pada status terakhir. ${socialCount?`${socialCount} komentar sosial tersimpan; hanya teks dengan relevansi dan sentimen yang cukup jelas masuk perhitungan NSS.`:'Belum ada komentar media sosial yang tersimpan. Angka sentimen saat ini bukan analisis media sosial.'} Konfigurasi API tidak sama dengan akses yang sudah berhasil. Kegagalan pengambilan tidak menghapus data tersimpan.</p><div class="coverage-grid">${platforms.filter(p=>state.platform==='all'||p.id===state.platform).map(p=>{
     const source=sourceFor(p), data=scoped.filter(r=>r.platform===p.id), s=summary(data), rating=ratingSummary(data);
     const stored=reviews.filter(r=>r.platform===p.id).length, listing=latestListing(p.id), url=safeHttps(p.url);
     const installs = source.installs ?? listing?.installs ?? p.installs ?? null;
@@ -718,8 +742,136 @@ function openReview(key) {
   </div><div class="dialog-footer"><small>Isi ulasan merupakan pernyataan pengguna yang diambil apa adanya dari sumber publik.</small></div>`;
   if (!dialog.open) dialog.showModal();
 }
-function download(content,name,type) {
-  const url=URL.createObjectURL(new Blob([content],{type})), a=document.createElement('a');
+// Dialog project. Nama project dan entitas yang dianalisis diminta di sini; identitas toko
+// diambil dari dua sumber gratis (iTunes Search + pencarian Google Play) dan WAJIB dikonfirmasi
+// pengguna sebelum penarikan berjalan. Sistem tidak menebak aplikasi yang mirip.
+const discoveryStoreNames = { play:'Google Play', appstore:'App Store' };
+const discoveryStatusNames = { confirmed:'satu judul unggul jauh', ambiguous:'beberapa judul mirip — pilih sendiri', 'not-found':'tidak ada judul yang terbaca' };
+function discoveryColumn(store) {
+  const block = discovery.payload?.[store];
+  if (!block) return '';
+  const picked = discovery.picked[store];
+  const rows = (block.candidates || []).slice(0, 6).map(candidate => `<label class="discover-item${picked === candidate.appId ? ' picked' : ''}"><input type="radio" name="discover-${store}" value="${esc(candidate.appId)}" ${picked === candidate.appId ? 'checked' : ''}><span><strong>${esc(candidate.title || 'judul tidak terbaca')}</strong><small>${esc(candidate.appId)}${candidate.artist ? ` · ${esc(candidate.artist)}` : ''}</small></span></label>`).join('');
+  return `<div class="discover-col"><h4>${esc(discoveryStoreNames[store])} <span class="badge ${block.status === 'confirmed' ? 'positive' : 'neutral'}">${esc(discoveryStatusNames[block.status] || block.status)}</span></h4>${rows ? `<div class="discover-list">${rows}</div>` : `<p class="discover-empty">Tidak ada judul yang dapat dibaca dari sumber ini. Isi ID manual bila identitas aplikasinya diketahui.</p>`}</div>`;
+}
+// ID terpilih: isian manual selalu menang di atas kandidat, lalu kandidat yang dipilih,
+// lalu kandidat unggul dari sumber. Tidak ada ID yang dikarang bila ketiganya kosong.
+function projectTargets() {
+  const manual = selector => String($(selector)?.value || '').trim();
+  return {
+    play: manual('#manual-play') || discovery.picked.play || discovery.payload?.play?.chosen?.appId || '',
+    appstore: manual('#manual-appstore') || discovery.picked.appstore || discovery.payload?.appstore?.chosen?.appId || '',
+  };
+}
+function updateProjectReadout() {
+  const targets = projectTargets();
+  const line = $('.discover-target');
+  if (line) {
+    line.textContent = targets.play || targets.appstore
+      ? `Akan dianalisis: ${[targets.play ? `Google Play ${targets.play}` : null, targets.appstore ? `App Store ${targets.appstore}` : null].filter(Boolean).join(' · ')}`
+      : 'Pilih satu kandidat atau isi minimal satu ID toko terlebih dahulu. Penarikan tidak dijalankan tanpa identitas.';
+  }
+  const create = $('[data-action="create-project"]');
+  if (create) create.disabled = !(discovery.name.trim().length >= 2 && discovery.entity.trim().length >= 2 && (targets.play || targets.appstore));
+}
+function renderProjectDiscovery() {
+  const host = $('#project-discovery');
+  if (!host) return;
+  const d = discovery.payload;
+  const targets = projectTargets();
+  host.innerHTML = discovery.busy
+    ? `<p class="discover-wait">${icon('clock')} Memeriksa dua sumber gratis…</p>`
+    : d
+      ? `<p class="discover-note">${esc(d.note)}${d.ok === false ? '' : ` Kategori terdeteksi: <strong>${esc(d.category === 'fintech' ? 'Banking &amp; Fintech' : d.category === 'ecommerce' ? 'E-Commerce' : 'General App')}</strong>. Kata kunci turunan: ${esc((d.keywords || []).join(', ') || 'tidak ada')}.`}</p><div class="discover-grid">${discoveryColumn('play')}${discoveryColumn('appstore')}</div>
+        <details class="discover-manual"><summary>Isi ID manual</summary><div class="discover-manual-fields">
+          <label>ID paket Google Play<input id="manual-play" type="text" value="${esc(targets.play)}" placeholder="com.contoh.aplikasi" autocomplete="off"></label>
+          <label>ID App Store<input id="manual-appstore" type="text" inputmode="numeric" value="${esc(targets.appstore)}" placeholder="1234567890" autocomplete="off"></label>
+        </div><p>Hanya dipakai bila hasil pencarian tidak menemukan aplikasinya. ID yang diisi manual tetap ditampilkan pada konfirmasi sebelum data ditarik.</p></details>
+        <p class="discover-target" role="status"></p>`
+      : `<p class="discover-idle">Belum ada pemeriksaan identitas. Tekan “Cari identitas” untuk membaca kandidat dari iTunes Search dan halaman pencarian Google Play (keduanya gratis dan tanpa kunci API).</p>`;
+  updateProjectReadout();
+}
+function openProjectDialog() {
+  const dialog = $('#project-dialog');
+  if (!dialog) return;
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="project-heading">Tambah project analisis</h2><p>Nama project dan entitas yang dianalisis. Data ditarik dari identitas toko yang Anda konfirmasi.</p></div><button class="icon-button" data-close="project-dialog" aria-label="Tutup tambah project">${icon('close')}</button></div>
+  <div class="dialog-body"><div class="project-form">
+    <label>Nama project<input id="project-name" type="text" value="${esc(discovery.name)}" placeholder="Misalnya aplikasi kasir terbaru" autocomplete="off" maxlength="80"></label>
+    <label>Entitas yang dianalisis<input id="project-entity" type="text" value="${esc(discovery.entity)}" placeholder="Nama aplikasi persis seperti di toko" autocomplete="off" maxlength="80"></label>
+    <button class="btn" type="button" data-action="discover-project">${icon('search')}${discovery.busy ? 'Memeriksa…' : 'Cari identitas'}</button>
+    <p class="filter-error" id="project-error" role="alert">${esc(discovery.error)}</p>
+    <div id="project-discovery" class="project-discovery"></div>
+  </div></div>
+  <div class="dialog-footer"><div><small>Penarikan berikutnya mengikuti project ini sampai Anda memindahkan project aktif.</small></div><div class="dialog-actions"><button class="btn" data-close="project-dialog">Batal</button><button class="btn btn-primary" data-action="create-project">${icon('spark')}Analisa</button></div></div>`;
+  renderProjectDiscovery();
+  if (!dialog.open) dialog.showModal();
+  $('#project-name')?.focus({ preventScroll: true });
+}
+// Mengirim permintaan project lalu memakai respons yang sama seperti data dasbor lainnya.
+async function requestProject(body) {
+  const response = await fetch('/api/project', { method: 'POST', cache: 'no-store', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let payload;
+  try { payload = await response.json(); }
+  catch { throw new Error(`Balasan sistem tidak dapat dibaca (kode HTTP ${response.status}).`); }
+  if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : `Permintaan project gagal (kode HTTP ${response.status}).`);
+  if (!payload || !Array.isArray(payload.reviews) || !Array.isArray(payload.sources)) throw new Error('Balasan project tidak memuat dataset yang dapat dipakai.');
+  return payload;
+}
+async function discoverIdentity() {
+  const entity = String($('#project-entity')?.value || discovery.entity).trim();
+  discovery.entity = entity; discovery.name = String($('#project-name')?.value || discovery.name);
+  const errorHost = $('#project-error');
+  if (errorHost) errorHost.textContent = '';
+  if (entity.length < 2) { discovery.error = 'Isi nama entitas terlebih dahulu (minimal dua karakter).'; if (errorHost) errorHost.textContent = discovery.error; return; }
+  discovery.busy = true; discovery.payload = null; discovery.picked = { play: '', appstore: '' };
+  renderProjectDiscovery();
+  try {
+    const response = await fetch(`/api/discover?entity=${encodeURIComponent(entity)}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error || `Pemeriksaan identitas gagal (kode HTTP ${response.status}).`);
+    discovery.payload = payload?.discovery || null;
+    discovery.picked = { play: discovery.payload?.play?.chosen?.appId || '', appstore: discovery.payload?.appstore?.chosen?.appId || '' };
+  } catch (error) {
+    discovery.error = error instanceof Error ? error.message : 'Kesalahan tidak dikenal.';
+    if (errorHost) errorHost.textContent = discovery.error;
+  } finally {
+    discovery.busy = false;
+    renderProjectDiscovery();
+    const button = $('[data-action="discover-project"]');
+    if (button) button.innerHTML = `${icon('search')}Cari identitas`;
+  }
+}
+async function createProjectFromDialog() {
+  const targets = projectTargets();
+  const body = {
+    action: 'create',
+    name: discovery.name.trim(),
+    entity: discovery.entity.trim(),
+    playAppId: targets.play,
+    appleAppId: targets.appstore,
+  };
+  const errorHost = $('#project-error');
+  if (errorHost) errorHost.textContent = '';
+  if (!body.playAppId && !body.appleAppId) {
+    discovery.error = 'Pilih satu kandidat atau isi minimal satu ID toko.';
+    if (errorHost) errorHost.textContent = discovery.error;
+    return;
+  }
+  const button = $('[data-action="create-project"]');
+  if (button) button.disabled = true;
+  try {
+    applyPayload(await requestProject(body));
+    $('#project-dialog')?.close();
+    discovery.name = ''; discovery.entity = ''; discovery.payload = null; discovery.picked = { play: '', appstore: '' };
+    notify(`Project dibuat. Penarikan mengikuti identitas toko yang Anda konfirmasi.`);
+    await analyze();
+  } catch (error) {
+    discovery.error = error instanceof Error ? error.message : 'Project tidak dapat disimpan.';
+    if (errorHost) errorHost.textContent = discovery.error;
+    if (button) button.disabled = false;
+  }
+}
+function download(content,name,type) {  const url=URL.createObjectURL(new Blob([content],{type})), a=document.createElement('a');
   a.href=url; a.download=name; document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 async function requestData(url, method='GET') {
@@ -739,7 +891,21 @@ async function requestData(url, method='GET') {
 function applyPayload(payload) {
   reviews=payload.reviews;
   sync.sources=payload.sources; sync.lastRun=payload.lastRun; sync.runs=payload.runs; sync.running=payload.running; sync.loaded=true;
+  if (Array.isArray(payload.projects)) projects.list=payload.projects;
+  if (typeof payload.activeProject==='string') projects.active=payload.activeProject;
+  if (payload.target && typeof payload.target==='object') projects.target=payload.target;
   if (!payload.running) sync.attempt=null;
+}
+async function switchProject(id) {
+  if (!id || id === projects.active) return;
+  if (isBusy()) { notify('Tunggu penarikan selesai sebelum memindahkan project.'); return; }
+  sync.loading = true;
+  render();
+  try { applyPayload(await requestProject({ action: 'activate', project: id })); }
+  catch (error) { notify(`Project tidak dapat dibuka. ${error instanceof Error ? error.message : 'Kesalahan tidak dikenal.'}`); }
+  clearReviewFilters();
+  sync.loading = false;
+  render();
 }
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
@@ -803,7 +969,7 @@ function renderPullDialog() {
     ? `<div class="pull-main"><div class="pull-head"><strong>${esc(row.name)}</strong>${chip(row)}</div>${row.message ? `<p class="pull-msg">${esc(shortMessage(row.message))}</p>` : ''}<div class="pull-foot"><span>Ulasan publik: <strong>${count(row)}</strong></span>${chip(row)}</div></div>${meta(row)}`
     : `<div class="pull-main"><div class="pull-head"><strong>${esc(row.name)}</strong></div><div class="pull-foot"><span>Ulasan/Teks: <strong>—</strong></span><span class="pull-state">${esc(pullStatusNames[row.status])}</span></div></div>`;
   const percent = Math.round(pct(checked, queue.length));
-  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="pull-heading">Mengambil dan menganalisis</h2><p>Kanal diambil satu per satu. Status di bawah adalah hasil nyata dari kanal tersebut, bukan perkiraan.</p></div><button class="icon-button" data-close="pull-dialog" aria-label="Tutup progres">${icon('close')}</button></div><div class="dialog-body"><div class="pull-progress"><span>Platform</span><strong>${checked} dari ${queue.length} kanal diperiksa · ${percent}%${finished?'; riwayat diperbarui':''}</strong></div><div class="pull-meter" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100" aria-label="Kemajuan pemeriksaan kanal"><span style="width:${percent}%"></span></div><ol class="pull-list" aria-live="polite">${queue.map(row => `<li class="pull-row is-${row.status}"><span class="pull-dot" aria-hidden="true"></span>${card(row)}</li>`).join('')}</ol></div><div class="dialog-footer"><small>Kanal yang menjawab tanpa hasil berarti terhubung tetapi tidak mengirim konten; itu bukan nol keluhan.</small></div>`;
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="pull-heading">Mengambil dan menganalisis</h2><p>Project aktif: <strong>${esc(projects.list.find(project => project.id === projects.active)?.name || 'belum ada project')}</strong>. Kanal diambil satu per satu mengikuti identitas toko project ini. Status di bawah adalah hasil nyata dari kanal tersebut, bukan perkiraan.</p></div><button class="icon-button" data-close="pull-dialog" aria-label="Tutup progres">${icon('close')}</button></div><div class="dialog-body"><div class="pull-progress"><span>Platform</span><strong>${checked} dari ${queue.length} kanal diperiksa · ${percent}%${finished?'; riwayat diperbarui':''}</strong></div><div class="pull-meter" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100" aria-label="Kemajuan pemeriksaan kanal"><span style="width:${percent}%"></span></div><ol class="pull-list" aria-live="polite">${queue.map(row => `<li class="pull-row is-${row.status}"><span class="pull-dot" aria-hidden="true"></span>${card(row)}</li>`).join('')}</ol></div><div class="dialog-footer"><small>Kanal yang menjawab tanpa hasil berarti terhubung tetapi tidak mengirim konten; itu bukan nol keluhan.</small></div>`;
   if (!dialog.open) dialog.showModal();
 }
 // Pesan singkat tetap memuat keterangan pemotongan: kalimat pertama saja akan membuat hasil
@@ -829,6 +995,9 @@ function shortMessage(message) {
 async function analyze() {
   if (isBusy() || sync.requesting) return;
   clearTimeout(refreshTimer);
+  // Project dikunci pada awal penarikan: seluruh permintaan batch menyebut project yang sama
+  // supaya pemindahan project di tengah jalan tidak dapat menulis ke dataset lain.
+  const project = projects.active ? `project=${encodeURIComponent(projects.active)}&` : '';
   sync.busy=true; sync.requesting=true;
   sync.attempt={startedAt:new Date().toISOString(),finishedAt:null,status:'running'};
   const queue = pullQueue();
@@ -838,13 +1007,13 @@ async function analyze() {
   if (!queue.length) {
     // Status sumber tidak dapat dibaca (misalnya server sedang turun). Jalankan satu
     // permintaan gabungan seperti biasa agar pengguna tetap mendapat hasil atau pesan galat.
-    try { applyPayload(await requestData('/api/analyze','POST')); }
+    try { applyPayload(await requestData(`/api/analyze?${project}`,'POST')); }
     catch (error) { stopped = true; notify(`Pengambilan gagal. ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'} Ulasan yang sudah tersimpan tetap ditampilkan.`); }
   }
   for (const row of queue) {
     row.status='diproses'; renderPullDialog();
     try {
-      applyPayload(await requestData(`/api/analyze?platform=${encodeURIComponent(row.id)}`,'POST'));
+      applyPayload(await requestData(`/api/analyze?${project}platform=${encodeURIComponent(row.id)}`,'POST'));
       const source = sync.sources.find(s => s.id === row.id);
       row.meta = pullMeta(source);
       row.status = pullStateFor(source);
@@ -862,7 +1031,7 @@ async function analyze() {
   // Riwayat penarikan dicatat pada panggilan penutup terpisah, sehingga kegagalan satu
   // kanal (termasuk kanal terakhir) tidak meninggalkan penarikan tanpa catatan.
   if (queue.length && !stopped) {
-    try { applyPayload(await requestData('/api/analyze?finish=1','POST')); }
+    try { applyPayload(await requestData(`/api/analyze?${project}finish=1`,'POST')); }
     catch (error) { notify(`Riwayat penarikan tidak dapat dicatat. ${error instanceof Error?error.message:'Kesalahan tidak dikenal.'}`); }
   }
   sync.pull.finished = true;
@@ -895,6 +1064,7 @@ document.addEventListener('click',event=>{
   if (button.dataset.review) { openReview(button.dataset.review); return; }
   if (button.dataset.close==='detail-dialog') { $('#detail-dialog').close(); return; }
   if (button.dataset.close==='pull-dialog') { $('#pull-dialog').close(); sync.pull=null; return; }
+  if (button.dataset.close==='project-dialog') { $('#project-dialog').close(); return; }
   if (button.dataset.complaint) {
     const group=complaintStats(analyticalReviews()).find(g=>g.id===button.dataset.complaint);
     if (!group) return;
@@ -929,6 +1099,9 @@ document.addEventListener('click',event=>{
   if (button.dataset.page) { state.page+=button.dataset.page==='next'?1:-1; render(); return; }
   const action=button.dataset.action;
   if (action==='analyze') { void analyze(); return; }
+  if (action==='add-project') { openProjectDialog(); return; }
+  if (action==='discover-project') { button.innerHTML=`${icon('clock')}Memeriksa…`; void discoverIdentity(); return; }
+  if (action==='create-project') { void createProjectFromDialog(); return; }
   if (action==='clear-complaint') { clearComplaint(); state.page=1; render(); }
   if (action==='clear-aspect') { state.aspect=''; state.page=1; render(); }
   if (action==='clear-group') { state.group=null; state.groupName=''; state.page=1; render(); }
@@ -959,9 +1132,19 @@ document.addEventListener('change',event=>{
   }
   if (event.target.id==='tag-filter') { clearComplaint(); state.tag=event.target.value; state.page=1; render(); }
   if (event.target.id==='page-size') { state.size=event.target.value==='all'?'all':Number(event.target.value)||10; state.page=1; render(); }
+  if (event.target.matches('select.project-select')) { void switchProject(event.target.value); return; }
+  if (event.target.name==='discover-play'||event.target.name==='discover-appstore') {
+    const store = event.target.name==='discover-play'?'play':'appstore';
+    discovery.picked[store]=event.target.value;
+    document.querySelectorAll(`input[name="${event.target.name}"]`).forEach(input=>input.closest('.discover-item')?.classList.toggle('picked',input.checked));
+    updateProjectReadout();
+  }
 });
 let searchTimer;
 document.addEventListener('input',event=>{
+  if (event.target.id==='project-name') { discovery.name=event.target.value; updateProjectReadout(); }
+  if (event.target.id==='project-entity') { discovery.entity=event.target.value; updateProjectReadout(); }
+  if (event.target.id==='manual-play'||event.target.id==='manual-appstore') { updateProjectReadout(); }
   if (event.target.id==='review-search') {
     clearComplaint(); state.query=event.target.value; state.page=1; clearTimeout(searchTimer);
     searchTimer=setTimeout(()=>{

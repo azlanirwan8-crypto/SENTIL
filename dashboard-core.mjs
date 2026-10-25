@@ -70,9 +70,9 @@ export function buildDataset({ previous, results, startedAt, finishedAt, channel
       const channel = channelConfig.get(p.id);
       if (channel) return { ...before, status: channel.status, fetched: null, message: channel.message };
       // Kanal tanpa konektor tetap dilaporkan tidak diambil. Kanal yang hanya belum mendapat
-      // giliran pada penarikan bertahap mempertahankan status terakhirnya, bukan diubah
-      // menjadi "tidak tersedia" secara keliru.
-      if (['success', 'partial', 'error', 'snapshot'].includes(before.status)) return { ...before };
+      // giliran pada penarikan bertahap (termasuk kanal project baru yang belum pernah ditarik)
+      // mempertahankan status terakhirnya, bukan diubah menjadi "tidak tersedia" secara keliru.
+      if (['success', 'partial', 'error', 'snapshot', 'belum_ditarik'].includes(before.status)) return { ...before };
       return { ...before, status: 'unsupported', fetched: null, message: `Belum terhubung; tidak ada pengambilan data. ${p.note}` };
     }
     const { reviews, ...source } = result;

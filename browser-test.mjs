@@ -16,6 +16,8 @@ async function mockResults(){
   pulls++;
   if(collectorMode==='wait'&&!waited)await new Promise(resolve=>{releasePull=resolve;waited=true;});
   if(collectorMode==='error')return ['play','appstore'].map(id=>({id,status:'error',fetched:0,message:'Koneksi uji gagal; histori dipertahankan.'}));
+  // Project baru belum memiliki apa pun: kanal menjawab tanpa baris, bukan mewarisi data project lama.
+  if(collectorMode==='empty-project')return ['play','appstore'].map(id=>({id,status:'success',fetched:0,rating:null,ratingCount:0,ratingHistogram:null,ratingHistogramTotal:null,reviews:[],coverage:{pagesRead:1,rows:0,added:0,complete:true,error:null},message:`0 teks unik dibaca dari kanal ini untuk project aktif; sumber tidak mengirim halaman ulasan untuk identitas yang dipilih.`}));
   return ['play','appstore'].map(id=>{
     const count=seedReviews.filter(r=>r.platform===id).length;
     const truncated=id==='appstore'&&collectorMode==='truncated';
@@ -40,7 +42,7 @@ async function mockResults(){
 // Penarikan berjalan satu kanal per permintaan; keduanya di-mock agar pengujian tidak
 // pernah mengirim permintaan nyata ke Google, Apple, YouTube, atau Apify.
 const unemulatedResult=id=>({id,status:'needs_setup',fetched:null,message:id==='youtube'?'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY atau GOOGLE_API_KEY belum tersedia pada environment server. Belum ada komentar yang diambil.':'Kanal uji tanpa fixture; tidak ada permintaan nyata dikirim.',reviews:[]});
-const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:mockResults,collectOne:async id=>(await mockResults()).find(result=>result.id===id)??unemulatedResult(id)});
+const server=await createDashboardServer({storagePath:join(profile,'test-data.json'),env:{},collector:mockResults,collectOne:async id=>(await mockResults()).find(result=>result.id===id)??unemulatedResult(id),discover:async ({entityName})=>({entityName,resolvedAt:'2026-10-25T00:00:00.000Z',method:'fixture',country:'id',category:'app',keywords:['kasir saya'],titleAgreement:false,needsConfirmation:true,note:'Fixture penemuan identitas; tidak ada permintaan nyata ke Google atau Apple.',play:{status:'ambiguous',candidates:[{appId:'com.toko.kasir',title:'Kasir Saya — Toko Retail',sourceUrl:'https://play.google.com/store/apps/details?id=com.toko.kasir',similarity:0.82},{appId:'com.lain.kasir',title:'Kasir Lain',sourceUrl:'https://play.google.com/store/apps/details?id=com.lain.kasir',similarity:0.6}],chosen:null},appstore:{status:'not-found',candidates:[],chosen:null}})});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const baseUrl=`http://127.0.0.1:${server.address().port}`;
 const output = new URL('./test-artifacts/',import.meta.url);
@@ -100,7 +102,10 @@ try {
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#sidebar .nav-item')].map(e=>e.querySelector('span').textContent)`),navigationLabels);
   assert.equal(await evaluate(`document.querySelectorAll('[data-view="methodology"],.profile,.profile-avatar,.avatar-light,.sidebar-bottom,.nav-label,.sidebar-separator').length`),0);
   assert.doesNotMatch(await evaluate(`document.querySelector('#sidebar').textContent+document.querySelector('#topbar').textContent`),/Ringkasan|Ulasan & percakapan|Cakupan platform|Metode & data|Analis Data|Ruang kerja|Data & transparansi/i);
-  assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT');
+  assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT BY BNI');
+  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'1','jumlah project tampil di atas menu Dashboard');
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-select option')].map(o=>o.textContent)`),['wondr merchant by BNI']);
+  assert.equal(await evaluate(`document.querySelector('.project-bar .project-entity').textContent`),'wondr merchant · Google Play id.bni.wfb · App Store 6741567238');
   await evaluate(`Promise.all([400,500,600,700].map(weight=>document.fonts.load(weight+' 13px Poppins')))`);
   for (const [view,label] of [['overview','Dashboard'],['sentiment','Analisis sentimen'],['reviews','Review'],['platforms','Platform']]) {
     await click(`[data-view="${view}"]`);
@@ -117,7 +122,7 @@ try {
   assert.doesNotMatch(await evaluate(`document.body.textContent`),/Analisis pengalaman pelanggan|Analisis pengalaman merchant|Dasbor independen|Bukan produk resmi BNI|Setiap label dapat ditelusuri/);
   await evaluate('document.fonts.ready');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).width`),'250px');
-  assert.equal(await evaluate(`getComputedStyle(document.body).backgroundColor`),'rgb(243, 243, 249)');
+  assert.equal(await evaluate(`getComputedStyle(document.body).backgroundColor`),'rgb(240, 240, 247)');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.sidebar')).backgroundColor`),'rgb(64, 81, 137)');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).borderRadius`),'4px');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.range-button')).borderRadius`),'4px');
@@ -326,7 +331,7 @@ try {
   assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Dari 64 teks berlabel pada pilihan ini, 64,1% positif dan 34,4% negatif; NSS \+29,7 poin\./,'kalimat ringkasan memakai angka hasil perhitungan');
   assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Masuk, OTP & keamanan akun — 14 ulasan \(63,6% dari 22 negatif\); Pembayaran, QRIS & pencairan — 8 ulasan \(36,4% dari 22 negatif\)/);
   assert.equal(await evaluate(`document.querySelectorAll('.stat-card').length`),3,'kepala ringkas memuat tepat tiga kartu angka');
-  assert.equal(await evaluate(`document.querySelectorAll('.summary-main p').length`),2,'ringkasan maksimal dua kalimat');
+  assert.equal(await evaluate(`document.querySelectorAll('.summary-main > p').length`),2,'ringkasan maksimal dua kalimat');
   assert.match(await evaluate(`document.querySelector('.summary-card .chart-notes').textContent`),/bukan model bahasa/,'sumber ringkasan dinyatakan terbuka');
   const expectedClusters=clusterStats(seedReviews,'negative').map(c=>c.id);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.treemap-cell')].map(b=>b.dataset.cluster).sort()`),[...expectedClusters].sort(),'peta kotak hanya menampilkan frasa yang benar-benar cocok');
@@ -341,7 +346,8 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-bar').length`)>0,true,'batang volume harian digambar');
   assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-line').length`),1,'garis NSS harian digambar');
   assert.equal(await evaluate(`document.querySelectorAll('.combo-card .combo-dot').length`)>0,true,'titik NSS tersedia dengan nilai pada title');
-  assert.equal(await evaluate(`document.querySelectorAll('.donut-card svg path').length`),28,'cincin dalam dan luar digambar dari angka yang sama');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.donut-card svg path title')].reduce((sum,t)=>sum+Number(t.textContent.match(/([0-9]+) ulasan/)[1]),0)`),56,'cincin dalam dan luar digambar dari angka yang sama');
+  assert.equal(await evaluate(`document.querySelector('.donut-card .donut-wrap text').textContent`),'28','pusat donut memuat jumlah keanggotaan aspek');
   assert.match(await evaluate(`document.querySelector('.donut-card .note-inline').textContent`),/28 adalah jumlah keanggotaan aspek dari 22 ulasan negatif/,'satu ulasan yang masuk beberapa aspek tidak dihitung dua kali diam-diam');
   assert.equal(await evaluate(`document.querySelector('.nss-card h2').textContent`),'Skor sentimen neto');
   assert.equal(await evaluate(`document.querySelectorAll('.nss-card .nss-gauge path').length`),6,'keenam pita NSS digambar');
@@ -385,9 +391,10 @@ try {
   await screenshot('widgets-nss.png', false);
   await evaluate(`document.querySelector('.incident-card').scrollIntoView({block:'center'})`);
   await screenshot('widgets-incident.png', false);
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
+  await click('[data-platform="all"]');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none','perubahan filter memperbarui isi tanpa animasi ulang');
   await click('[data-view="overview"]');
-  assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none');
+  assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.card')).animationName`),'none','pindah menu mengulang animasi masuk');
   assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('.complaint-row .feature-bar span')).animationName`),'none');
   assert.equal(await evaluate(`new Set([...document.querySelectorAll('.combo-card .legend-swatch')].map(e=>getComputedStyle(e).backgroundColor)).size`),5);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.feature-bar .unclassified')).backgroundColor`),'rgb(41, 156, 219)');
@@ -467,6 +474,7 @@ try {
       const selected=await evaluate(`(() => { const last=document.querySelector('.platform-tabs .platform-tab:last-child');const id=last.dataset.platform;last.focus({preventScroll:true});last.click();return id; })()`);
       assert.equal(await evaluate(`document.activeElement.dataset.platform`),selected);
       assert.equal(await evaluate(`(() => {const selected=document.querySelector('.platform-tab.active').getBoundingClientRect(),tabs=document.querySelector('.platform-tabs').getBoundingClientRect();return selected.left>=tabs.left-1&&selected.right<=tabs.right+1;})()`),true,`${view}: selected platform hidden at ${width}px`);
+      assert.equal(await evaluate(`(()=>{const tabs=document.querySelector('.platform-tabs'),row=document.querySelector('.filters');return tabs.clientWidth>=row.clientWidth-2||tabs.scrollWidth<=tabs.clientWidth;})()`),true,`${view}: baris platform memakai selebar mungkin di ${width}px`);
       await click('[data-platform="all"]');
       if(view==='overview')assert.equal(await evaluate(`document.querySelector('.projection-meta').getBoundingClientRect().height>0`),true,`${view}: keterangan proyeksi tidak tersembunyi di ${width}px`);
       if(view==='reviews') {
@@ -552,7 +560,7 @@ try {
   assert.match(await evaluate(`document.querySelector('.detail-author').textContent`),/N\/A/);
   await click('[data-close="detail-dialog"]');await click('[data-view="overview"]');
   collectorMode='error';await pullFromPlatform();
-  assert.equal((await metricValues())[0],'65');assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis gagal/);
+  assert.equal(await totalBadge(),'65 teks pada pilihan ini','penarikan yang gagal tidak mengubah data tersimpan');assert.match(await evaluate(`document.querySelector('#toast').textContent`),/Tarik Analisis gagal/);
   await click('[data-view="platforms"]');assert.match(await evaluate(`document.querySelector('.coverage-grid').textContent`),/Koneksi uji gagal/);
   assert.equal(await evaluate(`document.querySelector('[data-source-card="play"] .source-message').checkVisibility()`),true,'Failed source status must not be collapsed');
   await click('[data-view="reviews"]');assert.match(await evaluate(`document.querySelector('.scope-note').textContent`),/Gagal/);
@@ -561,7 +569,7 @@ try {
   collectorMode='social';await pullFromPlatform();
   assert.doesNotMatch(await evaluate(`document.querySelector('#pull-dialog').textContent`),/facebook-pages-scraper|apidojo|run [A-Za-z0-9]{8,}/,'nama actor dan ID run tidak muncul di modal progres');
   assert.match(await evaluate(`[...document.querySelectorAll('#pull-dialog .pull-meta')].map(e=>e.textContent).join(' ')`),/Sumber\s*Hasil kueri publik via Apify/,'metadata kanal memakai label sumber yang dapat dibaca');
-  await click('[data-view="overview"]');await click('[data-platform="youtube"]');
+  await click('[data-view="sentiment"]');await click('[data-platform="youtube"]');
   assert.deepEqual(await metricValues(),['4','0,0%','100,0%','-100,0']);
   assert.match(await evaluate(`document.querySelector('.classification-note').textContent`),/1 teks di luar penilaian pelanggan/);
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
@@ -591,8 +599,8 @@ try {
   assert.match(await evaluate(`document.querySelector('.coverage-state').textContent`),/Perlu konfigurasi API/);
   assert.equal(await evaluate(`document.querySelector('.coverage-card').classList.contains('is-unavailable')`),false);
   assert.equal(await evaluate(`document.querySelector('.coverage-stats strong').textContent`),'4');
-  await click('[data-view="overview"]');assert.deepEqual(await metricValues(),['4','0,0%','100,0%','-100,0']);
-  await click('[data-platform="play"]');assert.equal((await metricValues())[0],'56');
+  await click('[data-view="overview"]');assert.deepEqual(await statValues(),['0,0%','100,0%','-100,0']);assert.equal(await totalBadge(),'4 teks pada pilihan ini');
+  await click('[data-platform="play"]');assert.equal(await totalBadge(),'56 teks pada pilihan ini');
   completed.push('Social fixtures preserve all IDs and context, exclude owner promotion from sentiment, and survive missing API access');
   // Pengambilan terakhir: hasil partial harus tetap terbaca sebagai sebagian, bukan "selesai".
   collectorMode='truncated';await pullFromPlatform();
@@ -601,8 +609,58 @@ try {
   assert.match(await evaluate(`document.querySelector('#pull-dialog .pull-row.is-sebagian .pull-msg').textContent`),/Hasil belum lengkap; feed resmi masih mengirim penanda halaman lanjutan/,('keterangan pemotongan tidak boleh hilang karena pemenggalan kalimat'));
   await click('#pull-dialog [data-close="pull-dialog"]');
   completed.push('Partial pulls are labelled as incomplete and keep their truncation note');
+  // Alur tambah project: nama + entitas, konfirmasi identitas dari hasil pencarian, lalu
+  // penarikan berjalan mengikuti project baru itu. Tidak ada permintaan nyata ke Google/Apple.
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  await click('[data-view="overview"]');
+  await click('[data-platform="all"]');
+  const defaultBadge=await totalBadge();
+  await click('[data-action="add-project"]');
+  assert.equal(await evaluate(`document.querySelector('#project-dialog').open`),true,'dialog project terbuka');
+  assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),true,'tombol Analisa terkunci sebelum identitas dipilih');
+  await evaluate(`const n=document.querySelector('#project-name');n.value='Kasir Toko';n.dispatchEvent(new Event('input',{bubbles:true}));const e=document.querySelector('#project-entity');e.value='Kasir Saya';e.dispatchEvent(new Event('input',{bubbles:true}));`);
+  await click('[data-action="discover-project"]');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;function check(){if(document.querySelector('.discover-item'))resolve(true);else if(Date.now()>end)reject(Error('Kandidat identitas tidak tampil'));else requestAnimationFrame(check);}check();})`);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.discover-item strong')].map(e=>e.textContent)`),['Kasir Saya — Toko Retail','Kasir Lain'],'kandidat ditampilkan apa adanya untuk dikonfirmasi');
+  assert.match(await evaluate(`document.querySelector('.discover-note').textContent`),/Fixture penemuan identitas/,'keterangan metode penemuan dibaca dari hasil server');
+  assert.match(await evaluate(`document.querySelector('.discover-col .badge').textContent`),/beberapa judul mirip/,'kandidat yang seri dinyatakan, bukan dipilih diam-diam');
+  assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),true,'sistem tidak memilih sendiri saat dua judul sama mirip');
+  await click('.discover-item input[value="com.lain.kasir"]');
+  assert.match(await evaluate(`document.querySelector('.discover-target').textContent`),/Google Play com\.lain\.kasir/,'pilihan pengguna yang dipakai, bukan tebakan sistem');
+  assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),false,'Analisa terbuka setelah satu identitas dikonfirmasi pengguna');
+  await evaluate(`document.querySelector('.discover-item input[value="com.toko.kasir"]').click()`);
+  await screenshot('project-dialog.png');
+  collectorMode='empty-project';
+  await click('[data-action="create-project"]');
+  let pullSeen=false,pullClosed=false;const pullEnd=Date.now()+15000;
+  while(Date.now()<pullEnd){const open=await evaluate(`Boolean(document.querySelector('#pull-dialog')?.open)`);if(open)pullSeen=true;else if(pullSeen){pullClosed=true;break;}await new Promise(resolve=>setTimeout(resolve,150));}
+  assert.equal(pullClosed&&pullSeen,true,'penarikan berjalan otomatis mengikuti project baru — '+await evaluate(`document.querySelector('#project-error')?.textContent||'(dialog project tertutup)'`));
+  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'2','project baru tercatat pada penghitung di atas menu');
+  assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'KASIR TOKO','judul menu mengikuti project aktif');
+  assert.deepEqual(await statValues(),['—','—','—'],'project baru belum memiliki angka sentimen');
+  assert.equal(await totalBadge(),'0 teks pada pilihan ini');
+  assert.equal(await evaluate(`document.querySelectorAll('.chart-empty').length`)>0,true,'grafik kosong tidak merusak tata letak project baru');
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,'dasbor project baru tidak melebar');
+  await click('[data-view="platforms"]');
+  assert.match(await evaluate(`document.querySelector('.coverage-intro').textContent`),/Project aktif: Kasir Toko/,'keterangan penarikan menyebut project aktif');
+  assert.match(await evaluate(`document.querySelector('.coverage-intro').textContent`),/Google Play com\.toko\.kasir/,'identitas toko project tampil sebelum menarik');
+  assert.match(await evaluate(`[...document.querySelectorAll('[data-source-card="play"] .coverage-state')].map(e=>e.textContent).join(' ')`),/Terhubung · tanpa hasil/,'kanal project baru yang menjawab tanpa teks tidak dilabeli "Berhasil" biasa');
+  await click('[data-view="overview"]');
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  assert.equal(await evaluate(`document.documentElement.scrollWidth`),390,'project baru tanpa data tidak melebar pada layar 390px');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.chart-card,.card')].every(card=>card.getBoundingClientRect().width>0)`),true,'kartu tetap berukuran walau isinya kosong');
+  await screenshot('project-empty-mobile.png');
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  // Pemindahan project harus memisahkan datanya: project lama kembali ke jumlah sebelumnya,
+  // project baru tetap kosong.
+  await evaluate(`const pick=document.querySelector('.project-bar .project-select');pick.value='wondr-merchant';pick.dispatchEvent(new Event('change',{bubbles:true}));`);
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent===${JSON.stringify(defaultBadge)})resolve(true);else if(Date.now()>end)reject(Error('Data project lama tidak tampil: '+JSON.stringify({badge:b?.textContent,options:[...document.querySelectorAll('.project-bar .project-select option')].map(o=>[o.value,o.selected]),toast:document.querySelector('#toast').textContent})));else requestAnimationFrame(check);}check();})`);
+  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'2');
+  assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT BY BNI');
+  await screenshot('project-second.png');
+  completed.push('Add-project flow: name + entity, confirmed store identity, isolated dataset per project, and project-aware pull');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();
