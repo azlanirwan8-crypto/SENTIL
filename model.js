@@ -185,7 +185,7 @@ export function projection(reviews, options = {}) {
     ...base, ok: true, negative, positive, themes,
     signal: conclusion(negative, positive),
     nssCurrent: summary(dated).nss,
-    nssProjected: { point: nssPoint, low: bounds.length ? Math.min(...bounds) : null, high: bounds.length ? Math.max(...bounds) : null },
+    nssProjected: { point: nssPoint, low: bounds.length ? Math.min(...bounds) : null, high: bounds.length ? Math.max(...bounds) : null, sample: Math.round(positive.projected + negative.projected + neutral.projected) },
     themeProjectedTotal: total(themes.map(t => t.projected)),
     confidence,
   };
@@ -516,18 +516,67 @@ const successMarker = new RegExp(`${resolvedHead}|(?<!\\b(?:${negation})\\s)(?:b
 const negatedAbility = new RegExp(`\\b(?:${negation})\\s+(?:bisa\\s+bisa|bisa|masuk|acc|selesai)\\b`,'g');
 const reassurancePhrase = new RegExp(`\\b(?:(?:${negation}) ada|${negation}|tanpa) (?:masalah|kendala|hambatan|problem)\\b`,'g');
 // "dana settlement belum masuk" tetap keluhan meskipun kata bendanya dipisah beberapa kata.
-const missingAsset = new RegExp(`\\b(?:dana|uang|settlement|transaksi|laporan|notifikasi|notif)\\b[^.!?]{0,25}?\\b(?:${negation})\\s+masuk\\b`);
-const negativeRule = new RegExp(`gagal|lambat|lemot|ribet|repot|jelek|cacat|rusak|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|\\b(?:${negation})\\s+(?:bisa|ada|update|acc|selesai)\\b|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|${missingAsset.source}|tidak menyelesaikan|bankke`);
-const positiveRule = /bagus|mantap|mantp|mantab|mantul|terbaik|kereen|keren|luar biasa|membantu|mempermudah|memudahkan|mudah digunakan|lancar|memuaskan|akurat|rekomendasi|recommended|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|suka banget|suka bgt|\b(?:ok|oke|okee|okey|okok)\b/;
+const missingAsset = new RegExp(`\\b(?:dana|uang|settlement|setoran|saldo|pencairan|transaksi|laporan|notifikasi|notif)\\b[^.!?]{0,25}?\\b(?:${negation})\\s+masuk\\b`);
+// "lama" berdiri sendiri terlalu mudah salah (mis. "dari lama"), jadi hanya diterima bila melekat
+// pada proses yang keluhan utamanya memang kecepatan.
+const slowProcess = /(?:daftar|proses|pencairan|verifikasi|tunggu|pending|loading|setoran)[^.!?]{0,14}\b(?:lama|lelet)\b/;
+// "Aplikasi biru sebelah sudah bisa semua" memuji produk lain, bukan menyelesaikan keluhan
+// tentang aplikasi ini. Klausa penyelesaian hanya membuktikan kepuasan bila subjeknya bukan
+// produk lain.
+const foreignProductClause = /\b(?:aplikasi|qris|mesin|bank|produk)\s+(?:\w+\s+){0,2}(?:lain|sebelah|kompetitor|pesaing|saingannya)\b/i;
+// "masih perlu banyak pengembangan" adalah permintaan perbaikan yang dinyatakan sebagai kekurangan.
+const needsWork = /\b(?:masih |perlu |butuh )+banyak pengembangan\b|\bbelum ada perkembangan\b|\btidak ada perkembangan\b/;
+const negativeRule = new RegExp(`gagal|lambat|lemot|ribet|repot|jelek|cacat|rusak|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|gangguan|ga ngguan|error|crash|loading lama|lama banget|lama bgt|tidak bagus|kurang (?:cepat|bagus)|\\b(?:${negation})\\s+(?:bisa|ada|update|acc|selesai)\\b|(?:notifikasi|notif|settlement).{0,20}(?:hilang|telat)|${missingAsset.source}|tidak menyelesaikan|bankke|uninstall|\\bscam\\b|penipuan|\\b(?:${negation})\\s+(?:instal|unduh|download)\\b|\\b(?:${negation})\\s+jadi\\b|masih diproses|👎|💩|${slowProcess.source}|${needsWork.source}`);
+const positiveRule = /bagus|mantap|mantp|mantab|mantul|terbaik|kereen|keren|luar biasa|membantu|mempermudah|memudahkan|\bmudah\b|lancar|memuaskan|akurat|rekomendasi|recommended|nice app|good|love|lengkap|lebih cepat|tanpa (?:kendala|masalah)|tidak ada (?:kendala|masalah)|suka banget|suka bgt|menarik|gratis|enak|👍|\b(?:ok|oke|okee|okey|okok)\b/;
 // Negasi dapat menempel pada kata penilaian: "gak ribet" bukan keluhan, "tidak ok" bukan pujian.
 // Pujian yang disangkal diubah menjadi kata keluhan baku (buruk), sedangkan kata keluhan yang
 // disangkal dihapus. Jendela satu kata membatasi pembersihan agar frasa seperti "tidak masalah,
 // semua lancar" tidak ikut tersapu.
-const praiseWords = 'bagus|mantap|mantp|mantab|mantul|terbaik|keren|kereen|membantu|mempermudah|memudahkan|mudah digunakan|mudah dipakai|lancar|memuaskan|akurat|rekomendasi|recommended|puas|enak|simpel|lengkap|good|love|nice|ok|oke|okee|okok';
+const praiseWords = 'bagus|mantap|mantp|mantab|mantul|terbaik|keren|kereen|membantu|mempermudah|memudahkan|mudah|lancar|memuaskan|akurat|rekomendasi|recommended|puas|enak|simpel|lengkap|menarik|gratis|good|love|nice|ok|oke|okee|okok';
 const complaintWords = 'jelek|cacat|rusak|lemot|lambat|ribet|repot|lelet|sia-sia|mubazir|menyesal|kecewa|buruk|payah|error|crash|gagal';
 const negatedPraise = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${praiseWords})\\b`,'g');
 const negatedComplaint = new RegExp(`\\b(?:${negation})\\b(?:\\s+[a-z]+){0,1}\\s+(?:${complaintWords})\\b`,'g');
 const scrubNegatedPolarity = scope => scope.replace(negatedPraise,' buruk').replace(negatedComplaint,' ');
+// Kualitas label otomatis diukur terhadap baris yang sudah dinilai manusia, bukan diklaim.
+// Hanya memakai baris yang punya label manusia (labeling 'manual') dan teks yang tidak kosong.
+// Angkanya in-sample bila baris yang sama dipakai untuk menyusun aturan — pemanggil wajib
+// menyatakannya. Cohen's kappa dihitung atas tiga kelas sentimen; kelas tanpa kemunculan
+// tidak diberi angka.
+export function scoreClassifier(rows, classify = classifyText) {
+  const labels = ['positive', 'negative', 'neutral'];
+  const gold = (rows || []).filter(row => row && typeof row.text === 'string' && row.text.trim()
+    && labels.includes(row.sentiment) && row.labeling === 'manual');
+  const matrix = {}; const countsGold = {}; const countsPred = {};
+  let agree = 0;
+  for (const row of gold) {
+    const predicted = classify(row.text).sentiment;
+    const key = `${row.sentiment}>${predicted}`;
+    matrix[key] = (matrix[key] || 0) + 1;
+    countsGold[row.sentiment] = (countsGold[row.sentiment] || 0) + 1;
+    countsPred[predicted] = (countsPred[predicted] || 0) + 1;
+    if (predicted === row.sentiment) agree++;
+  }
+  const perClass = {};
+  for (const label of labels) {
+    const tp = matrix[`${label}>${label}`] || 0;
+    const fn = (countsGold[label] || 0) - tp;
+    const fp = (countsPred[label] || 0) - tp;
+    if (!countsGold[label] && !countsPred[label]) { perClass[label] = null; continue; }
+    const precision = tp + fp ? tp / (tp + fp) : null;
+    const recall = tp + fn ? tp / (tp + fn) : null;
+    perClass[label] = {
+      support: countsGold[label] || 0, predicted: countsPred[label] || 0,
+      precision, recall,
+      f1: precision && recall ? (2 * precision * recall) / (precision + recall) : null,
+    };
+  }
+  const n = gold.length;
+  const observed = n ? agree / n : null;
+  let expected = 0;
+  if (n) for (const label of labels) expected += ((countsGold[label] || 0) / n) * ((countsPred[label] || 0) / n);
+  return { n, agree, observed, kappa: n && expected < 1 ? (observed - expected) / (1 - expected) : null, matrix, perClass };
+}
+
 export function classifyText(text) {
   const value = text.toLocaleLowerCase('id').replace(/\s+/g,' ');
   const reviewTags = Object.entries(topicRules).filter(([,rule]) => rule.test(value)).map(([tag]) => tag);
@@ -544,7 +593,10 @@ export function classifyText(text) {
     ? `${headResolved ? hopeful.slice(0,headAt).replace(negatedAbility,' ') : hopeful.slice(0,headAt)} ${hopeful.slice(headAt).replace(resolvedClause,' ')}`
     : hopeful.replace(reassurancePhrase,' ');
   const negative = negativeRule.test(scrubNegatedPolarity(negativeScope));
-  const positive = positiveRule.test(scrubNegatedPolarity(hopeful)) || (resolved && !negative);
+  // Klausa penyelesaian ("akhirnya bisa masuk") membuktikan kepuasan hanya bila teks itu tidak
+  // sedang memuji produk lain dan tidak menyisakan keluhan yang belum selesai.
+  const positive = positiveRule.test(scrubNegatedPolarity(hopeful))
+    || (resolved && !negative && !foreignProductClause.test(value));
   const neutral = /^(?:[1-5] bintang dulu|terima kasih atas informasinya)[.! ]*$/.test(value);
   const sentiment = negative ? 'negative' : positive ? 'positive' : neutral ? 'neutral' : 'unclassified';
   return { sentiment, tags: reviewTags.length ? reviewTags : ['general'], labeling: 'rules-v1', rationale: sentiment === 'unclassified' ? 'Pola teks belum cukup untuk menentukan sentimen. Tidak dihitung sebagai netral; perlu ditinjau secara manual.' : `Klasifikasi otomatis berbasis aturan kata kunci pada teks (${sentimentNames[sentiment].toLowerCase()}), bukan penilaian bintang. Klausa harapan dan kegagalan yang sudah selesai ("akhirnya bisa masuk") tidak dihitung sebagai keluhan aktif, tetapi teks sesudah klausa itu tetap dinilai. Belum diperiksa manusia; negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru.` };
@@ -634,6 +686,8 @@ export function classifyReview(raw, target = null) {
   // disimpan sebagai konteks, tetapi tidak dihitung sebagai sentimen pelanggan.
   const handle = String(raw.author ?? '').replace(/^@+/, '').trim().toLowerCase();
   const officialAccount = rules.official.test(handle);
+  const promotion = /(?:^|[.!?:]|\b(?:ayo|yuk|buruan|segera)\b)\s*(?:download|unduh|install)\b|\bdapatkan\s+(?:cashback|bonus|promo)\b|\binfo\s+promo\b/;
+  const question = /\b(?:apakah|kalau|jika|seandainya|bisakah)\b|\bbelum\s+(?:pernah\s+)?(?:mencoba|coba|pakai|menggunakan)\b/;
   if (raw.platform === 'play' || raw.platform === 'appstore') {
     // Akun resmi pemilik produk di halaman toko tetap promosi pemilik, bukan pengalaman
     // pelanggan independen; penyaringnya berlaku di semua kanal, bukan hanya media sosial.
@@ -641,14 +695,23 @@ export function classifyReview(raw, target = null) {
       const reason = rules.officialReason(raw.author);
       return { ...label, sentiment:'unclassified', tags:['general'], relevance:{ status:'excluded', reason, method:'merchant-context-v1' }, rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.` };
     }
+    // Bintang 1 yang isinya memuji aplikasi sebelah ("pindah ke yang sebelah, jauh lebih bagus")
+    // bukan pengalaman produk ini, meskipun bentuknya ulasan toko.
+    if (otherApp) {
+      const reason = rules.otherProductReason;
+      return { ...label, sentiment:'unclassified', tags:['general'], relevance:{ status:'uncertain', reason, method:'merchant-context-v1' }, rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.` };
+    }
+    // Tanya-jawab atau "belum pernah mencoba" di halaman toko belum menjadi pengalaman pakai.
+    if (question.test(text)) {
+      const reason = rules.vagueReason;
+      return { ...label, sentiment:'unclassified', tags:['general'], relevance:{ status:'uncertain', reason, method:'merchant-context-v1' }, rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.` };
+    }
     // Ulasan toko dinilai langsung dari teksnya. Teks yang hanya menyebut aplikasi konsumen
     // BNI tidak boleh dihitung sebagai pengalaman merchant.
     if (!consumer || merchant) return label;
     const reason = rules.storeConsumerReason;
     return { ...label, sentiment:'unclassified', tags:['general'], relevance:{ status:'uncertain', reason, method:'merchant-context-v1' }, rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.` };
   }
-  const promotion = /(?:^|[.!?:]|\b(?:ayo|yuk|buruan|segera)\b)\s*(?:download|unduh|install)\b|\bdapatkan\s+(?:cashback|bonus|promo)\b|\binfo\s+promo\b/.test(text);
-  const question = /\b(?:apakah|kalau|jika|seandainya|bisakah)\b|\bbelum\s+(?:pernah\s+)?(?:mencoba|coba|pakai|menggunakan)\b/.test(text);
   let status = 'uncertain', reason = rules.vagueReason;
   if (officialAccount) {
     status = 'excluded'; reason = rules.officialReason(raw.author);
@@ -656,13 +719,13 @@ export function classifyReview(raw, target = null) {
     status = 'excluded'; reason = 'Balasan pemilik video disimpan sebagai konteks, bukan opini pelanggan independen.';
   } else if (['news', 'blog', 'forum'].includes(raw.platform)) {
     status = 'excluded'; reason = 'Pemberitaan atau artikel ditulis bukan oleh pengguna yang mengalami aplikasi, sehingga disimpan sebagai konteks liputan, bukan sentimen pelanggan.';
-  } else if (promotion) {
+  } else if (promotion.test(text)) {
     status = 'excluded'; reason = 'Ajakan promosi tidak diperlakukan sebagai pengalaman pelanggan.';
   } else if (consumer) {
     status = 'excluded'; reason = rules.siblingReason(merchant);
   } else if (otherApp) {
     reason = rules.otherProductReason;
-  } else if (question) {
+  } else if (question.test(text)) {
     reason = 'Pertanyaan, kondisi hipotetis, atau pernyataan belum mencoba belum cukup untuk menetapkan pengalaman pelanggan; perlu tinjauan konteks.';
   } else if (merchant || (raw.platform === 'youtube' && raw.context?.product === rules.productKey && rules.context.test(text) && label.tags.some(tag => tag !== 'general'))) {
     status = 'relevant'; reason = rules.relevantReason;

@@ -59,6 +59,7 @@ export function createProject({ id, name, entity, target, playAppId, appleAppId,
   const entityName = String(entity || '').trim();
   const projectName = String(name || '').trim();
   if (projectName.length < 2) throw new Error('project_name: nama project minimal dua karakter');
+  if (projectName.length > 80) throw new Error('project_name: nama project maksimal 80 karakter');
   if (entityName.length < 2) throw new Error('project_entity: nama aplikasi minimal dua karakter');
   const resolved = target ?? normalizeTarget({ name: projectName, entityName, playAppId, appleAppId });
   if (!resolved.play?.appId && !resolved.appstore?.appId) throw new Error('project_target: pilih minimal satu identitas toko (Google Play atau App Store) agar penarikan tidak salah sasaran');

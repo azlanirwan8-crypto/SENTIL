@@ -68,15 +68,22 @@ export function parseGoogleReviews(text, target = defaultTarget) {
   const payload = JSON.parse(frame[2]);
   check(Array.isArray(payload) && Array.isArray(payload[0]),'struktur ulasan Google berubah');
   check(payload[1] == null || (Array.isArray(payload[1]) && typeof payload[1][1] === 'string'),'struktur halaman berikutnya di Google Play berubah');
-  const reviews = payload[0].map(r => {
-    let date = null;
-    if (r[5] != null) {
-      check(Array.isArray(r[5]) && Number.isFinite(r[5][0]) && (r[5][1] == null || Number.isFinite(r[5][1])),'waktu ulasan Google tidak valid');
-      date = new Date(r[5][0]*1000 + Math.floor((r[5][1] || 0)/1e6)).toISOString();
-    }
-    return normalizeReview({id:r[0],author:r[1]?.[0],rating:r[2],text:r[4] ?? '',date},'play',target.play.url,target);
-  }).filter(r => r.text.trim());
-  return {reviews, rows: payload[0].length, cursor:payload[1]?.[1] ?? null};
+  // Satu baris yang bentuknya tidak dikenali tidak boleh memotong sisa halaman: baris itu
+  // dilewati dan dihitung, supaya sisanya tetap masuk analisis dan jumlah yang hilang diketahui.
+  let skipped = 0;
+  const reviews = [];
+  for (const r of payload[0]) {
+    try {
+      let date = null;
+      if (r[5] != null) {
+        check(Array.isArray(r[5]) && Number.isFinite(r[5][0]) && (r[5][1] == null || Number.isFinite(r[5][1])),'waktu ulasan Google tidak valid');
+        date = new Date(r[5][0]*1000 + Math.floor((r[5][1] || 0)/1e6)).toISOString();
+      }
+      const review = normalizeReview({id:r[0],author:r[1]?.[0],rating:r[2],text:r[4] ?? '',date},'play',target.play.url,target);
+      if (review.text.trim()) reviews.push(review);
+    } catch { skipped++; }
+  }
+  return {reviews, rows: payload[0].length, skipped, cursor:payload[1]?.[1] ?? null};
 }
 export function parseApplePage(html, target = defaultTarget) {
   const script = scripts(html).find(m => /\bid=["']serialized-server-data["']/i.test(m[1]));
@@ -97,13 +104,16 @@ export function parseApplePage(html, target = defaultTarget) {
   const weighted = countsSum ? rawCounts.reduce((sum, value, index) => sum + value * (5 - index), 0) / countsSum : null;
   const ratingHistogram = rawCounts && countsSum === ratingCount && Math.abs(weighted - rating) <= 0.06 ? rawCounts : null;
   const unique = new Map();
+  let skipped = 0;
   for (const item of shelf.items) {
-    const r = item.review;
-    check(r?.$kind === 'Review','struktur data ulasan Apple berubah');
-    const review = normalizeReview({id:r.id,author:r.reviewerName,title:r.title,text:r.contents ?? '',rating:r.rating,date:r.date},'appstore',appleReviewsUrl(target),target);
-    if (review.text.trim()) unique.set(review.id,review);
+    try {
+      const r = item.review;
+      check(r?.$kind === 'Review','struktur data ulasan Apple berubah');
+      const review = normalizeReview({id:r.id,author:r.reviewerName,title:r.title,text:r.contents ?? '',rating:r.rating,date:r.date},'appstore',appleReviewsUrl(target),target);
+      if (review.text.trim()) unique.set(review.id,review);
+    } catch { skipped++; }
   }
-  return {reviews:[...unique.values()],rating,ratingCount,ratingHistogram,continuationUrl: shelf.url ?? null};
+  return {reviews:[...unique.values()],rating,ratingCount,ratingHistogram,skipped,continuationUrl: shelf.url ?? null};
 }
 // Paginasi dibaca sampai sumber tidak mengirim token halaman berikutnya; tidak ada batas jumlah sampel.
 const timeBudget = 240000;
@@ -121,7 +131,7 @@ export async function collectGoogle(fetcher = fetch, options = {}) {
   const started = Date.now();
   for (const pool of playPools) {
     const pageUrl = playDetailsUrl(target,{hl:pool.hl,gl:pool.gl});
-    let cursor = null, complete = false, pagesRead = 0, rows = 0, added = 0, error = null;
+    let cursor = null, complete = false, pagesRead = 0, rows = 0, added = 0, skipped = 0, error = null;
     const cursors = new Set();
     for (;;) {
       if (Date.now() - started > timeBudget) { error = 'time_budget: batas waktu pengambilan tercapai; halaman berikutnya belum dibaca.'; break; }
@@ -129,7 +139,7 @@ export async function collectGoogle(fetcher = fetch, options = {}) {
         const args = [null,[2,2,[100,null,cursor],null,[null,null,null,null,null,null,null,null,2]],[target.play.appId,7]];
         const raw = await fetchText(rpcUrl(pool.hl,pool.gl),{method:'POST',body:new URLSearchParams({'f.req':JSON.stringify([[['oCPfdb',JSON.stringify(args),null,'generic']]])})},fetcher);
         const result = parseGoogleReviews(raw, target);
-        pagesRead++; rows += result.rows;
+        pagesRead++; rows += result.rows; skipped += result.skipped;
         for (const review of result.reviews) if (!reviews.has(review.id)) { reviews.set(review.id,{...review,sourceUrl:pageUrl}); added++; }
         cursor = result.cursor;
         if (!cursor) { complete = true; break; }
@@ -137,30 +147,38 @@ export async function collectGoogle(fetcher = fetch, options = {}) {
         cursors.add(cursor);
       } catch (cause) { error = cause.message; break; }
     }
-    pools.push({ ...pool, pagesRead, rows, added, complete, error });
+    pools.push({ ...pool, pagesRead, rows, added, skipped, complete, error });
   }
-  const allPoolsComplete = pools.every(p => p.complete);
+  const totalSkipped = pools.reduce((sum,p)=>sum+p.skipped,0);
+  const allPoolsComplete = pools.every(p => p.complete) && !totalSkipped;
   const issues = pools.filter(p => p.error).map(p => `${p.label}: ${p.error}`);
+  if (totalSkipped) issues.push(`baris yang bentuknya tidak terbaca dan dilewati: ${totalSkipped} (${pools.filter(p=>p.skipped).map(p=>`${p.label}: ${p.skipped}`).join(', ')}); baris lain pada halaman yang sama tetap dihitung penuh`);
   const depth = pools.map(p => `${p.label}: ${p.pagesRead} halaman, ${p.rows} baris`).join('; ');
   const histogramNote = breakdown
     ? `Histogram penilaian halaman toko dibaca penuh: ${breakdown.histogram.map((value, index) => `${5 - index}★=${value}`).join(', ')} (total ${breakdown.total} penilaian). ${reviews.size} ulasan membawa teks publik dan masuk analisis sentimen; ${breakdown.total - reviews.size} penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya.`
     : 'Histogram per bintang tidak terbaca pada pemeriksaan ini, sehingga hanya angka agregat halaman toko yang tersedia.';
   return {id:'play',status:allPoolsComplete?'success':'partial',...metadata,...(breakdown?{ratingHistogram:breakdown.histogram,ratingHistogramTotal:breakdown.total}:{}),installs,reviews:[...reviews.values()],fetched:reviews.size,
-    coverage:{pools:pools.map(({hl,gl,label,pagesRead,rows,added,complete,error})=>({hl,gl,label,pagesRead,rows,added,complete,error})),pagesRead:pools.reduce((sum,p)=>sum+p.pagesRead,0),rows:pools.reduce((sum,p)=>sum+p.rows,0),sampleLimit:null},
-    message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya dibaca agar tidak ada ulasan terlewat. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya (${depth}); kolektor tidak memiliki batas jumlah sampel. ${allPoolsComplete?'Kedua kumpulan selesai dipaginasi.':`Hasil belum lengkap; ${issues.join('; ')}`} ${histogramNote} Angka agregat halaman toko menyebut ${metadata.ratingCount} penilaian; kedua angka dipublikasikan Google pada elemen halaman yang berbeda dan tidak dipaksa sama. Unduhan: ${installs ? `${installs} (rentang yang dipublikasikan Google, bukan angka pasti)` : 'tidak terbaca pada pemeriksaan ini'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
+    coverage:{pools:pools.map(({hl,gl,label,pagesRead,rows,added,skipped,complete,error})=>({hl,gl,label,pagesRead,rows,added,skipped,complete,error})),pagesRead:pools.reduce((sum,p)=>sum+p.pagesRead,0),rows:pools.reduce((sum,p)=>sum+p.rows,0),skipped:totalSkipped,sampleLimit:null},
+    message:`${reviews.size} ulasan tertulis unik dibaca dari Google Play sebagai gabungan ${pools.map(p=>`${p.added} ulasan ${p.label}`).join(' dan ')}. Kedua kumpulan ditampilkan Google berdasarkan bahasa antarmuka, sehingga keduanya dibaca agar tidak ada ulasan terlewat. Paginasi diikuti sampai sumber tidak mengirim halaman berikutnya (${depth}); kolektor tidak memiliki batas jumlah sampel. Balasan pengembang atas ulasan tidak dibaca kolektor ini, sehingga yang tersimpan hanya teks pelanggan. ${allPoolsComplete?'Kedua kumpulan selesai dipaginasi.':`Hasil belum lengkap; ${issues.join('; ')}`} ${histogramNote} Angka agregat halaman toko menyebut ${metadata.ratingCount} penilaian; kedua angka dipublikasikan Google pada elemen halaman yang berbeda dan tidak dipaksa sama. Unduhan: ${installs ? `${installs} (rentang yang dipublikasikan Google, bukan angka pasti)` : 'tidak terbaca pada pemeriksaan ini'}.${issues.length?` Catatan: ${issues.join('; ')}`:''}`};
 }
 // Feed ulasan pelanggan publik Apple menjadi jalur resmi kedua, sehingga daftar halaman web dapat diuji silang.
 export function parseAppleRss(text, target = defaultTarget) {
   let feed;
   try { feed = JSON.parse(text).feed; } catch { throw new Error('parse_error: struktur feed ulasan App Store berubah'); }
   check(feed != null,'feed ulasan App Store tidak ditemukan');
-  const reviews = [].concat(feed.entry ?? []).filter(entry => entry?.id?.label != null).map(entry => {
-    const rating = Number(entry['im:rating']?.label);
-    check(typeof entry.content?.label === 'string','teks ulasan feed App Store tidak valid');
-    check(entry.author?.name?.label == null || typeof entry.author.name.label === 'string','nama penulis feed App Store tidak valid');
-    return normalizeReview({id:String(entry.id.label),author:entry.author?.name?.label,title:entry.title?.label,text:entry.content.label,rating:Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,date:entry.updated?.label},'appstore',appleReviewsUrl(target),target);
-  }).filter(review => review.text.trim());
-  return {reviews};
+  let skipped = 0;
+  const reviews = [];
+  for (const entry of [].concat(feed.entry ?? [])) {
+    if (entry?.id?.label == null) continue;
+    try {
+      const rating = Number(entry['im:rating']?.label);
+      check(typeof entry.content?.label === 'string','teks ulasan feed App Store tidak valid');
+      check(entry.author?.name?.label == null || typeof entry.author.name.label === 'string','nama penulis feed App Store tidak valid');
+      const review = normalizeReview({id:String(entry.id.label),author:entry.author?.name?.label,title:entry.title?.label,text:entry.content.label,rating:Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,date:entry.updated?.label},'appstore',appleReviewsUrl(target),target);
+      if (review.text.trim()) reviews.push(review);
+    } catch { skipped++; }
+  }
+  return {reviews,skipped};
 }
 function appleNextUrl(value, current, target) {
   if (typeof value !== 'string' || !value.trim()) return null;
@@ -171,7 +189,7 @@ function appleNextUrl(value, current, target) {
 }
 async function collectAppleShelf(fetcher, target) {
   const reviews = new Map(), seen = new Set();
-  let url = appleReviewsUrl(target), rating = null, ratingCount = null, ratingHistogram = null, pages = 0, complete = false, error = null;
+  let url = appleReviewsUrl(target), rating = null, ratingCount = null, ratingHistogram = null, pages = 0, skipped = 0, complete = false, error = null;
   for (;;) {
     if (seen.has(url)) { error = 'pagination_error: tautan lanjutan berulang; pengambilan dihentikan.'; break; }
     seen.add(url);
@@ -180,6 +198,7 @@ async function collectAppleShelf(fetcher, target) {
     try { result = parseApplePage(await fetchText(url,{},fetcher), target); }
     catch (cause) { error = cause.message; break; }
     pages++;
+    skipped += result.skipped;
     rating = result.rating; ratingCount = result.ratingCount;
     if (ratingHistogram == null) ratingHistogram = result.ratingHistogram ?? null;
     for (const review of result.reviews) if (!reviews.has(review.id)) reviews.set(review.id,review);
@@ -188,22 +207,26 @@ async function collectAppleShelf(fetcher, target) {
     if (!next) { complete = true; break; }
     url = next;
   }
-  return {reviews,rating,ratingCount,ratingHistogram,pages,complete,error};
+  return {reviews,rating,ratingCount,ratingHistogram,pages,skipped,complete,error};
 }
 async function collectAppleFeed(fetcher, target) {
   const reviews = new Map();
-  let page = 1, pages = 0, complete = false, error = null;
+  let page = 1, pages = 0, skipped = 0, complete = false, error = null;
   for (;;) {
     if (page > applePageLimit) { error = 'page_limit: batas keamanan halaman feed tercapai; feed belum tentu habis.'; break; }
     let result;
     try { result = parseAppleRss(await fetchText(appleFeedUrl(target, page),{},fetcher), target); }
     catch (cause) { error = cause.message; break; }
-    if (!result.reviews.length) { complete = true; break; }
+    skipped += result.skipped;
+    if (!result.reviews.length) {
+      if (result.skipped) { error = `malformed_rows: ${result.skipped} entri halaman feed ke-${page} tidak terbaca bentuknya.`; break; }
+      complete = true; break;
+    }
     pages = page;
     for (const review of result.reviews) if (!reviews.has(review.id)) reviews.set(review.id,review);
     page++;
   }
-  return {reviews,pages,complete,error};
+  return {reviews,pages,skipped,complete,error};
 }
 export async function collectApple(fetcher = fetch, options = {}) {
   const target = options.target ?? defaultTarget;
@@ -212,15 +235,36 @@ export async function collectApple(fetcher = fetch, options = {}) {
   const reviews = new Map(shelf.reviews);
   const feedOnly = [...feed.reviews.values()].filter(review => !reviews.has(review.id));
   for (const review of feedOnly) reviews.set(review.id,{...review,provenance:`${review.provenance}; ulasan ini hanya dikembalikan feed ulasan pelanggan publik Apple`});
-  const complete = shelf.complete && feed.complete;
-  const issues = [shelf.error && `halaman ulasan: ${shelf.error}`, feed.error && `feed ulasan: ${feed.error}`].filter(Boolean);
+  const complete = shelf.complete && feed.complete && !shelf.skipped && !feed.skipped;
+  const issues = [shelf.error && `halaman ulasan: ${shelf.error}`, feed.error && `feed ulasan: ${feed.error}`, (shelf.skipped || feed.skipped) && `baris yang bentuknya tidak terbaca dan dilewati: ${shelf.skipped} pada halaman ulasan, ${feed.skipped} pada feed; baris lain pada halaman yang sama tetap dihitung penuh`].filter(Boolean);
   const shared = [...shelf.reviews.keys()].filter(id => feed.reviews.has(id)).length;
   const histogramNote = shelf.ratingHistogram ? `Histogram penilaian halaman toko dibaca penuh: ${shelf.ratingHistogram.map((value, index) => `${5 - index}★=${value}`).join(', ')} (total ${shelf.ratingCount} penilaian). ${reviews.size} ulasan membawa teks publik dan masuk analisis sentimen; ${shelf.ratingCount - reviews.size} penilaian tanpa teks ikut dihitung sebagai penilaian tetapi tidak dapat dianalisis sentimennya.` : 'Histogram per bintang tidak terbaca atau tidak cocok dengan rata-rata yang dipublikasikan sumber, sehingga hanya angka agregat yang tersedia.';
   return {id:'appstore',status:complete?'success':'partial',reviews:[...reviews.values()],fetched:reviews.size,rating:shelf.rating,ratingCount:shelf.ratingCount,...(shelf.ratingHistogram?{ratingHistogram:shelf.ratingHistogram,ratingHistogramTotal:shelf.ratingCount}:{}),
-    coverage:{shelfPages:shelf.pages,feedPages:feed.pages,shelfReviews:shelf.reviews.size,feedReviews:feed.reviews.size,sharedReviews:shared,feedOnly:feedOnly.length,sampleLimit:null},
+    coverage:{shelfPages:shelf.pages,feedPages:feed.pages,shelfReviews:shelf.reviews.size,feedReviews:feed.reviews.size,sharedReviews:shared,feedOnly:feedOnly.length,skipped:shelf.skipped+feed.skipped,sampleLimit:null},
     message:`${reviews.size} ulasan tertulis unik dibaca dari App Store Indonesia melalui dua jalur publik sekaligus: halaman ulasan resmi (${shelf.reviews.size} ulasan pada ${shelf.pages} halaman) dan feed ulasan pelanggan resmi (${feed.reviews.size} ulasan pada ${feed.pages} halaman); ${shared} ulasan dikonfirmasi oleh kedua jalur dan ${feedOnly.length} hanya dikembalikan salah satu jalur. Paginasi kedua jalur diikuti sampai sumber tidak memberi halaman berikutnya; kolektor tidak memiliki batas jumlah sampel. ${complete?'Kedua jalur selesai dibaca.':`Hasil belum lengkap; ${issues.join('; ')}.`} ${Number.isInteger(shelf.ratingCount)?histogramNote:'Nilai halaman toko tidak terbaca pada pemeriksaan ini.'} Apple tidak mempublikasikan jumlah unduhan.`};
 }
-const merchantIdentity = identityPattern(defaultTarget);
+// Penyaring identitas pada kanal non-toko mengikuti target project: nama entitas beserta kedua
+// ID tokonya, sehingga teks yang diterima sebuah project adalah teks yang juga dapat dinilai project itu.
+const identityFor = target => identityPattern(target);
+const targetLabel = target => target?.entityName || target?.name || 'project ini';
+// Kueri pencarian sosial bawaan sudah diverifikasi terhadap hasil sumber dan dipertahankan apa
+// adanya. Untuk target lain kueri diturunkan dari nama aplikasi project tersebut.
+const builtInSocialQueries = {
+  x: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'],
+  tiktok: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'],
+  instagram: ['wondrmerchant', 'wondrmerchantbni', 'wondrmerchantbybni'],
+  facebook: ['wondr merchant', 'wondr merchant by BNI'],
+};
+export function socialQueries(kind, target = defaultTarget) {
+  if (!target || isWondrTarget(target)) return builtInSocialQueries[kind];
+  const entity = String(target.entityName || target.name || '').trim();
+  const full = String(target.name || entity).trim();
+  const handle = entity.replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+  const terms = kind === 'instagram' ? [handle]
+    : kind === 'facebook' ? [entity, full]
+    : [`"${entity}"`, full && `"${full}"`, handle, target.play?.appId ?? null];
+  return [...new Set(terms.filter(term => typeof term === 'string' && term.replace(/"/g, '').trim().length >= 3))];
+}
 // Teks dari RSS/actor dapat membawa markup atau entitas mentah. Entitas didekode lebih dulu
 // lalu semua tag dibuang, sehingga tidak ada HTML yang ikut tersimpan atau tampil.
 export function sanitizeText(value) {
@@ -235,11 +279,11 @@ export function sanitizeText(value) {
     .replace(/\s+/g, ' ')
     .trim();
 }
-export function youtubeConfiguration(env = process.env) {
+export function youtubeConfiguration(env = process.env, target = defaultTarget) {
   const apiKey = env.YOUTUBE_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim() || '';
   const videoIds = [...new Set((env.YOUTUBE_VIDEO_IDS || '').split(/[\s,]+/).filter(Boolean))];
   const valid = videoIds.every(id => /^[\w-]{11}$/.test(id));
-  return { apiKey, videoIds, status: apiKey && valid ? 'ready' : 'needs_setup', message: !apiKey ? 'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY atau GOOGLE_API_KEY belum tersedia pada environment server. Aktifkan YouTube Data API v3 dan pasang kunci melalui environment server, bukan kolom browser atau chat. Belum ada komentar yang diambil.' : !valid ? 'YOUTUBE_VIDEO_IDS harus berisi ID video YouTube yang valid, dipisahkan koma. Belum ada permintaan dikirim.' : 'Kunci API tersedia, tetapi akses belum diuji. Tarik Analisis akan mencari video wondr merchant dan membaca komentar publik beserta balasannya; status ini belum berarti terhubung.' };
+  return { apiKey, videoIds, status: apiKey && valid ? 'ready' : 'needs_setup', message: !apiKey ? 'Konektor YouTube Data API tersedia, tetapi YOUTUBE_API_KEY atau GOOGLE_API_KEY belum tersedia pada environment server. Aktifkan YouTube Data API v3 dan pasang kunci melalui environment server, bukan kolom browser atau chat. Belum ada komentar yang diambil.' : !valid ? 'YOUTUBE_VIDEO_IDS harus berisi ID video YouTube yang valid, dipisahkan koma. Belum ada permintaan dikirim.' : `Kunci API tersedia, tetapi akses belum diuji. Tarik Analisis akan mencari video "${targetLabel(target)}" dan membaca komentar publik beserta balasannya; status ini belum berarti terhubung.` };
 }
 async function youtubeRequest(resource, params, apiKey, fetcher) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${resource}`);
@@ -279,7 +323,7 @@ async function* youtubePages(resource, params, config, fetcher) {
     }
   } while (pageToken);
 }
-function youtubeComment(item, video, parentId, retrievedAt) {
+function youtubeComment(item, video, parentId, retrievedAt, product = defaultTarget.id) {
   const snippet = item?.snippet;
   check(typeof item?.id === 'string' && item.id.length > 0 && item.id.length <= 200,'ID komentar YouTube tidak valid');
   check(snippet && typeof snippet.textDisplay === 'string','teks komentar YouTube tidak tersedia');
@@ -288,12 +332,15 @@ function youtubeComment(item, video, parentId, retrievedAt) {
   for (const field of ['publishedAt','updatedAt']) check(snippet[field] == null || (typeof snippet[field] === 'string' && validDate(snippet[field].slice(0,10)) && Number.isFinite(Date.parse(snippet[field]))),'waktu komentar YouTube tidak valid');
   if (parentId) check(snippet.parentId === parentId,'balasan YouTube tidak cocok dengan komentar induk');
   const sourceUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}&lc=${encodeURIComponent(item.id)}`;
-  return {id:item.id,platform:'youtube',author:snippet.authorDisplayName || 'N/A',text:snippet.textDisplay,rating:null,date:snippet.publishedAt?.slice(0,10) ?? null,publishedAt:snippet.publishedAt ?? null,updatedAt:snippet.updatedAt ?? null,sourceUrl,retrievedAt,parentId:parentId || null,authorChannelId:snippet.authorChannelId?.value ?? null,context:{videoId:video.id,title:video.snippet.title,description:video.snippet.description,channelId:video.snippet.channelId,product:'wondr-merchant'},provenance:'YouTube Data API v3; textDisplay dengan textFormat=plainText disimpan tanpa perubahan. Teks tampilan API dapat berbeda dari textOriginal penulis; judul dan deskripsi video hanya konteks, bukan sentimen.'};
+  return {id:item.id,platform:'youtube',author:snippet.authorDisplayName || 'N/A',text:snippet.textDisplay,rating:null,date:snippet.publishedAt?.slice(0,10) ?? null,publishedAt:snippet.publishedAt ?? null,updatedAt:snippet.updatedAt ?? null,sourceUrl,retrievedAt,parentId:parentId || null,authorChannelId:snippet.authorChannelId?.value ?? null,context:{videoId:video.id,title:video.snippet.title,description:video.snippet.description,channelId:video.snippet.channelId,product},provenance:'YouTube Data API v3; textDisplay dengan textFormat=plainText disimpan tanpa perubahan. Teks tampilan API dapat berbeda dari textOriginal penulis; judul dan deskripsi video hanya konteks, bukan sentimen.'};
 }
-export async function collectYouTube(fetcher = fetch, config = youtubeConfiguration()) {
+export async function collectYouTube(fetcher = fetch, config = youtubeConfiguration(), { target = defaultTarget } = {}) {
   if (config.status === 'needs_setup') return {id:'youtube',status:'needs_setup',fetched:null,message:config.message,reviews:[]};
+  const identity = identityFor(target);
+  const product = target.id ?? defaultTarget.id;
+  const phrase = String(target.entityName || target.name || '').trim();
   const reviews = new Map(), ids = new Set(config.videoIds), issues = [];
-  const scope = {mode:config.videoIds.length?'configured-videos':'search',query:config.videoIds.length?null:'"wondr merchant"',discoveredVideos:0,relevantVideos:0,completedVideos:0,pagesRead:0,paginationComplete:false};
+  const scope = {mode:config.videoIds.length?'configured-videos':'search',query:config.videoIds.length?null:`"${phrase}"`,discoveredVideos:0,relevantVideos:0,completedVideos:0,pagesRead:0,paginationComplete:false};
   let responded = false;
   if (!config.videoIds.length) {
     try {
@@ -320,14 +367,14 @@ export async function collectYouTube(fetcher = fetch, config = youtubeConfigurat
     for (const video of videos) {
       try {
         check(batch.includes(video.id) && typeof video.snippet?.title === 'string' && typeof video.snippet?.description === 'string' && typeof video.snippet?.channelId === 'string','metadata video YouTube tidak valid');
-        if (!merchantIdentity.test(`${video.snippet.title}\n${video.snippet.description}`)) continue;
+        if (!identity.test(`${video.snippet.title}\n${video.snippet.description}`)) continue;
         scope.relevantVideos++;
         let repliesComplete = true;
         for await (const page of youtubePages('commentThreads',{part:'snippet',videoId:video.id,maxResults:100,textFormat:'plainText',order:'time'},config,fetcher)) {
           scope.pagesRead++;
           for (const thread of page.items) {
             check(thread.snippet?.videoId === video.id,'video pada komentar YouTube tidak cocok');
-            const comment = youtubeComment(thread.snippet.topLevelComment,video,null,new Date().toISOString());
+            const comment = youtubeComment(thread.snippet.topLevelComment,video,null,new Date().toISOString(),product);
             reviews.set(comment.id,comment);
             const replies = thread.snippet.totalReplyCount;
             check(Number.isInteger(replies) && replies >= 0,'jumlah balasan YouTube tidak valid');
@@ -337,7 +384,7 @@ export async function collectYouTube(fetcher = fetch, config = youtubeConfigurat
                 for await (const replyPage of youtubePages('comments',{part:'snippet',parentId:comment.id,maxResults:100,textFormat:'plainText'},config,fetcher)) {
                   scope.pagesRead++;
                   for (const item of replyPage.items) {
-                    const reply = youtubeComment(item,video,comment.id,new Date().toISOString());
+                    const reply = youtubeComment(item,video,comment.id,new Date().toISOString(),product);
                     reviews.set(reply.id,reply); replyIds.add(reply.id);
                   }
                 }
@@ -352,7 +399,7 @@ export async function collectYouTube(fetcher = fetch, config = youtubeConfigurat
   }
   scope.paginationComplete = issues.length === 0;
   const status = !issues.length?'success':responded?'partial':'error';
-  return {id:'youtube',status,fetched:reviews.size,reviews:[...reviews.values()],scope,issues,message:`${reviews.size} komentar unik dibaca dari ${scope.relevantVideos} video dengan identitas wondr merchant pada metadata. ${scope.completedVideos} video selesai dipaginasi pada pemeriksaan ini. ${scope.mode==='search'?'Cakupan hanya hasil pencarian API untuk frasa "wondr merchant".':'Cakupan hanya ID video yang dikonfigurasi.'} ${issues.length?'Sebagian pengambilan gagal atau belum lengkap.':'Semua halaman yang dikembalikan API telah diproses, termasuk balasan.'} Komentar privat, dihapus, ditahan moderasi, dan konten di luar hasil API tidak tercakup; ini bukan seluruh percakapan YouTube. Komentar pemilik video, promosi, dan konteks yang belum jelas tidak diberi sentimen pelanggan otomatis.${issues.length?` Kendala: ${[...new Set(issues.map(issue=>issue.message))].join(' ')}`:''}`};
+  return {id:'youtube',status,fetched:reviews.size,reviews:[...reviews.values()],scope,issues,message:`${reviews.size} komentar unik dibaca dari ${scope.relevantVideos} video dengan identitas ${targetLabel(target)} pada metadata. ${scope.completedVideos} video selesai dipaginasi pada pemeriksaan ini. ${scope.mode==='search'?`Cakupan hanya hasil pencarian API untuk frasa ${scope.query}.`:'Cakupan hanya ID video yang dikonfigurasi.'} ${issues.length?'Sebagian pengambilan gagal atau belum lengkap.':'Semua halaman yang dikembalikan API telah diproses, termasuk balasan.'} Komentar privat, dihapus, ditahan moderasi, dan konten di luar hasil API tidak tercakup; ini bukan seluruh percakapan YouTube. Komentar pemilik video, promosi, dan konteks yang belum jelas tidak diberi sentimen pelanggan otomatis.${issues.length?` Kendala: ${[...new Set(issues.map(issue=>issue.message))].join(' ')}`:''}`};
 }
 // Apify adalah layanan pengambilan data pihak ketiga yang sah. Token hanya dibaca dari environment
 // server dan dikirim sebagai header Authorization; tidak pernah masuk URL, browser, atau pesan galat.
@@ -370,12 +417,12 @@ function commentLimit(name, fallback) {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 }
 export const apifyChannels = {
-  x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: () => ({ searchTerms: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'], sort: 'Latest + Top' }) },
-  instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: () => ({ resultsType: 'posts', searchType: 'hashtag', search: 'wondrmerchant, wondrmerchantbni, wondrmerchantbybni', searchLimit: 250, resultsLimit: 250 }) },
+  x: { label: 'X / Twitter', actor: 'apidojo/tweet-scraper', input: (target = defaultTarget) => ({ searchTerms: socialQueries('x', target), sort: 'Latest + Top' }) },
+  instagram: { label: 'Instagram', actor: 'apify/instagram-scraper', input: (target = defaultTarget) => ({ resultsType: 'posts', searchType: 'hashtag', search: socialQueries('instagram', target).join(', '), searchLimit: 250, resultsLimit: 250 }) },
   // Komentar TikTok dikembalikan actor ke dataset terpisah yang ditaut dari item video,
   // sehingga jumlah komentar per video harus diminta lewat input di bawah.
-  tiktok: { label: 'TikTok', actor: 'clockworks/tiktok-scraper', input: () => ({ searchQueries: ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'], resultsPerPage: commentLimit('TIKTOK_VIDEOS', 300), videoSearchSorting: 'LATEST', topLevelCommentsPerPost: commentLimit('TIKTOK_COMMENTS', 35), maxRepliesPerComment: commentLimit('TIKTOK_REPLIES', 10) }) },
-  facebook: { label: 'Facebook', actor: 'apify/facebook-search-scraper', input: () => ({ categories: ['wondr merchant', 'wondr merchant by BNI'], searchType: 'posts', resultsLimit: 250 }) },
+  tiktok: { label: 'TikTok', actor: 'clockworks/tiktok-scraper', input: (target = defaultTarget) => ({ searchQueries: socialQueries('tiktok', target), resultsPerPage: commentLimit('TIKTOK_VIDEOS', 300), videoSearchSorting: 'LATEST', topLevelCommentsPerPost: commentLimit('TIKTOK_COMMENTS', 35), maxRepliesPerComment: commentLimit('TIKTOK_REPLIES', 10) }) },
+  facebook: { label: 'Facebook', actor: 'apify/facebook-search-scraper', input: (target = defaultTarget) => ({ categories: socialQueries('facebook', target), searchType: 'posts', resultsLimit: 250 }) },
 };
 // Fase kedua: KOMENTAR pada konten yang sudah ditemukan. Nama field dibatasi pada schema
 // actor yang terverifikasi (penjaga pra-jalan yang sama berlaku), dan setiap fase dicatat
@@ -405,8 +452,9 @@ export const apifyCommentRuns = {
 };
 const apifyTextFields = ['text', 'fullText', 'caption', 'content', 'body', 'reviewText', 'comment', 'shortText'];
 // Actor menerima batas jumlah hasil dari namanya sendiri. Nilai ini bukan batas milik kolektor,
-// tetapi tetap harus dilaporkan karena memotong hasil di sisi actor.
-const apifyResultCapFields = ['maxItems', 'resultsLimit', 'resultsPerPage', 'maxResult', 'requestsPerCrawl', 'limit'];
+// tetapi tetap harus dilaporkan karena memotong hasil di sisi actor. Batas komentar per video
+// (TikTok) ikut daftar karena ia memang memotong jumlah teks yang kembali ke dataset.
+const apifyResultCapFields = ['maxItems', 'resultsLimit', 'resultsPerPage', 'maxResult', 'requestsPerCrawl', 'limit', 'topLevelCommentsPerPost', 'maxRepliesPerComment'];
 export function apifyResultCap(input) {
   for (const field of apifyResultCapFields) {
     const value = Number(input?.[field]);
@@ -442,20 +490,21 @@ function apifyItems(value) {
   }
   return [];
 }
-function apifyRecords(item, platform, actor, runId, retrievedAt) {
+function apifyRecords(item, platform, actor, runId, retrievedAt, target = defaultTarget) {
   const found = [];
   let offIdentity = 0, contextOnly = 0;
+  const identity = identityFor(target);
   const parentId = pickField(item, apifyIdFields);
   const postUrl = pickField(item, apifyUrlFields);
   const postText = sanitizeText(pickField(item, apifyTextFields));
   // Actor pencarian sosial mengembalikan hasil longgar (mis. "wandering merchant",
   // "Natalie Merchant wonder"). Teks yang tidak menyebut identitas produk dibuang di
   // sini, tetapi jumlahnya dilaporkan agar tidak ada yang hilang tanpa tercatat.
-  const postRelevant = merchantIdentity.test(postText);
+  const postRelevant = identity.test(postText);
   const collect = (source, parent) => {
     const text = sanitizeText(pickField(source, apifyTextFields));
     if (!text) return;
-    if (!(postRelevant || merchantIdentity.test(text))) { offIdentity++; if (hasMerchantContext(text) || hasMerchantContext(postText)) contextOnly++; return; }
+    if (!(postRelevant || identity.test(text))) { offIdentity++; if (hasMerchantContext(text, target) || hasMerchantContext(postText, target)) contextOnly++; return; }
     const sourceId = pickField(source, apifyIdFields);
     // Item tanpa identitas sumber tetap disimpan sebagai teks nyata, tetapi ID lokal dibuat dari
     // hash isinya dan hal itu dicatat pada provenance agar tidak disangka ID dari platform.
@@ -467,7 +516,7 @@ function apifyRecords(item, platform, actor, runId, retrievedAt) {
       id, platform, author: sanitizeText(pickField(source, apifyAuthorFields)) || 'N/A', text, rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,
       date: when?.slice(0, 10) ?? null, publishedAt: when,
       sourceUrl: url && validSource(url, platform) ? url : null, retrievedAt, parentId: parent ?? null,
-      context: parent ? { postId: parent, postUrl: postUrl && validSource(postUrl, platform) ? postUrl : null, product: 'wondr-merchant' } : undefined,
+      context: parent ? { postId: parent, postUrl: postUrl && validSource(postUrl, platform) ? postUrl : null, product: target.id ?? defaultTarget.id } : undefined,
       provenance: `Diambil melalui Apify actor ${actor} (run ${runId}); teks disimpan apa adanya dari item dataset setelah markup dibersihkan. ${sourceId ? 'ID ulasan berasal dari item sumber.' : 'Item sumber tidak membawa ID, sehingga identitas di bawah adalah hash lokal dari teks ini, bukan ID dari platform.'} Waktu memakai nilai yang dikembalikan actor; tanggal yang tidak dapat dibaca dibiarkan kosong.`,
     });
   };
@@ -475,11 +524,11 @@ function apifyRecords(item, platform, actor, runId, retrievedAt) {
   for (const key of ['comments', 'reviews']) if (Array.isArray(item[key])) for (const child of item[key]) if (child && typeof child === 'object') collect(child, parentId);
   return { records: found, offIdentity, contextOnly };
 }
-export function apifyConfiguration(env = process.env) {
+export function apifyConfiguration(env = process.env, target = defaultTarget) {
   const token = env.APIFY_API_TOKEN?.trim() || '';
   const channels = Object.fromEntries(Object.entries(apifyChannels).map(([id, channel]) => {
     const upper = id.toUpperCase();
-    let input = channel.input(), inputError = null;
+    let input = channel.input(target), inputError = null;
     const rawInput = env[`APIFY_INPUT_${upper}`]?.trim();
     if (rawInput) { try { input = JSON.parse(rawInput); } catch { inputError = `APIFY_INPUT_${upper} bukan JSON yang valid.`; } }
     return [id, { label: channel.label, actor: env[`APIFY_ACTOR_${upper}`]?.trim() || channel.actor, input, inputError }];
@@ -556,7 +605,7 @@ export async function apifyLinkedDatasetIds(links, token, fetcher = fetch) {
   }
   return { ids: [...ids], failed };
 }
-export async function collectApify(id, fetcher = fetch, config = apifyConfiguration(), { waitMs = 180000, pollMs = 5000, pageLimit = 1000, resume = null } = {}) {
+export async function collectApify(id, fetcher = fetch, config = apifyConfiguration(), { waitMs = 180000, pollMs = 5000, pageLimit = 1000, resume = null, target = defaultTarget } = {}) {
   const channel = config.channels[id];
   if (config.status === 'needs_setup') return { id, status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
   if (channel.inputError) return { id, status: 'error', fetched: null, message: `${channel.inputError} Belum ada permintaan dikirim; data tersimpan tetap dipertahankan.`, reviews: [] };
@@ -589,7 +638,7 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
             if (note) markerNotes.add(String(note).slice(0, 160));
           }
           const before = reviews.size;
-          const parsed = apifyRecords(item, id, actor, runId, new Date().toISOString());
+          const parsed = apifyRecords(item, id, actor, runId, new Date().toISOString(), target);
           stats.offIdentity += parsed.offIdentity;
           stats.contextOnly += parsed.contextOnly;
           for (const record of parsed.records) if (!reviews.has(record.id)) { reviews.set(record.id, record); if (record.parentId) stats.nested++; }
@@ -675,7 +724,7 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
   const followTruncated = Boolean(followCap && follow?.datasetId && stats.commentItems >= followCap.value);
 
   const emptyEvidence = stats.markers ? ` Actor mengembalikan ${stats.markers} penanda tidak ada hasil${markerNotes.size ? ` (${[...markerNotes].join('; ')})` : ''} untuk kueri ini, artinya kanal dapat dihubungi tetapi tidak ada konten publik yang cocok.` : '';
-  const identityEvidence = stats.offIdentity ? ` ${stats.offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas wondr merchant, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.${stats.contextOnly ? ` Dari jumlah itu, ${stats.contextOnly} teks menyebut kata konteks merchant (${merchantKeywords.slice(1).join(', ')}) tanpa menyebut produk ini — kemungkinan milik aplikasi merchant bank lain, sehingga tetap tidak dihitung.` : ''}` : '';
+  const identityEvidence = stats.offIdentity ? ` ${stats.offIdentity} teks lain dikembalikan actor tetapi tidak menyebut identitas ${targetLabel(target)}, sehingga tidak disimpan sebagai konten produk; pencarian sosial bekerja longgar dan teks tersebut bukan milik aplikasi ini.${stats.contextOnly ? ` Dari jumlah itu, ${stats.contextOnly} teks hanya menyebut kata aspek umum (${merchantKeywords.slice(1).join(', ')}) tanpa menyebut produk ini — kata itu juga dimiliki produk lain, sehingga tetap tidak dihitung.` : ''}` : '';
   // Batas hasil pada input actor dilaporkan apa adanya: jika jumlah item yang dikembalikan
   // mencapai batas itu, masih ada konten yang belum terbaca dan itu tidak boleh disebut lengkap.
   const cap = apifyResultCap(channel.input);
@@ -707,14 +756,15 @@ export async function collectApify(id, fetcher = fetch, config = apifyConfigurat
 }
 // Google Places API (New) adalah jalur resmi untuk ulasan di Google Maps. Kunci hanya dikirim
 // sebagai header X-Goog-Api-Key; tidak pernah masuk URL, browser, atau pesan galat.
-export function placesConfiguration(env = process.env) {
+export function placesConfiguration(env = process.env, target = defaultTarget) {
   const apiKey = env.GOOGLE_PLACES_API_KEY?.trim() || '';
-  const queries = [...new Set((env.GOOGLE_PLACES_QUERIES || 'wondr merchant,wondr merchant by BNI').split(',').map(query => query.trim()).filter(Boolean))];
+  const defaultQueries = [...new Set([target.entityName, target.name].filter(Boolean))].join(',');
+  const queries = [...new Set((env.GOOGLE_PLACES_QUERIES || defaultQueries).split(',').map(query => query.trim()).filter(Boolean))];
   return {
     apiKey, queries,
     status: apiKey ? 'ready' : 'needs_setup',
     message: apiKey
-      ? 'Kunci Google Places API tersedia pada server, tetapi akses belum diuji. Tarik Analisis akan mencari place wondr merchant melalui API resmi; status ini belum berarti ulasan teks dapat diambil.'
+      ? `Kunci Google Places API tersedia pada server, tetapi akses belum diuji. Tarik Analisis akan mencari place "${targetLabel(target)}" melalui API resmi; status ini belum berarti ulasan teks dapat diambil.`
       : 'Konektor Google Places tersedia, tetapi GOOGLE_PLACES_API_KEY belum tersedia pada environment server. Pasang kunci melalui environment server atau berkas .env lokal, bukan kolom browser atau chat. Belum ada data yang diambil.',
   };
 }
@@ -737,7 +787,7 @@ async function placesRequest(path, fieldMask, apiKey, fetcher, options = {}) {
   }
   return payload ?? {};
 }
-function placesReview(placeId, review, retrievedAt) {
+function placesReview(placeId, review, retrievedAt, product = defaultTarget.id) {
   const text = typeof review?.text?.text === 'string' ? review.text.text.trim() : '';
   if (!text) return null;
   const hash = createHash('sha256').update(`${placeId}|${text}`).digest('hex').slice(0, 32);
@@ -749,12 +799,14 @@ function placesReview(placeId, review, retrievedAt) {
     rating: Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null,
     date: when, publishedAt: published, sourceUrl: `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeId)}`,
     retrievedAt, parentId: placeId,
-    context: { placeId, product: 'wondr-merchant' },
+    context: { placeId, product },
     provenance: 'Google Places API (New); teks ulasan disimpan apa adanya. Identitas ulasan adalah hash lokal karena API tidak mengembalikan ID ulasan yang stabil.',
   };
 }
-export async function collectGooglePlaces(fetcher = fetch, config = placesConfiguration()) {
+export async function collectGooglePlaces(fetcher = fetch, config = placesConfiguration(), { target = defaultTarget } = {}) {
   if (config.status === 'needs_setup') return { id: 'googlemaps', status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
+  const identity = identityFor(target);
+  const product = target.id ?? defaultTarget.id;
   const places = new Map();
   const reviews = new Map();
   const issues = [];
@@ -781,13 +833,13 @@ export async function collectGooglePlaces(fetcher = fetch, config = placesConfig
       } catch (error) { issues.push(`kueri "${query}": ${error.message}`); break; }
     } while (pageToken);
   }
-  const matches = [...places.values()].filter(place => merchantIdentity.test(place.name));
+  const matches = [...places.values()].filter(place => identity.test(place.name));
   for (const place of matches) {
     try {
       const detail = await placesRequest(`/${encodeURIComponent(place.id)}`, 'id,displayName,reviews,rating,userRatingCount', config.apiKey, fetcher);
       reviewFieldsSeen += Array.isArray(detail.reviews) ? detail.reviews.length : 0;
       for (const review of detail.reviews ?? []) {
-        const record = placesReview(place.id, review, new Date().toISOString());
+        const record = placesReview(place.id, review, new Date().toISOString(), product);
         if (record && !reviews.has(record.id)) reviews.set(record.id, record);
       }
     } catch (error) { issues.push(`ulasan place ${place.id}: ${error.message}`); }
@@ -795,7 +847,7 @@ export async function collectGooglePlaces(fetcher = fetch, config = placesConfig
   const reachable = responded > 0;
   const status = issues.length ? (reachable ? 'partial' : 'error') : 'success';
   const nearest = [...places.values()].slice(0, 3).map(place => place.name).filter(Boolean).join('; ');
-  const message = `Google Places API (New) menjawab ${responded} dari ${config.queries.length} kueri identitas produk dan mengembalikan ${places.size} place berbeda; ${matches.length} di antaranya bernama wondr merchant. ${reviewFieldsSeen ? `${reviewFieldsSeen} teks ulasan dikembalikan API.` : 'API tidak menyertakan satu pun teks ulasan pada pemeriksaan ini.'} ${nearest ? `Contoh hasil terdekat: ${nearest}.` : 'Tidak ada place yang dikembalikan.'} Place yang bukan aplikasi ini tidak dihitung sebagai sentimen merchant. Tidak ada upaya mengambil ulasan yang tidak disediakan API.`;
+  const message = `Google Places API (New) menjawab ${responded} dari ${config.queries.length} kueri identitas produk dan mengembalikan ${places.size} place berbeda; ${matches.length} di antaranya bernama ${targetLabel(target)}. ${reviewFieldsSeen ? `${reviewFieldsSeen} teks ulasan dikembalikan API.` : 'API tidak menyertakan satu pun teks ulasan pada pemeriksaan ini.'} ${nearest ? `Contoh hasil terdekat: ${nearest}.` : 'Tidak ada place yang dikembalikan.'} Place yang bukan aplikasi ini tidak dihitung sebagai sentimen pelanggan. Tidak ada upaya mengambil ulasan yang tidak disediakan API.`;
   return {
     id: 'googlemaps', status, fetched: reviews.size, reviews: [...reviews.values()], rating: matches[0]?.rating ?? null, ratingCount: matches[0]?.ratingCount ?? null,
     coverage: { queries: config.queries.length, answered: responded, pagesRead, placesFound: places.size, productMatches: matches.length, reviewFieldsSeen, sampleLimit: null, reviewTextServed: reviewFieldsSeen > 0 },
@@ -852,11 +904,15 @@ export function parseFeed(xml) {
   });
 }
 const integerText = value => new Intl.NumberFormat('id-ID').format(value);
-export async function collectNews(fetcher = fetch, config = newsConfiguration()) {
+// Judul berita kadang menulis nama produk tanpa spasi ("wondrmerchant"), jadi pola suaka RSS
+// lebih longgar daripada pola identitas analisis. Daftar bawaan dipertahankan apa adanya.
+const builtInNewsIdentity = /\bwondr\s*(?:by\s*)?merchant\b|id\.bni\.wfb/i;
+const newsIdentity = target => isWondrTarget(target) ? builtInNewsIdentity : identityFor(target);
+export async function collectNews(fetcher = fetch, config = newsConfiguration(), { target = defaultTarget } = {}) {
   if (config.status === 'needs_setup') return { id: 'news', status: 'needs_setup', fetched: null, message: config.message, reviews: [] };
   const itemLimit = Number.isInteger(config.itemLimit) && config.itemLimit > 0 ? config.itemLimit : 200;
   const retrievedAt = new Date().toISOString();
-  const identity = /\bwondr\s*(?:by\s*)?merchant\b|id\.bni\.wfb/i;
+  const identity = newsIdentity(target);
   const rows = new Map();
   const issues = [];
   let feedsRead = 0, itemsRead = 0, identityFiltered = 0, truncated = false;
@@ -888,40 +944,40 @@ export async function collectNews(fetcher = fetch, config = newsConfiguration())
         date: item.stamp && validDate(item.stamp.slice(0, 10)) ? item.stamp.slice(0, 10) : null,
         publishedAt: item.stamp, sourceUrl: item.link || null, retrievedAt,
         context: { outlet, feedUrl },
-        provenance: `Suaka RSS resmi ${outlet}; judul dan ringkasan disimpan apa adanya, bukan isi artikel penuh.`,
+        provenance: `Suaka RSS resmi ${outlet}; judul dan ringkasan disimpan apa adanya sampai 1.500 karakter pertama, bukan isi artikel penuh.`,
       });
     }
   }
   const coverage = { feeds: config.feeds.length, feedsRead, itemsRead, identityFiltered, productMatches: rows.size, sampleLimit: itemLimit, sampleLimitField: 'butiran per suaka', possiblyTruncated: truncated };
-  const base = `${rows.size} judul & ringkasan menyebut identitas produk dari ${integerText(itemsRead)} butir pada ${feedsRead} dari ${config.feeds.length} suaka RSS; ${identityFiltered} butir lain tidak menyebut wondr merchant sehingga tidak disimpan.`;
+  const base = `${rows.size} judul & ringkasan menyebut identitas produk dari ${integerText(itemsRead)} butir pada ${feedsRead} dari ${config.feeds.length} suaka RSS; ${identityFiltered} butir lain tidak menyebut ${targetLabel(target)} sehingga tidak disimpan.`;
   const limits = truncated ? ' Batas baca per suaka tercapai, jadi sebagian butir lama tidak diperiksa — bukan berarti tidak ada liputan.' : '';
-  const message = `${base}${issues.length ? ` Sebagian suaka gagal: ${issues.join('; ')}.` : ' Semua suaka yang terdaftar dapat dibaca.'}${limits} Berita bukan ulasan pelanggan dan tidak dihitung sebagai sentimen merchant.`;
+  const message = `${base}${issues.length ? ` Sebagian suaka gagal: ${issues.join('; ')}.` : ' Semua suaka yang terdaftar dapat dibaca.'}${limits} Berita bukan ulasan pelanggan dan tidak dihitung sebagai sentimen pelanggan.`;
   return { id: 'news', status: issues.length || truncated ? 'partial' : 'success', fetched: rows.size, message, reviews: [...rows.values()], coverage };
 }
-export function channelConfigurations(env = process.env) {
-  const apify = apifyConfiguration(env);
-  return new Map([['youtube', youtubeConfiguration(env)], ['googlemaps', placesConfiguration(env)], ['news', newsConfiguration(env)], ...Object.keys(apifyChannels).map(id => [id, apify])]);
+export function channelConfigurations(env = process.env, target = defaultTarget) {
+  const apify = apifyConfiguration(env, target);
+  return new Map([['youtube', youtubeConfiguration(env, target)], ['googlemaps', placesConfiguration(env, target)], ['news', newsConfiguration(env)], ...Object.keys(apifyChannels).map(id => [id, apify])]);
 }
 // Peta id platform -> kolektornya. Dipakai oleh collectOnline (semua kanal sekaligus)
 // dan collectPlatform (satu kanal per permintaan, agar antarmuka dapat menampilkan
 // progres yang nyata dan agar function serverless tidak perlu menahan 3 menit).
-// Kanal yang kolektornya sudah menerima target analisis. Kanal lain sengaja DITOLAK bila
-// project memakai target selain bawaan: lebih baik satu kanal dilaporkan tidak dijalankan
-// daripada menyimpan teks milik aplikasi lain ke dalam project yang salah.
-export const targetReadyChannels = new Set(['play', 'appstore']);
+// Setiap kolektor sudah menerima target analisis: kueri pencarian sosial, frasa YouTube,
+// kueri Places, dan suaka RSS semuanya diturunkan dari identitas project, dan teks yang tidak
+// menyebut identitas project dibuang serta dilaporkan jumlahnya.
+export const targetReadyChannels = new Set(['play', 'appstore', 'youtube', 'googlemaps', 'news', ...Object.keys(apifyChannels)]);
 export function onlineCollectors({ apifyWaitMs = 180000, resume = new Map(), target = defaultTarget } = {}) {
-  const apify = apifyConfiguration();
-  const youtube = youtubeConfiguration();
-  const places = placesConfiguration();
-  const news = newsConfiguration();
+  const apify = apifyConfiguration(process.env, target);
+  const youtube = youtubeConfiguration(process.env, target);
+  const places = placesConfiguration(process.env, target);
+  const news = newsConfiguration(process.env);
   const jobs = new Map([
     ['play', () => collectGoogle(fetch, { target })],
     ['appstore', () => collectApple(fetch, { target })],
-    ['youtube', () => collectYouTube(fetch, youtube)],
-    ['googlemaps', () => collectGooglePlaces(fetch, places)],
-    ['news', () => collectNews(fetch, news)],
+    ['youtube', () => collectYouTube(fetch, youtube, { target })],
+    ['googlemaps', () => collectGooglePlaces(fetch, places, { target })],
+    ['news', () => collectNews(fetch, news, { target })],
   ]);
-  for (const id of Object.keys(apifyChannels)) jobs.set(id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id) }));
+  for (const id of Object.keys(apifyChannels)) jobs.set(id, () => collectApify(id, fetch, apify, { waitMs: apifyWaitMs, resume: resume.get(id), target }));
   if (!isWondrTarget(target)) for (const id of [...jobs.keys()]) if (!targetReadyChannels.has(id)) {
     jobs.set(id, () => ({ id, status: 'unsupported', fetched: 0, reviews: [], message: `Kanal ini belum dapat diarahkan ke target "${target.name}"; penarikan dijalankan pada kanal yang sudah mendukung target project.` }));
   }

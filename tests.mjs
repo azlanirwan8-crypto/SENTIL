@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, rulesFor, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, rulesFor, scoreClassifier, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
 import { createDashboardServer, deploymentConfig } from './server.mjs';
 import { mkdtemp, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -131,6 +131,58 @@ test('negation, later complaints and wrong-product text stay honest after the cl
   const competitor = classifyReview({ platform:'youtube', id:'competitor', author:'Budi', date:'2026-10-20', text:'QRIS merchant saya lambat bang, pakai aplikasi bank lain', sourceUrl:'https://www.youtube.com/watch?v=abc', context:{ product:'wondr-merchant' } });
   assert.equal(competitor.relevance.status,'uncertain');assert.equal(competitor.sentiment,'unclassified','keluhan aplikasi bank lain tidak masuk NSS');
 });
+// Kalimat uji di luar dataset dasar: diperiksa terhadap label yang seharusnya, supaya perubahan
+// aturan ketahuan bila merusak teks yang tidak ikut menyusun aturan tersebut.
+test('kalimat Indonesia di luar dataset tetap dinilai benar', () => {
+  const probes = [
+    ['Aplikasi ini scam, jangan instal', 'negative'],
+    ['Setoran saya tidak masuk sejak lusa', 'negative'],
+    ['Gak ada kendala, semua lancar', 'positive'],
+    ['tidak ok aplikasi ini', 'negative'],
+    ['Sangat membantu, terima kasih atas respons cepatnya', 'positive'],
+    ['Moga2 aman aja ke depannya', 'unclassified'],
+    ['Dulu lancar, sekarang tidak lancar', 'negative'],
+    ['masih perlu banyak pengembangan, aplikasi biru sebelah sudah bisa semua', 'negative'],
+    ['Pencairan dana lama banget, kecewa', 'negative'],
+    ['tampilannya menarik, mudah dipakai', 'positive'],
+  ];
+  for (const [text, want] of probes) assert.equal(classifyText(text).sentiment, want, `salah nilai: ${text}`);
+});
+
+// Ulasan toko yang memuji aplikasi sebelah atau belum pernah mencoba bukan pengalaman produk ini,
+// sehingga keluar dari pembagi persentase dan NSS.
+test('ulasan toko yang memuji pesaing atau belum mencoba tidak dihitung sebagai sentimen', () => {
+  const store = (text, id) => ({ platform: 'play', id, author: 'Pedagang', date: '2026-10-01', text, sourceUrl: 'https://play.google.com/store/apps/details?id=id.bni.wfb' });
+  const rival = classifyReview(store('Saya pindah ke aplikasi sebelah yang jauh lebih bagus', 'rival-1'));
+  assert.equal(rival.sentiment, 'unclassified', 'pujian untuk produk lain tidak menjadi positif');
+  assert.equal(rival.relevance.status, 'uncertain');
+  const hypothetical = classifyReview(store('Saya belum pernah mencoba tapi sepertinya bagus', 'hyp-1'));
+  assert.equal(hypothetical.sentiment, 'unclassified', 'hipotesis belum menjadi pengalaman pakai');
+  assert.equal(hypothetical.relevance.status, 'uncertain');
+  const own = classifyReview(store('wondr merchant membantu pencatatan jadi mudah', 'own-1'));
+  assert.equal(own.sentiment, 'positive', 'teks yang benar-benar pengalaman produk ini tetap dinilai');
+});
+
+test('kualitas label terukur: kappa dan presisi dihitung dari baris bernilai manusia', () => {
+  const gold = [
+    { text: 'aplikasi ini scam', sentiment: 'negative', labeling: 'manual' },
+    { text: 'sangat membantu', sentiment: 'positive', labeling: 'manual' },
+    { text: 'sangat membantu', sentiment: 'negative', labeling: 'manual' },
+    { text: 'oke lah', sentiment: 'positive', labeling: 'manual' },
+    { text: 'teks lain tanpa label manusia', sentiment: 'positive', labeling: 'rules-v1' },
+  ];
+  const score = scoreClassifier(gold);
+  assert.equal(score.n, 4, 'hanya baris bernilai manusia yang ikut diukur');
+  assert.equal(score.agree, 3);
+  assert.equal(score.perClass.negative.support, 2);
+  assert.equal(score.perClass.negative.recall, 0.5, 'satu keluhan yang terlewat menurunkan rekal negatif');
+  assert.equal(score.perClass.positive.recall, 1);
+  assert.equal(score.perClass.positive.precision, 2/3, 'satu keluhan ikut disebut positif menurunkan presisi positif');
+  assert.ok(Number.isFinite(score.kappa) && score.kappa < 1, 'kappa dihitung, bukan diklaim');
+  assert.equal(scoreClassifier([]).n, 0, 'tanpa sampel hasilnya nol, bukan angka palsu');
+  assert.equal(scoreClassifier([]).kappa, null);
+});
+
 test('unknown labels and missing dates are not converted to neutral or current dates',()=>{
   const result=upsertReviews([],[{...sample,date:null,author:'N/A',text:'apa ini',rating:5}],'2026-10-23');
   const r=result.reviews[0];assert.equal(r.date,null);assert.equal(r.author,'N/A');assert.equal(r.sentiment,'unclassified');
@@ -208,6 +260,15 @@ test('projection fits weekly counts by least squares and reports a Poisson range
   assert.equal(result.themes.length,1);
   assert.equal(result.themes[0].name,'Akses & performa aplikasi');
   assert.ok(Math.abs(result.themes[0].projected-46/3)<1e-9);
+});
+test('NSS proyeksi hanya diberi pita bila jumlah teks berlabel mencukupi',()=>{
+  const thin=projection(projectedFixture({ negative:[1,1,1,1,1,1,1,1], positive:[1,1,1,1,1,1,1,1] }));
+  assert.equal(thin.ok,true,'syarat jumlah ulasan untuk menghitung proyeksi terpenuhi');
+  assert.equal(thin.nssProjected.sample,8,'jumlah teks berlabel yang diproyeksikan ikut dilaporkan');
+  assert.equal(nssBand(thin.nssProjected.point,thin.nssProjected.sample).id,'belum-dinilai','di bawah 20 teks berlabel, pita tidak diberikan');
+  const rich=projection(projectedFixture({ negative:[8,8,8,8,8,8,8,8], positive:[8,8,8,8,8,8,8,8] }));
+  assert.ok(rich.nssProjected.sample>=20);
+  assert.notEqual(nssBand(rich.nssProjected.point,rich.nssProjected.sample).id,'belum-dinilai');
 });
 test('stable weekly volume is reported as no measurable direction',()=>{
   const result=projection(projectedFixture({ negative:[2,2,2,2,2,2,2,2], positive:[3,3,3,3,3,3,3,3] }));
@@ -364,14 +425,18 @@ test('App Store pull follows the project target and never the default id', async
   assert.equal(requested.some(url => url.includes('/id=1111222222/')), true, 'feed ulasan project');
   assert.doesNotMatch(requested.join(' '), /6741567238/);
 });
-test('Channels that are not target-aware are refused rather than filled with the wrong app', async () => {
+test('Setiap kanal mengambil identitas dari target project, bukan dari aplikasi bawaan', async () => {
   const other = normalizeTarget({ entityName: 'tokopedia seller', playAppId: 'com.example.seller', appleAppId: '1111222222' });
   const jobs = onlineCollectors({ target: other });
-  const guarded = await jobs.get('youtube')();
-  assert.equal(guarded.status, 'unsupported');
-  assert.equal(guarded.reviews.length, 0);
-  assert.match(guarded.message, /belum dapat diarahkan ke target "tokopedia seller"/);
-  assert.equal(onlineCollectors().get('youtube') === undefined, false, 'target bawaan tidak terkena pagar ini');
+  assert.deepEqual([...jobs.keys()].sort(), [...targetReadyChannels].sort(), 'tidak ada kanal yang sengaja tidak dijalankan karena target');
+  assert.doesNotMatch(youtubeConfiguration({ YOUTUBE_API_KEY: 'test' }, other).message, /wondr/i, 'pesan konektor menyebut aplikasi project');
+  assert.match(youtubeConfiguration({ YOUTUBE_API_KEY: 'test' }, other).message, /tokopedia seller/);
+  assert.deepEqual(placesConfiguration({}, other).queries, ['tokopedia seller']);
+  assert.deepEqual(apifyConfiguration({}, other).channels.x.input.searchTerms, ['"tokopedia seller"', 'tokopediaseller', 'com.example.seller']);
+  assert.doesNotMatch(JSON.stringify(apifyConfiguration({}, other).channels), /wondr/i, 'kueri actor tidak membawa aplikasi bawaan');
+  const builtIn = apifyConfiguration({}, defaultTarget).channels;
+  assert.deepEqual(builtIn.x.input.searchTerms, ['"wondr merchant"', '"wondr merchant by BNI"', 'wondrmerchant', '"wondr merchant" BNI'], 'kueri aplikasi bawaan dipertahankan apa adanya');
+  assert.equal(builtIn.instagram.input.search, 'wondrmerchant, wondrmerchantbni, wondrmerchantbybni');
 });
 test('Target identity is built from the target, and only from a confirmed discovery', () => {
   assert.equal(identityPattern(defaultTarget).test('wondr merchant gagal'), true);
@@ -694,7 +759,16 @@ test('Google parser distinguishes readable empty query from null RPC and changed
   assert.deepEqual(parseGoogleReviews(rpcFixture([])).reviews,[]);
   assert.throws(()=>parseGoogleReviews(JSON.stringify([['wrb.fr','oCPfdb',null]])),/rpc_error/);
   assert.throws(()=>parseGoogleReviews('not a response'),/parse_error/);
-  assert.throws(()=>parseGoogleReviews(rpcFixture([[...googleRow.slice(0,2),9,...googleRow.slice(3)]])));
+});
+test('Satu baris Google yang rusak tidak memotong halaman: baris itu dilewati dan dihitung',()=>{
+  const bad=[...googleRowB.slice(0,2),9,...googleRowB.slice(3)];
+  const badDate=[...googleRowC.slice(0,5),['not-a-number',0]];
+  const mixed=parseGoogleReviews(rpcFixture([googleRow,bad,badDate,googleRowC],'next'));
+  assert.equal(mixed.rows,4);
+  assert.equal(mixed.skipped,2);
+  assert.deepEqual(mixed.reviews.map(r=>r.id),[googleRow[0],googleRowC[0]]);
+  assert.equal(mixed.cursor,'next','paginasi tetap dilanjutkan walau ada baris rusak');
+  assert.equal(parseGoogleReviews(rpcFixture([googleRow])).skipped,0);
 });
 test('Play install range is read only from the published listing block',()=>{
   assert.equal(parsePlayInstalls('<div class="wVqUob"><div class="ClM7O">10K+</div><div class="g1rdde">Downloads</div></div>'),'10K+');
@@ -801,6 +875,19 @@ test('A failing first review pool still lets the second pool be read',async()=>{
   assert.match(result.message,/kumpulan bahasa Indonesia: network_error/);
   assert.match(result.message,/2 ulasan kumpulan bahasa Inggris/);
 });
+test('Satu baris Google yang rusak hanya dilewati dan diumumkan, paginasi kanal tetap selesai',async()=>{
+  const result=await collectGoogle(async url=>{
+    if(String(url).startsWith('https://play.google.com/store/apps/details'))return new Response(listingFixture);
+    const hl=new URL(url).searchParams.get('hl');
+    if(hl==='id')return new Response(rpcFixture([googleRow,[...googleRowB.slice(0,2),9,...googleRowB.slice(3)],googleRowB]));
+    return new Response(rpcFixture([googleRowC]));
+  });
+  assert.equal(result.status,'partial','baris yang hilang tidak boleh dilaporkan sebagai penarikan lengkap');
+  assert.equal(result.coverage.skipped,1);
+  assert.equal(result.fetched,3,'baris sehat pada halaman yang sama tetap ikut dihitung');
+  assert.equal(result.coverage.pools.every(p=>p.complete),true,'sisa halaman tetap terbaca sampai sumber habis');
+  assert.match(result.message,/dilewati: 1/);
+});
 const appleReviewFixture={$kind:'Review',id:'14696447164',reviewerName:'okerbk',title:'Fresh & helpful',contents:'Suka bgt sama appsnya',rating:5,date:'2026-10-22T09:02:33.000Z'};
 const appleEntryFixture={id:{label:'14696447164'},author:{name:{label:'okerbk'}},title:{label:'Fresh & helpful'},content:{label:'Suka bgt sama appsnya'},'im:rating':{label:'5'},updated:{label:'2026-10-22T02:02:33-07:00'}};
 const appleFeedOnlyFixture={id:{label:'14000000001'},author:{name:{label:'pengguna-lain'}},title:{label:'Lain'},content:{label:'Pencairan lambat'},'im:rating':{label:'2'},updated:{label:'2026-09-01T01:02:03-07:00'}};
@@ -879,11 +966,32 @@ test('Apple continuation link is followed when it stays on the same public app p
   assert.equal(result.fetched,2);
   assert.deepEqual(result.reviews.map(r=>r.id).sort(),['apple-14696447164','apple-14696447165']);
 });
-test('Apple feed parser rejects a changed structure instead of reporting zero reviews',()=>{
+test('Kanal App Store dilaporkan parsial bila ada baris yang dilewati',async()=>{
+  const result=await collectApple(async url=>{
+    const u=String(url);
+    if(u.includes('customerreviews'))return new Response(u.includes('page=1/')?appleFeed([{id:{label:'rusak'},content:{label:7}},appleFeedOnlyFixture]):appleFeed([]));
+    return new Response(applePage([{review:appleReviewFixture},{review:{...appleReviewFixture,id:'rusak',rating:9}}]));
+  });
+  assert.equal(result.status,'partial');
+  assert.equal(result.coverage.skipped,2);
+  assert.equal(result.fetched,2);
+  assert.deepEqual(result.reviews.map(r=>r.id).sort(),['apple-14000000001','apple-14696447164']);
+  assert.match(result.message,/dilewati: 1 pada halaman ulasan, 1 pada feed/);
+});
+test('Apple feed parser rejects a changed feed but only skips one malformed entry',()=>{
   assert.throws(()=>parseAppleRss('bukan json'),/parse_error/);
-  assert.throws(()=>parseAppleRss(JSON.stringify({feed:{entry:[{id:{label:'1'},content:{label:5}}]}})),/parse_error/);
+  assert.throws(()=>parseAppleRss(JSON.stringify({notFeed:{}})),/feed ulasan App Store tidak ditemukan/);
+  const mixed = parseAppleRss(appleFeed([{id:{label:'rusak'},content:{label:5}},appleEntryFixture]));
+  assert.equal(mixed.skipped,1,'entri rusak dihitung, bukan menghapus halaman');
+  assert.deepEqual(mixed.reviews.map(r=>r.id),['apple-14696447164']);
   assert.deepEqual(parseAppleRss(appleFeed([])).reviews,[]);
   assert.equal(parseAppleRss(appleFeed([appleEntryFixture])).reviews[0].id,'apple-14696447164');
+});
+test('Satu ulasan Apple yang berubah bentuknya tidak menghapus seluruh halaman ulasan',()=>{
+  const parsed = parseApplePage(applePage([{review:appleReviewFixture},{review:{...appleReviewFixture,id:'rusak',rating:9}},'bukan ulasan']));
+  assert.equal(parsed.skipped,2);
+  assert.deepEqual(parsed.reviews.map(r=>r.id),['apple-14696447164']);
+  assert.equal(parsed.ratingCount,17,'angka agregat halaman tetap terbaca walau ada baris rusak');
 });
 
 // Synthetic API fixtures stay in memory or temporary storage; no collector may use live fetch.
@@ -1533,6 +1641,42 @@ test('Apify connector sends no request until a token exists on the server', asyn
   }
 });
 
+test('Kanal sosial memakai kueri dan identitas target project, bukan aplikasi bawaan', async () => {
+  const other = normalizeTarget({ entityName: 'tokopedia seller', playAppId: 'com.example.seller', appleAppId: '1111222222' });
+  const items = [
+    { id: 'a', text: 'wondr merchant saya gagal login lagi', date: '2026-10-20T04:05:06.000Z', url: 'https://x.com/a' },
+    { id: 'b', text: 'tokopedia seller pencairannya lama', date: '2026-10-21T04:05:06.000Z', url: 'https://x.com/b' },
+  ];
+  const { calls, fetcher } = socialRoutes(items);
+  const config = apifyConfiguration({ APIFY_API_TOKEN: apifyToken }, other);
+  assert.deepEqual(config.channels.x.input.searchTerms, ['"tokopedia seller"', 'tokopediaseller', 'com.example.seller']);
+  const result = await collectApify('x', fetcher, config, { pollMs: 0, target: other });
+  assert.deepEqual(result.reviews.map(review => review.id), ['b'], 'teks aplikasi lain tidak masuk project ini');
+  assert.equal(result.coverage.identityFiltered, 1);
+  assert.match(result.message, /tidak menyebut identitas tokopedia seller/);
+  assert.equal(result.reviews[0].context, undefined);
+  assert.ok(calls.length > 0);
+});
+test('Kanal YouTube dan Places mencari aplikasi project, bukan aplikasi bawaan', async () => {
+  const other = normalizeTarget({ entityName: 'duitku', playAppId: 'com.tech.duitku', appleAppId: '1111222222' });
+  const requested = [];
+  const search = await collectYouTube(async url => {
+    const parsed = new URL(String(url));
+    requested.push(`${parsed.pathname}?${parsed.searchParams}`);
+    if (parsed.pathname.endsWith('/search')) return new Response(JSON.stringify({ items: [] }));
+    throw new Error('tak terduga');
+  }, youtubeConfiguration({ YOUTUBE_API_KEY: youtubeTestKey }, other), { target: other });
+  assert.match(search.scope.query, /"duitku"/, 'frasa pencarian mengikuti nama aplikasi project');
+  assert.ok(requested.some(entry => entry.includes('q=%22duitku%22')), 'permintaan pencarian memakai nama project');
+  assert.doesNotMatch(requested.join(' '), /wondr/);
+  const places = await collectGooglePlaces(async (url, options = {}) => {
+    if (String(url).includes(':searchText')) return new Response(JSON.stringify({ places: [{ id: 'place-1', displayName: { text: 'Duitku Kantor Cabut' }, rating: 4.1, userRatingCount: 20 }] }));
+    return new Response(JSON.stringify({ id: 'place-1', displayName: { text: 'Duitku Kantor Cabut' }, reviews: [{ text: { text: 'pencairan duitku lambat' }, rating: 2, authorDisplayName: 'pedagang', publishTime: '2026-10-01T00:00:00Z' }] }));
+  }, placesConfiguration({ GOOGLE_PLACES_API_KEY: 'test' }, other), { target: other });
+  assert.deepEqual(places.coverage && [places.coverage.placesFound, places.coverage.productMatches], [1, 1], 'place bernama proyek diterima');
+  assert.equal(places.reviews[0].context.product, 'duitku');
+});
+
 test('Apify records keep actor text, expand nested comments, and never place the token in a URL', async () => {
   const items = [
     { id: 'post-1', text: 'wondr merchant saya gagal login lagi', date: '2026-10-20T04:05:06.000Z', url: 'https://x.com/u/status/1', author: { username: 'pelanggan_a' },
@@ -1610,6 +1754,14 @@ test('A dataset that fills the actor result cap is disclosed as truncated, never
   assert.deepEqual(apifyResultCap({ resultsPerPage: 100 }), { field: 'resultsPerPage', value: 100 });
   assert.deepEqual(apifyResultCap({ resultsLimit: 250 }), { field: 'resultsLimit', value: 250 });
   assert.equal(apifyResultCap({ searchQueries: ['x'] }), null, 'input tanpa field batas tidak mengarang angka');
+  // Batas komentar TikTok dipotong di sisi actor; bila tidak dilaporkan, hasil yang sebagian
+  // terbaca akan tampil sebagai "seluruh komentar sudah diambil".
+  assert.deepEqual(apifyResultCap({ topLevelCommentsPerPost: 35 }), { field: 'topLevelCommentsPerPost', value: 35 });
+  assert.deepEqual(apifyResultCap({ maxRepliesPerComment: 10 }), { field: 'maxRepliesPerComment', value: 10 });
+  const tiktokInput = apifyChannels.tiktok.input();
+  assert.ok(apifyResultCap(tiktokInput), 'input tiktok melaporkan batas hasilnya');
+  assert.deepEqual(apifyUnknownInputFields(tiktokInput, ['searchQueries', 'resultsPerPage', 'videoSearchSorting', 'topLevelCommentsPerPost', 'maxRepliesPerComment']), [],
+    'field batas komentar tiktok dikenal schema actor');
   const capped = apifyConfig({ APIFY_API_TOKEN: apifyToken, APIFY_ACTOR_TIKTOK: 'fixture/tiktok-cap', APIFY_INPUT_TIKTOK: '{"searchQueries":["wondr merchant"],"resultsPerPage":100}' });
   const items = Array.from({ length: 100 }, (_, index) => ({ id: `v-${index}`, text: `wondr merchant gagal login percobaan ${index}` }));
   const { fetcher } = socialRoutes(items);
@@ -1919,8 +2071,8 @@ test('Merchant keyword without product identity is counted, never stored as ours
   const result = await collectApify('x', fetcher, apifyConfig({ APIFY_API_TOKEN: apifyToken }), { pollMs: 0 });
   assert.equal(result.reviews.length, 1, 'hanya teks yang menyebut identitas produk yang disimpan');
   assert.equal(result.coverage.identityFiltered, 1);
-  assert.equal(result.coverage.contextMentions, 1, 'yang dibuang karena hanya menyebut kata konteks merchant dicatat');
-  assert.match(result.message, /1 teks menyebut kata konteks merchant .* tanpa menyebut produk ini/);
+  assert.equal(result.coverage.contextMentions, 1, 'yang dibuang karena hanya menyebut kata aspek umum dicatat');
+  assert.match(result.message, /1 teks hanya menyebut kata aspek umum .* tanpa menyebut produk ini/);
 });
 test('News RSS connector stays unconfigured until the operator supplies real feeds', async () => {
   const empty = newsConfiguration({});
@@ -2347,6 +2499,38 @@ test('Serverless pull stores results on disk and resumes an unfinished actor run
       assert.equal(resumed.has('play'), false);
     });
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// Regresi nyata: pada instance serverless yang baru, dua permintaan create yang tiba bersamaan
+// sama-sama membaca store kosong lalu saling menimpa tulisannya — satu project hilang tanpa pesan.
+test('Dua project yang dibuat bersamaan tidak saling menimpa', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-concurrent-create-'));
+  try {
+    await useDataPath(dir, async () => {
+      await seedStoreFile(join(dir, 'online-data.json'));
+      const store = await freshStore('concurrent-create');
+      const results = await Promise.allSettled([
+        store.addProject({ name: 'Vercel Satu', entity: 'Vercel Satu', playAppId: 'com.vercel.satu' }),
+        store.addProject({ name: 'Vercel Dua', entity: 'Vercel Dua', playAppId: 'com.vercel.dua' }),
+      ]);
+      for (const result of results) assert.equal(result.status, 'fulfilled', `create gagal: ${result.reason?.message}`);
+      const listed = await store.listProjects();
+      assert.deepEqual(listed.projects.map(project => project.id).sort(), ['vercel-dua', 'vercel-satu', 'wondr-merchant'], 'ketiga project benar-benar terdaftar');
+      const saved = JSON.parse(await readFile(join(dir, 'online-data.json'), 'utf8'));
+      assert.deepEqual(saved.projects.map(project => project.id).sort(), ['vercel-dua', 'vercel-satu', 'wondr-merchant'], 'berkas menyimpan semuanya, bukan hanya yang terakhir menulis');
+      assert.equal(saved.projects.length, 3, 'project awal tetap ada');
+    });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Batas nama dan bentuk ID toko ditegakkan di server, bukan hanya di isian form', () => {
+  assert.throws(() => createProject({ name: 'x'.repeat(81), entity: 'Aplikasi Contoh', playAppId: 'com.contoh.aplikasi' }), /project_name/,
+    'nama 81 karakter ditolak walau maxlength hanya penjaga peramban');
+  assert.throws(() => createProject({ name: 'Contoh', entity: 'Aplikasi Contoh', appleAppId: '12' }), /target_invalid/,
+    'nomor App Store dua angka bukan identitas yang sah');
+  const ok = createProject({ name: 'Contoh', entity: 'Aplikasi Contoh', appleAppId: '6741567238' });
+  assert.equal(ok.target.appstore.appId, '6741567238');
+  assert.equal(ok.name.length, 6);
 });
 
 test('Serverless pull refuses a concurrent request and releases the lock after failure', async () => {
@@ -2855,10 +3039,7 @@ test('Penanda aplikasi utama mengikuti ID toko, bukan nama project', () => {
   assert.equal(rulesFor(clone).productKey, 'wondr-merchant', 'aturan merek hanya dipakai oleh aplikasi yang benar-benar itu');
   assert.notEqual(rulesFor(clone), rulesFor(null), 'project lain menurunkan aturannya sendiri');
   const jobs = onlineCollectors({ target: clone });
-  assert.equal(jobs.get('youtube')() instanceof Promise, false, 'kanal yang belum mendukung target tidak dijalankan untuk project lain');
-  assert.equal(jobs.get('youtube')().status, 'unsupported', 'kanal merek dilaporkan ditolak, bukan diisi teks aplikasi utama');
-  assert.equal(jobs.get('news')().status ?? 'partial', 'unsupported', 'kanal berita ikut ditolak untuk target yang belum didukung');
-  assert.equal(targetReadyChannels.has('play') && targetReadyChannels.has('appstore'), true, 'kanal toko memang sudah menerima target project');
+  assert.deepEqual([...jobs.keys()].sort(), [...targetReadyChannels].sort(), 'semua kanal menerima target project, tidak ada yang ditolak dan diisi konten aplikasi bawaan');
 });
 
 test('Kegagalan menyimpan data dilaporkan, dan penulisan sukses tidak meninggalkan berkas sementara', async () => {

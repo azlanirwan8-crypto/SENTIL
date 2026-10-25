@@ -8,7 +8,7 @@ import { collectOnline, collectPlatform, channelConfigurations } from './collect
 import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
 import { withAbsa } from './model.js';
 import { discoverTarget } from './discovery.mjs';
-import { normalizeTarget, targetFromDiscovery } from './target.mjs';
+import { defaultTarget, normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
   projectTarget, safeProjectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
@@ -97,7 +97,7 @@ function readyDataset(dataset, target = null) {
   return {
     ...dataset,
     reviews: withAbsa(reclassifyDerived(dataset.reviews, target)),
-    sources: overlayConfiguration(dataset.sources, channelConfigurations()),
+    sources: overlayConfiguration(dataset.sources, channelConfigurations(process.env, target ?? defaultTarget)),
   };
 }
 
@@ -107,9 +107,28 @@ function readyStore(base) {
   return { ...base, datasets: Object.fromEntries(Object.entries(base.datasets).map(([id, dataset]) => [id, readyDataset(dataset, datasetTarget(base, id))])) };
 }
 
-async function loadStore() {
-  if (!cache) cache = readyStore((await readStored()) ?? initialStore());
-  return cache;
+// Dua permintaan dapat tiba bersamaan pada instance yang sama. Tanpa gantungan ini, dua
+// addProject paralel sama-sama membaca store kosong lalu saling menimpa saat menulis: satu
+// project hilang tanpa pesan. Rantai janji membuat baca-modifikasi-tulis berjalan bergiliran.
+let storeChain = Promise.resolve();
+let loading = null;
+
+function loadStore() {
+  if (cache) return Promise.resolve(cache);
+  if (!loading) loading = (async () => {
+    const base = readyStore((await readStored()) ?? initialStore());
+    cache = base;
+    return base;
+  })().finally(() => { loading = null; });
+  return loading;
+}
+
+// Dijalankan berurutan; setiap aksi melihat store akhir dari aksi sebelumnya, dan hanya hasil
+// yang benar-benar tertulis yang menjadi state berikutnya.
+function serialized(task) {
+  const run = storeChain.then(task);
+  storeChain = run.then(() => undefined, () => undefined);
+  return run;
 }
 
 // Ringkasan project selalu ikut dikirim agar antarmuka dapat menampilkan jumlah project
@@ -146,14 +165,18 @@ export async function discover({ entity, fetcher = fetch }) {
 // Membuat project baru dari hasil penemuan yang sudah dikonfirmasi, atau dari ID toko yang
 // diisi manual. Dataset project baru selalu dimulai kosong: aplikasi tidak mengirim data contoh,
 // jadi seluruh angka berasal dari penarikan yang dijalankan pemiliknya.
-export async function addProject({ name, entity, discovery, playAppId, appleAppId }) {
+export function addProject({ name, entity, discovery, playAppId, appleAppId }) {
+  // Ditolak segera bila penarikan sedang berjalan: tanpa pemeriksaan di luar antrean ini,
+  // permintaan kedua hanya mengantri dan baru gagal setelah yang pertama selesai.
+  if (running) throw new Error('busy');
+  return serialized(async () => {
   if (running) throw new Error('busy');
   const store = await loadStore();
   const target = discovery
     ? targetFromDiscovery({ discovery, name, id: projectIdFrom(name || entity) })
     : normalizeTarget({ name, entityName: entity, playAppId, appleAppId });
   const project = createProject({ name: name || entity, entity, target });
-  if (findProject(store, project.id)) throw new Error('project_exists: project dengan nama itu sudah ada');
+  if (findProject(store, project.id)) throw new Error(`project_exists: nama itu sudah dipakai project ${project.id}`);
   // Dataset yatim tidak boleh ditimpa: hanya penghapusan yang disengaja yang boleh membuang baris.
   if ((store.datasets[project.id]?.reviews?.length || 0) > 0)
     throw new Error('project_data_exists: data lama dengan nama itu masih tersimpan, pakai nama lain');
@@ -163,19 +186,25 @@ export async function addProject({ name, entity, discovery, playAppId, appleAppI
   cache = store;
   await writeStored(store);
   return view(project.id);
+  });
 }
 
-export async function activateProject(project) {
+export function activateProject(project) {
+  if (running) throw new Error('busy');
+  return serialized(async () => {
   if (running) throw new Error('busy');
   const store = await loadStore();
   const id = resolveProjectId(store, project);
   store.activeProject = id;
   await writeStored(store);
   return view(id);
+  });
 }
 
 // Mengganti nama project tanpa menyentuh dataset maupun identitas tokonya.
-export async function editProject({ project, name }) {
+export function editProject({ project, name }) {
+  if (running) throw new Error('busy');
+  return serialized(async () => {
   if (running) throw new Error('busy');
   const store = await loadStore();
   const id = strictProjectId(store, project);
@@ -183,12 +212,15 @@ export async function editProject({ project, name }) {
   cache = store;
   await writeStored(store);
   return view(id);
+  });
 }
 
 // Menghapus project dan seluruh datasetnya. Project aktif berpindah ke project lain yang masih ada;
 // bila project terakhir dihapus, penyimpanan kembali kosong. Dataset project yang tidak disebut
 // tidak tersentuh.
-export async function dropProject(project) {
+export function dropProject(project) {
+  if (running) throw new Error('busy');
+  return serialized(async () => {
   if (running) throw new Error('busy');
   const store = await loadStore();
   const id = strictProjectId(store, project);
@@ -196,11 +228,16 @@ export async function dropProject(project) {
   cache = store;
   await writeStored(store);
   return view(undefined);
+  });
 }
 
-async function runStep(project, produce, { recordRun }) {
+function runStep(project, produce, { recordRun }) {
+  // Kunci ditetapkan SEBELUM masuk antrean. Bila tidak, dua penarikan yang tiba pada tick yang
+  // sama sama-sama melihat "longgar" lalu yang kedua hanya mengantri dan akhirnya berjalan juga,
+  // saling menimpa dataset yang sama.
   if (running) throw new Error('busy');
   running = true;
+  return serialized(async () => {
   const startedAt = new Date().toISOString();
   try {
     const store = await loadStore();
@@ -212,13 +249,14 @@ async function runStep(project, produce, { recordRun }) {
     const target = projectTarget(store, id);
     const results = await produce(previous, { resume: resumeMap(previous), apifyWaitMs: apifyWaitMs(), target });
     const finishedAt = new Date().toISOString();
-    setDataset(store, id, buildDataset({ previous, results, startedAt, finishedAt, channelConfig: channelConfigurations(), recordRun, target }), { pulledAt: recordRun ? finishedAt : undefined });
+    setDataset(store, id, buildDataset({ previous, results, startedAt, finishedAt, channelConfig: channelConfigurations(process.env, target), recordRun, target }), { pulledAt: recordRun ? finishedAt : undefined });
     cache = store;
     await writeStored(store);
     return view(id);
   } finally {
     running = false;
   }
+  });
 }
 
 export async function pull({ project, collector = collectOnline } = {}) {

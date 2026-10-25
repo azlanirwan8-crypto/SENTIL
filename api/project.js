@@ -3,7 +3,7 @@
 // deployment ($0 tier).
 export const config = { maxDuration: 30 };
 
-import { addProject, activateProject, dropProject, editProject, isRunning } from '../dashboard-store.mjs';
+import { addProject, activateProject, dropProject, editProject } from '../dashboard-store.mjs';
 
 const json = (response, status, body) => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -37,9 +37,10 @@ export default async function handler(request, response, run = runProject) {
   const origin = String(request.headers.origin || '');
   const site = String(request.headers['sec-fetch-site'] || '');
   // Pemeriksaan ditutup ke arah gagal: permintaan tanpa Origin DAN tanpa Sec-Fetch-Site
-  // same-origin tidak dilayani. Kedua header hanya bisa dikirim peramban dan tidak dapat
-  // dipalsukan dari fetch/skrip, jadi tombol tetap jalan tanpa akun atau kata sandi sementara
-  // `curl` anonim tidak bisa lagi menghapus atau menimpa project.
+  // same-origin tidak dilayani. Jujur tentang batasnya: header ini dipasang otomatis oleh
+  // peramban sehingga klien biasa tidak mengirimnya, tetapi TIDAK dapat dipercaya sebagai
+  // pembuktinya — klien yang meniru kedua header itu tetap lolos. Ini bukan pengganti login;
+  // dasbor memang dipakai tanpa akun atas permintaan pemiliknya (lihat README).
   if (!host || site === 'cross-site' || site === 'none' || (origin ? !origin.endsWith(`://${host}`) : site !== 'same-origin')) {
     json(response, 403, { error: 'Permintaan dari luar halaman ini ditolak.' });
     return;
@@ -47,7 +48,9 @@ export default async function handler(request, response, run = runProject) {
   try {
     json(response, 200, await run(await readBody(request)));
   } catch (error) {
-    if (error.message === 'busy' || isRunning()) { json(response, 409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
+    // Hanya 'busy' yang boleh dilaporkan sebagai "sedang sibuk": kesalahan lain (misalnya
+    // TypeError di tengah penarikan) harus tetap muncul sebagai kegagalan, bukan 409 palsu.
+    if (error.message === 'busy') { json(response, 409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
     if (clientError(error.message)) { json(response, 400, { error: error.message }); return; }
     console.error('Project gagal disimpan:', error.message);
     json(response, 500, { error: 'Project tidak dapat disimpan. Data yang sudah ada tetap tersimpan.' });

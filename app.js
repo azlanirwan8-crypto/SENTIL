@@ -1,5 +1,5 @@
 ﻿import { platforms, tags, tagColors } from './data.js';
-import { summary, filterReviews, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, nssBand, nssBands, nssMinSample, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
+import { summary, filterReviews, groupStats, featureGroups, painGroups, positiveGroups, sentimentNames, complaintStats, complaintBreakdown, ratingSummary, projection, projectionMethod, projectionTrends, projectionSignals, absaOf, aspectStats, clusterStats, painClusters, aspectNames, emotionNames, intentNames, exportCsv, anomalyScan, anomalyDefaults, anomalyWindowNames, scoreClassifier, nssBand, nssBands, nssMinSample, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
 import { esc, number, decimal, integer, pct, signed, colors, sentimentKeys } from './format.js';
 import { comboChart, nestedDonut, painTreemap, matrixChart, statCard } from './charts.js';
 
@@ -249,7 +249,7 @@ function heading() {
   return `<section class="page-heading"><div><h1 tabindex="-1">${esc(title)}</h1><p>${esc(subtitles[state.view])}</p></div>${state.view!=='methodology'?`<div class="heading-actions">
     <label class="range-button">${icon('calendar')}<select id="period" aria-label="Periode ulasan"><option value="all" ${state.period==='all'?'selected':''}>Semua tanggal</option>${months.map(month=>`<option value="${esc(month)}" ${state.period===month?'selected':''}>${esc(dateLabel(month+'-01',{day:undefined,month:'long',year:'numeric'}))}</option>`).join('')}<option value="custom" ${state.period==='custom'?'selected':''}>Rentang khusus</option></select></label>
     ${state.view==='platforms'||!reviews.length?`<button class="btn btn-primary" data-action="analyze" ${isBusy()?'disabled aria-busy="true"':''}>${isBusy()?'<span class="spinner" aria-hidden="true"></span>':icon('pulse')}${isBusy()?'Mengambil dan menganalisis…':'Tarik Analisis'}</button>`:''}
-  </div>`:''}</section>${state.view!=='methodology'&&state.period==='custom'?`<div class="custom-dates"><label>Dari tanggal<input id="date-from" type="date" value="${esc(state.from)}"></label><label>Sampai tanggal<input id="date-to" type="date" value="${esc(state.to)}"></label><button class="btn" data-action="apply-dates">Terapkan</button><span class="filter-error" id="date-error" role="alert"></span></div>`:''}`;
+  </div>`:''}</section>${sync.storageWarning?`<p class="coverage-warning storage-warning" role="status">${esc(sync.storageWarning)}</p>`:''}${state.view!=='methodology'&&state.period==='custom'?`<div class="custom-dates"><label>Dari tanggal<input id="date-from" type="date" value="${esc(state.from)}"></label><label>Sampai tanggal<input id="date-to" type="date" value="${esc(state.to)}"></label><button class="btn" data-action="apply-dates">Terapkan</button><span class="filter-error" id="date-error" role="alert"></span></div>`:''}`;
 }
 function filters() {
   // Konvensi jumlah pilihan (faceted search): angka pada pilihan platform mengabaikan platform
@@ -376,10 +376,12 @@ function projectionCard(data) {
   const scale=Math.max(1,...p.themes.map(t=>t.recentTotal+t.projected));
   const top=p.themes.find(t=>t.projected>0);
   const signed=value=>`${value>0?'+':''}${number(value)}`;
+  // Sama seperti kartu KPI: NSS hanya diberi pita bila jumlah teks berlabel mencukupi.
+  const thinSample=nssBand(p.nssProjected.point,p.nssProjected.sample)?.id==='belum-dinilai';
   return `<article class="card projection-card">${head}
     <div class="projection-stats">
       <div><span>Ulasan negatif ${horizon} pekan ke depan</span><strong>${integer(Math.round(p.negative.projected))}</strong><small>rentang ${integer(p.negative.low)}–${integer(p.negative.high)} · ${integer(p.negative.recentTotal)} tercatat pada ${horizon} pekan terakhir</small></div>
-      <div><span>NSS proyeksi</span><strong>${p.nssProjected.point===null?'N/A':signed(p.nssProjected.point)}</strong><small>rentang ${p.nssProjected.low===null?'N/A':`${signed(p.nssProjected.low)} s.d. ${signed(p.nssProjected.high)}`} · NSS saat ini ${p.nssCurrent===null?'N/A':signed(p.nssCurrent)}</small></div>
+      <div><span>NSS proyeksi</span><strong>${p.nssProjected.point===null?'N/A':thinSample?esc(nssBand(p.nssProjected.point,p.nssProjected.sample).label):signed(p.nssProjected.point)}</strong><small>${thinSample?`hanya ${integer(p.nssProjected.sample)} teks berlabel diproyeksikan, di bawah ${nssMinSample} · `:''}rentang ${p.nssProjected.low===null?'N/A':`${signed(p.nssProjected.low)} s.d. ${signed(p.nssProjected.high)}`} · NSS saat ini ${p.nssCurrent===null?'N/A':signed(p.nssCurrent)}</small></div>
     </div>
     <div class="feature-list projection-list">
       ${p.themes.map(t=>`<div class="feature-row projection-row ${t.direction}">
@@ -542,7 +544,7 @@ function incidentReportHtml(data) {
     ${clusters.length ? `<h3>Klaster frasa berulang</h3><table class="report-table"><thead><tr><th>Klaster</th><th>Ulasan negatif</th></tr></thead><tbody>${clusters.map(c => `<tr><td>${esc(c.label)}</td><td>${integer(c.total)}</td></tr>`).join('')}</tbody></table>` : ''}
   </section>
   <section class="report-block"><h2>4. Proyeksi ${p.horizonWeeks} pekan ke depan</h2>
-    ${p.ok ? `<p>Bila kecepatan ulasan per pekan berlanjut, sekitar ${integer(Math.round(p.negative.projected))} ulasan negatif baru akan masuk (rentang ${integer(p.negative.low)}–${integer(p.negative.high)}), dari ${integer(p.negative.recentTotal)} yang tercatat pada ${p.horizonWeeks} pekan terakhir. NSS proyeksi ${p.nssProjected.point === null ? 'N/A' : `${p.nssProjected.point > 0 ? '+' : ''}${number(p.nssProjected.point)} poin`} (rentang ${p.nssProjected.low === null ? 'N/A' : `${number(p.nssProjected.low)} sampai ${number(p.nssProjected.high)}`}) terhadap NSS saat ini ${p.nssCurrent === null ? 'N/A' : `${p.nssCurrent > 0 ? '+' : ''}${number(p.nssCurrent)}`}. Arah: ${esc(projectionSignals[p.signal])}.</p>
+    ${p.ok ? `<p>Bila kecepatan ulasan per pekan berlanjut, sekitar ${integer(Math.round(p.negative.projected))} ulasan negatif baru akan masuk (rentang ${integer(p.negative.low)}–${integer(p.negative.high)}), dari ${integer(p.negative.recentTotal)} yang tercatat pada ${p.horizonWeeks} pekan terakhir. NSS proyeksi ${p.nssProjected.point === null ? 'N/A' : `${p.nssProjected.point > 0 ? '+' : ''}${number(p.nssProjected.point)} poin`} (rentang ${p.nssProjected.low === null ? 'N/A' : `${number(p.nssProjected.low)} sampai ${number(p.nssProjected.high)}`}) terhadap NSS saat ini ${p.nssCurrent === null ? 'N/A' : `${p.nssCurrent > 0 ? '+' : ''}${number(p.nssCurrent)}`}. ${p.nssProjected.sample < nssMinSample ? `Jumlah teks berlabel yang diproyeksikan hanya ${integer(p.nssProjected.sample)}, di bawah ${nssMinSample}, sehingga NSS proyeksi belum dapat diberi pita. ` : ''}Arah: ${esc(projectionSignals[p.signal])}.</p>
     <table class="report-table"><thead><tr><th>Area</th><th>Tercatat ${p.horizonWeeks} pekan</th><th>Proyeksi</th><th>Rentang</th><th>Arah</th><th>Penanggung jawab</th></tr></thead><tbody>${p.themes.map(t => `<tr><td>${esc(t.name)}</td><td>${integer(t.recentTotal)}</td><td>${integer(Math.round(t.projected))}</td><td>${integer(t.low)}–${integer(t.high)}</td><td>${esc(projectionTrends[t.direction])}</td><td>${esc(t.owner)}</td></tr>`).join('')}</tbody></table>` : `<p>Proyeksi tidak dihitung: ${esc(p.reason || 'data belum memenuhi syarat minimal.')}</p>`}
   </section>
   <section class="report-block"><h2>5. Daftar insiden — ${integer(negative.length)} ulasan negatif (seluruhnya, tanpa sampling)</h2>
@@ -736,6 +738,23 @@ function coverage() {
     </article>`;
   }).join('')}</div><article class="card method-card"><h2>Batas perbandingan sumber</h2><p>Jumlah ulasan tersimpan tidak menggambarkan seluruh percakapan di suatu platform. Sumber yang belum terhubung tidak berarti tidak ada keluhan. Penilaian seluruh halaman toko, penilaian pada ulasan, dan sentimen teks merupakan ukuran yang berbeda. Perbandingan antarplatform perlu memperhatikan periode, cakupan, dan jumlah ulasan; jumlah ulasan yang kecil belum membuktikan pengalaman pengguna di suatu platform lebih baik.</p></article>`;
 }
+// Panel kualitas label: angka dihitung dari baris yang sudah dinilai manusia pada project ini,
+// bukan dikutip dari klaim pabrik model. Keterbatasannya dinyatakan apa adanya.
+function classifierQuality() {
+  const score = scoreClassifier(reviews);
+  if (!score.n) return '<article class="card method-card"><h2>Kualitas label otomatis</h2><p>Belum ada ulasan pada project ini yang sudah dinilai manusia, jadi kecocokan aturan label otomatis belum dapat diukur. Setelah Anda menilai beberapa ulasan (label manual), panel ini menghitung kesesuaian aturan terhadap penilaian Anda.</p></article>';
+  const pctValue = value => value === null ? '—' : `${number(value * 100)}%`;
+  const rows = [['Positif','positive'],['Negatif','negative'],['Netral','neutral']].filter(([,key]) => score.perClass[key]);
+  const table = `<table class="quality-table"><thead><tr><th>Label</th><th>Contoh manusia</th><th>Presisi</th><th>Rekal</th><th>F1</th></tr></thead><tbody>${
+    rows.map(([label,key]) => { const s = score.perClass[key]; return `<tr><th scope="row">${label}</th><td>${s.support}</td><td>${pctValue(s.precision)}</td><td>${pctValue(s.recall)}</td><td>${s.f1===null?'—':decimal(s.f1)}</td></tr>`; }).join('')
+  }</tbody></table>`;
+  const misses = score.n - score.agree;
+  return `<article class="card method-card"><h2>Kualitas label otomatis</h2>
+    <p>Aturan label (versi <code>rules-v1</code>) diuji terhadap <strong>${integer(score.n)} ulasan yang sudah Anda nilai sendiri</strong> pada project ini. Hasilnya: <strong>${integer(score.agree)} dari ${integer(score.n)} cocok (${number(score.observed * 100)}%)</strong>, Cohen&apos;s kappa <strong>${score.kappa===null?'—':decimal(score.kappa)}</strong>. ${misses ? `${integer(misses)} ulasan tidak cocok dan ditandai perlu ditinjau, bukan dipaksa ke salah satu kelas.` : 'Tidak ada selisih pada sampel ini.'}</p>
+    ${table}
+    <div class="method-callout">Baca batasnya: angka ini dihitung pada sampel yang sama dengan yang dipakai menyusun aturan, jadi ia mengukur kecocokan internal — bukan akurasi pada teks baru. Presisi tinggi berarti label yang diberikan hampir selalu benar; rekal rendah berarti masih banyak teks benar yang belum dikenali aturannya dan berakhir sebagai "perlu tinjauan". Sarkasme dan ironi belum ditangani; teks pendek tanpa kata sifat umumnya tidak dinilai.</div>
+    <p class="note-inline">Ulasan berlabel "perlu tinjauan" tidak masuk pembagi persentase sentimen maupun NSS, sehingga angka yang tampil tidak menggelembung karena teks yang tidak dipahami.</p></article>`;
+}
 function methodology() {
   const base=summary(reviews);
   const active = projects.list.find(project => project.id === projects.active) || null;
@@ -753,6 +772,7 @@ function methodology() {
     : 'Belum ada project. Angka sumber akan dilaporkan setelah project pertama dibuat.';
   return `<div class="method-grid">
     <article class="card method-card"><h2>Sumber dan cakupan</h2><p>${dataOrigin}</p><p>Tombol Tarik Analisis mengambil data dari kedua toko aplikasi yang terhubung dan memuat seluruh halaman pada setiap kumpulan ulasan yang tersedia, dengan urutan terbaru. Google Play memisahkan daftar ulasannya menurut bahasa antarmuka, sehingga kumpulan bahasa Indonesia dan kumpulan bahasa Inggris dibaca keduanya lalu digabung berdasarkan ID ulasan. Jumlah ulasan tertulis dibaca dari data project ini. ${countSentence} Filter hanya membatasi tampilan, bukan proses pengambilan data. Platform lain belum terhubung dan dilaporkan sebagai belum diambil, bukan nol keluhan.</p><div class="method-callout">Konten promosi resmi, pemberitaan, ulasan duplikat, dan komentar tentang produk lain tidak diperlakukan sebagai pengalaman merchant.</div><p><strong>Unduhan.</strong> Google Play hanya mempublikasikan rentang unduhan, saat ini ${esc(storeInstalls('play') || 'belum terbaca')}. Apple tidak mempublikasikan jumlah unduhan di halaman publik, sehingga metrik tersebut tidak tersedia dan tidak diperkirakan. Keduanya bukan ukuran jumlah pengguna aktif.</p></article>
+    ${classifierQuality()}
     <article class="card method-card"><h2>Cara membaca sentimen</h2><ul><li><strong>Positif:</strong> pujian, kepuasan, atau manfaat yang dinyatakan pengguna.</li><li><strong>Negatif:</strong> keluhan, masalah penggunaan, dan kekurangan yang mengganggu.</li><li><strong>Netral:</strong> informasi atau pertanyaan tanpa penilaian yang jelas; bukan label pengganti untuk teks yang tidak dipahami.</li><li><strong>Perlu tinjauan:</strong> teks belum cukup jelas untuk dinilai; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</li></ul><div class="formula">NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100</div><p>Ulasan berlabel sentimen mencakup ulasan positif, negatif, dan netral. ${base.classified ? `Pada project ini: (${base.positive} − ${base.negative}) ÷ ${base.classified} × 100 = <strong>${base.nss>0?'+':''}${number(base.nss)} poin</strong>.` : 'Belum ada teks berlabel pada project ini, jadi contoh angkanya belum dapat ditampilkan.'}</p></article>
     <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label ditentukan dari pembacaan teks ulasan oleh pemilik dasbor; teks yang tidak berubah mempertahankan labelnya. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (versi 1):</strong> menggunakan aturan kata kunci sederhana, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru; teks yang tidak dikenali ditandai perlu ditinjau.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
     <article class="card method-card"><h2>Penyimpanan dan jejak perubahan</h2><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban. Dasbor memuat data tersimpan saat dibuka; pembaruan tidak berlangsung terus-menerus. Status sumber dan waktu pemeriksaan mengikuti data tersimpan. Gangguan pengambilan tidak menghapus data yang sudah tersedia.</p><p>Ulasan baru ditambahkan, sedangkan perubahan teks, penilaian bintang, atau tanggal disimpan sebagai versi sebelumnya. Detail ulasan menampilkan waktu pengambilan, waktu pertama dan terakhir tercatat, serta riwayat perubahan. Versi lama tidak dihitung sebagai ulasan baru dalam grafik.</p><p>Jika data tersimpan tidak dapat dimuat saat awal, dasbor menampilkan pesan kesalahan dan tidak menambal angkanya dengan data lain; buat project lebih dulu bila penyimpanan memang masih kosong. Penilaian halaman toko hanya ditampilkan dari data daring yang berhasil diambil dan dipisahkan dari penilaian pada ulasan. Sumber publik tidak memverifikasi identitas penulis maupun kebenaran isi keluhan.</p></article>
@@ -997,7 +1017,7 @@ async function createProjectFromDialog() {
   try {
     applyPayload(await requestProject(body));
     $('#project-dialog')?.close();
-    discovery.name = ''; discovery.entity = ''; discovery.payload = null; discovery.picked = { play: '', appstore: '' };
+    discovery.name = ''; discovery.entity = ''; discovery.payload = null; discovery.picked = { play: '', appstore: '' }; discovery.searched = ''; discovery.error = '';
     notify(`Project dibuat. Penarikan mengikuti identitas toko yang Anda konfirmasi.`);
     await analyze();
   } catch (error) {
@@ -1030,11 +1050,9 @@ function applyPayload(payload) {
   if (typeof payload.activeProject==='string') projects.active=payload.activeProject;
   projects.target = payload.target && typeof payload.target === 'object' ? payload.target : null;
   if (!payload.running) sync.attempt=null;
-  const warnedBefore = Boolean(sync.storageWarning);
   sync.storageWarning = typeof payload.storageWarning === 'string' ? payload.storageWarning : null;
-  // Gagal tulis dikembalikan sebagai 200 beserta datanya, jadi tanpa notifikasi ini pengguna
-  // melihat "project dihapus" padahal berkas belum berubah dan data bisa kembali nanti.
-  if (sync.storageWarning && !warnedBefore) notify('Perubahan tampil di layar tetapi belum tersimpan ke berkas data. Muat ulang untuk memastikan.', 'error');
+  // Peringatan gagal tulis ditampilkan sebagai spanduk tetap di bawah judul (heading()), bukan
+  // lewat toast: notifikasi sukses yang menyusul akan menimpa satu-satunya wilayah toast.
 }
 async function switchProject(id) {
   if (!id || id === projects.active) return;

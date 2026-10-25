@@ -31,11 +31,14 @@ export const playDetailsUrl = (target, { hl = 'id', gl = 'ID' } = {}) => `https:
 // Nama entitas dipecah menjadi kata agar tetap cocok pada penulisan dengan spasi ganda,
 // dan kedua ID toko ikut dipakai karena ulasan sering menyebut paket aplikasi, bukan namanya.
 export function identityPattern(target) {
-  const words = String(target.entityName || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+  const words = String(target?.entityName || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
   const parts = [];
   if (words.length) parts.push(`\\b${words.join('\\s+')}\\b`);
-  if (target.play?.appId) parts.push(`\\b${escapeRegExp(target.play.appId)}(?![\\w.])`);
-  if (target.appstore?.appId) parts.push(`\\b(?:id)?${escapeRegExp(target.appstore.appId)}\\b`);
+  if (target?.play?.appId) parts.push(`\\b${escapeRegExp(target.play.appId)}(?![\\w.])`);
+  if (target?.appstore?.appId) parts.push(`\\b(?:id)?${escapeRegExp(target.appstore.appId)}\\b`);
+  // Tanpa satu pun pegangan, pola kosong akan cocok dengan semua teks: lebih baik tidak ada
+  // teks yang dianggap milik target daripada menyimpan konten milik siapa pun.
+  if (!parts.length) return /(?!)/;
   return new RegExp(parts.join('|'), 'i');
 }
 
@@ -45,7 +48,7 @@ export function normalizeTarget(input = {}) {
   const appleAppId = String(input.appleAppId ?? input.appstore?.appId ?? '').trim();
   if (entityName.length < 2) throw new Error('target_invalid: nama entitas wajib diisi');
   if (playAppId && !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(playAppId)) throw new Error('target_invalid: ID paket Google Play tidak sesuai bentuk paket aplikasi');
-  if (appleAppId && !/^\d{4,12}$/.test(appleAppId)) throw new Error('target_invalid: ID App Store harus angka');
+  if (appleAppId && !/^\d{6,12}$/.test(appleAppId)) throw new Error('target_invalid: ID App Store harus 6 sampai 12 angka');
   // Bentuk kiriman klien tidak dipercaya: URL halaman toko hanya diterima bila HTTPS tanpa
   // kredensial. Selain itu, alamatnya dibangun dari ID paket yang sudah divalidasi di atas.
   const httpsPageUrl = value => {

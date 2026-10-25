@@ -6,7 +6,7 @@ import { collectOnline, collectPlatform, channelConfigurations } from './collect
 import { loadLocalEnv } from './local-env.mjs';
 import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
 import { discoverTarget } from './discovery.mjs';
-import { normalizeTarget, targetFromDiscovery } from './target.mjs';
+import { defaultTarget, normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
   projectTarget, safeProjectTarget, findProject, createProject, projectIdFrom, emptyDataset, emptyView, removeProject, renameProject, strictProjectId,
@@ -65,12 +65,14 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   // Pengujian menyuntik env sendiri; tanpa env, berkas .env lokal dimuat lebih dulu.
   const environment = env ?? await loadLocalEnv().then(() => process.env);
-  const channelConfig = channelConfigurations(environment);
+  // Pesan konektor menyebut aplikasi yang sedang dianalisis, jadi status konfigurasi disusun
+  // per target project, bukan satu daftar untuk semua project.
+  const configFor = target => channelConfigurations(environment, target ?? defaultTarget);
   // Status konfigurasi hanya menimpa tampilan; data tersimpan tidak diubah dan kunci tidak pernah dikirim ke browser.
   const readyDataset = (dataset, target = null) => ({
     ...dataset,
     reviews: withAbsa(reclassifyDerived(dataset.reviews, target)),
-    sources: overlayConfiguration(dataset.sources, channelConfig),
+    sources: overlayConfiguration(dataset.sources, configFor(target)),
   });
   const datasetTarget = (source, id) => (findProject(source, id) ? safeProjectTarget(source, id) : null);
   store = { ...store, datasets: Object.fromEntries(Object.entries(store.datasets).map(([id, dataset]) => [id, readyDataset(dataset, datasetTarget(store, id))])) };
@@ -136,7 +138,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       ? targetFromDiscovery({ discovery, name, id: projectIdFrom(name || entity) })
       : normalizeTarget({ name, entityName: entity, playAppId, appleAppId });
     const project = createProject({ name: name || entity, entity, target });
-    if (findProject(store, project.id)) throw new Error('project_exists: project dengan nama itu sudah ada');
+    if (findProject(store, project.id)) throw new Error(`project_exists: nama itu sudah dipakai project ${project.id}`);
     // Dataset yatim (ID masih ada di berkas, project-nya tidak) tidak boleh ditimpa: itu satu-satunya
     // jalan yang bisa menghilangkan baris ulasan selain penghapusan yang disengaja.
     if ((store.datasets[project.id]?.reviews?.length || 0) > 0)
@@ -270,7 +272,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
         // Salinan dangkal tidak cukup: setDataset mengubah objek dataset dan entri project,
         // sehingga store yang lama ikut berubah walau penyimpanan gagal.
         const next = { ...store, projects: store.projects.map(item => item.id === project ? { ...item } : item), datasets: { ...store.datasets } };
-        setDataset(next, project, buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun, target: runOptions.target }), { pulledAt: recordRun ? finishedAt : undefined });
+        setDataset(next, project, buildDataset({ previous, results, startedAt, finishedAt, channelConfig: configFor(runOptions.target), recordRun, target: runOptions.target }), { pulledAt: recordRun ? finishedAt : undefined });
         await persist(next);
         store = next;
         running = false;
