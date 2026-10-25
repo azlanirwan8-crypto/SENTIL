@@ -29,6 +29,20 @@ export function emptyDataset() {
 }
 
 const nowIso = () => new Date().toISOString();
+// Dataset yang dibaca dari berkas harus membawa tiga kunci array. Berkas hasil potongan atau
+// suntingan tangan dapat kehilangan salah satunya, dan pemetakan berikutnya akan melempar
+// TypeError saat awal — dasbor mati total tanpa pesan. Isi yang cacat dilengkapi, bukan dibuang.
+function repairDataset(value) {
+  const base = value && typeof value === 'object' ? value : {};
+  return {
+    ...base,
+    reviews: Array.isArray(base.reviews) ? base.reviews : [],
+    sources: Array.isArray(base.sources) ? base.sources : [],
+    runs: Array.isArray(base.runs) ? base.runs : [],
+    lastRun: base.lastRun ?? null,
+    batch: base.batch ?? null,
+  };
+}
 // ID project hanya boleh berisi huruf kecil, angka, dan tanda hubung karena dipakai sebagai
 // kunci objek dan bagian dari alamat API.
 export const projectIdFrom = value => String(value || '').normalize('NFKD').toLowerCase()
@@ -38,7 +52,7 @@ export function createProject({ id, name, entity, target, playAppId, appleAppId,
   const entityName = String(entity || '').trim();
   const projectName = String(name || '').trim();
   if (projectName.length < 2) throw new Error('project_name: nama project minimal dua karakter');
-  if (entityName.length < 2) throw new Error('project_entity: nama entitas minimal dua karakter');
+  if (entityName.length < 2) throw new Error('project_entity: nama aplikasi minimal dua karakter');
   const resolved = target ?? normalizeTarget({ name: projectName, entityName, playAppId, appleAppId });
   if (!resolved.play?.appId && !resolved.appstore?.appId) throw new Error('project_target: pilih minimal satu identitas toko (Google Play atau App Store) agar penarikan tidak salah sasaran');
   const projectId = projectIdFrom(id || projectName || resolved.id);
@@ -70,8 +84,9 @@ export function initialStore() {
 // hilang) karena menghapus data ulasan bukan cara yang sah untuk menyembuhkan berkas.
 export function migrateStore(saved) {
   if (saved && saved.version === storeVersion && Array.isArray(saved.projects)) {
-    const datasets = saved.datasets && typeof saved.datasets === 'object' ? saved.datasets : {};
     const known = new Set(saved.projects.map(project => project.id));
+    const datasets = Object.fromEntries(Object.entries(saved.datasets && typeof saved.datasets === 'object' ? saved.datasets : {})
+      .map(([id, value]) => [id, repairDataset(value)]));
     const projects = saved.projects.some(project => project.id === defaultProjectId) ? saved.projects : [defaultProject(), ...saved.projects];
     // Dataset disemaikan setelah daftar project lengkap: project bawaan yang disisipkan di baris
     // sebelumnya harus ikut punya dataset, jika tidak `/api/data` menjawab tanpa kunci reviews.

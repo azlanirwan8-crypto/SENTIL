@@ -138,7 +138,7 @@ export async function listProjects() {
 // dan tidak menulis apa pun: hasilnya hanya kandidat yang harus dikonfirmasi pengguna.
 export async function discover({ entity, fetcher = fetch }) {
   const entityName = String(entity || '').trim();
-  if (entityName.length < 2) throw new Error('project_entity: nama entitas minimal dua karakter');
+  if (entityName.length < 2) throw new Error('project_entity: nama aplikasi minimal dua karakter');
   return discoverTarget({ entityName, fetcher });
 }
 

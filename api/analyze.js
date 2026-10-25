@@ -14,14 +14,18 @@ const json = (response, status, body) => {
 };
 
 // Host diambil dari proxy header Vercel lebih dahulu. Tanpa host yang dapat dipastikan,
-// permintaan ditolak: penarikan ini memakai kuota berbayar, jadi gerbangnya gagal tertutup.
+// permintaan ditolak: penarikan ini memakai kuota, jadi gerbangnya gagal tertutup.
+// Header peramban (Sec-Fetch-Site/Origin) dipasang sendiri oleh peramban dan tidak terkirim
+// oleh klien skrip biasa, sehingga tombol tetap berjalan tanpa akun sementara `curl` anonim
+// tidak lagi dapat memicu penarikan.
 export function rejectsSameSiteCheck(headers) {
   const host = String(headers['x-forwarded-host'] || headers.host || '');
   const scheme = String(headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
   const origin = String(headers.origin || '');
-  if (!host || headers['sec-fetch-site'] === 'cross-site') return true;
-  if (!origin) return false;
-  return ![`${scheme}://${host}`, `https://${host}`, `http://${host}`].includes(origin);
+  const site = String(headers['sec-fetch-site'] || '');
+  if (!host || site === 'cross-site' || site === 'none') return true;
+  if (origin) return ![`${scheme}://${host}`, `https://${host}`, `http://${host}`].includes(origin);
+  return site !== 'same-origin';
 }
 
 // `run` dapat disuntik agar pengujian tidak memanggil sumber nyata; Vercel hanya mengirim

@@ -1381,7 +1381,7 @@ main {
 
 .summary-main > p {
   margin-top: 8px;
-  color: var(--text);
+  color: var(--ink);
   font-size: 13.5px;
   line-height: 1.7;
 }
@@ -4485,6 +4485,13 @@ th[aria-sort='descending'] .th-sort.active .icon {
 .project-button:disabled { opacity: .45; cursor: not-allowed; }
 .project-button .icon { width: 15px; height: 15px; }
 
+/* Tombol "Kelola" memakai teks agar jalur ganti nama / hapus project tidak perlu ditebak. */
+.project-button-manage { width: auto; padding: 0 9px; gap: 5px; }
+.project-button-label { font-size: 12px; font-weight: 600; }
+
+/* Catatan pendek di bawah kolom isian dialog. */
+.dialog-form label small { font-size: 11.5px; font-weight: 400; color: var(--text-muted); }
+
 .btn-danger {
   border-color: var(--danger);
   background: var(--danger);
@@ -4542,7 +4549,7 @@ th[aria-sort='descending'] .th-sort.active .icon {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-size: 13px;
 }
@@ -4584,7 +4591,7 @@ th[aria-sort='descending'] .th-sort.active .icon {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-size: 12.5px;
 }
@@ -4604,6 +4611,8 @@ th[aria-sort='descending'] .th-sort.active .icon {
   .project-bar { padding: 0 8px 12px; justify-items: center; }
   .project-bar .project-pick { display: none; }
   .project-actions { justify-content: center; }
+  .project-button-manage { width: 34px; padding: 0; }
+  .project-button-label { display: none; }
   .topbar-project { display: block; }
   .topbar-brand { display: none; }
 }

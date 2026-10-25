@@ -558,7 +558,17 @@ test('online API preserves history across partial success, failure and restart',
     mode='wait';const request=fetch(url+'/api/analyze',{method:'POST'});
     while(!release)await new Promise(resolve=>setImmediate(resolve));
     assert.equal((await fetch(url+'/api/analyze',{method:'POST'})).status,409);
-    assert.equal((await (await fetch(url+'/api/data')).json()).running,true);release();await request;
+    assert.equal((await (await fetch(url+'/api/data')).json()).running,true);
+    // Perubahan project tidak boleh berjalan di tengah penarikan: penarikan mengakhiri dirinya
+    // dengan menulis salinan store yang dibacanya di awal, jadi aktifkan/ganti nama/buat/hapus
+    // yang disisipkan di tengah jalan akan tertimpa tanpa pemberitahuan.
+    for (const body of [{ action:'activate', project: defaultProjectId }, { action:'rename', project: defaultProjectId, name:'Sementara' }, { name:'Kasir Sibuk', entity:'Kasir Sibuk Saya', playAppId:'com.toko.sibuk' }, { action:'delete', project: defaultProjectId }]) {
+      const busy = await fetch(url+'/api/project',{method:'POST',headers:{'Content-Type':'application/json','sec-fetch-site':'same-origin'},body:JSON.stringify(body)});
+      assert.equal(busy.status, 409, `aksi ${body.action || 'create'} ditolak selama penarikan berjalan`);
+      await busy.json();
+    }
+    assert.equal((await (await fetch(url+'/api/data')).json()).reviews.length,65,'percobaan saat sibuk tidak mengubah data');
+    release();await request;
     assert.equal((await fetch(url+'/online-data.json')).status,404);
     assert.equal(storedDataset(JSON.parse(await readFile(storagePath,'utf8'))).runs.length,4);
     await close();server=await createDashboardServer({storagePath,collector,env:{}});url=await listen();
@@ -2313,7 +2323,7 @@ test('The pull endpoint runs without any login, but still refuses other sites', 
     assert.equal(pulls, 1, 'permintaan ditolak sebelum penarikan dimulai');
 
     const busyRes = mockResponse();
-    await analyze.default({ method: 'POST', url: '/api/analyze', headers: { host: 'situs.example.com' } }, busyRes, async () => { throw new Error('busy'); });
+    await analyze.default({ method: 'POST', url: '/api/analyze', headers: { host: 'situs.example.com', 'sec-fetch-site': 'same-origin' } }, busyRes, async () => { throw new Error('busy'); });
     assert.equal(busyRes.status, 409);
   } finally {
     if (previousUser === undefined) delete process.env.DASHBOARD_USER; else process.env.DASHBOARD_USER = previousUser;
@@ -2376,7 +2386,9 @@ test('Serverless API functions refuse other methods, other origins, and unknown 
   assert.equal(analyze.rejectsSameSiteCheck({ 'x-forwarded-host': 'situs.example.com', 'x-forwarded-proto': 'https', origin: 'https://situs.example.com' }), false, 'host hasil proxy dianggap sama sendiri');
   assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', origin: 'http://situs.example.com' }), false, 'skema http pada host yang sama diterima');
   assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', 'sec-fetch-site': 'cross-site' }), true);
-  assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com' }), false, 'permintaan tanpa header Origin tetap dilayani selama host dikenal');
+  assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com' }), true, 'tanpa Origin dan Sec-Fetch-Site permintaan dianggap skrip, bukan penarikan');
+  assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', 'sec-fetch-site': 'none' }), true, 'curl eksplisit tanpa situs penolak ditolak');
+  assert.equal(analyze.rejectsSameSiteCheck({ host: 'situs.example.com', 'sec-fetch-site': 'same-origin' }), false, 'peramban pada halaman yang sama tetap dilayani tanpa login');
   assert.equal(analyze.config.maxDuration, 60, 'function diberi batas waktu lebih panjang daripada anggaran tunggu actor');
   const data = await import('./api/data.js');
   const postRes = mockResponse();
@@ -2449,6 +2461,13 @@ test('Berkas v2 yang cacat diperbaiki tanpa menghapus dataset yang tidak dikenal
   assert.equal(orphan.activeProject, defaultProjectId);
   assert.equal(orphan.datasets[defaultProjectId].reviews.length, 0, 'project bawaan yang disisipkan ikut mendapat dataset');
   assert.equal(orphan.datasets.peninggalan.reviews.length, seedReviews.length, 'dataset peninggalan tidak dibuang');
+  // Dataset tanpa kunci reviews (berkas hasil potongan) dulu membuat pemetakan berikutnya
+  // melempar TypeError saat awal, sehingga dasbor mati total tanpa pesan.
+  const shapeless = migrateStore({ version: storeVersion, activeProject: defaultProjectId, projects: [defaultProject()], datasets: { [defaultProjectId]: { sources: [], note: 'peninggalan' } } });
+  assert.deepEqual(shapeless.datasets[defaultProjectId].reviews, [], 'kunci yang hilang dilengkapi');
+  assert.equal(shapeless.datasets[defaultProjectId].runs.length, 0);
+  assert.equal(shapeless.datasets[defaultProjectId].note, 'peninggalan', 'isi lain yang tidak dikenal tidak dibuang');
+  assert.equal(migrateStore({ version: storeVersion, activeProject: defaultProjectId, projects: [defaultProject()], datasets: { [defaultProjectId]: { reviews: seedReviews } } }).datasets[defaultProjectId].reviews.length, seedReviews.length, 'ulasan yang ada tidak pernah disentuh');
 });
 
 // Header Sec-Fetch-Site hanya dipasang peramban; jalur perubahan project menolaknya bila tidak
@@ -2570,6 +2589,33 @@ test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengiku
     assert.equal(deleteBuiltIn.status, 400);
     assert.match(deleteBuiltIn.body.error, /project_builtIn/, 'project bawaan menolak dihapus');
     assert.equal((await projectFetch(base, '/api/data')).body.reviews.length, seedReviews.length);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Tulis berkas data di server lokal diantre: berkas tetap terbaca dan tidak ada yang hilang', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-race-'));
+  const storagePath = join(dir, 'data.json');
+  const server = await createDashboardServer({ storagePath, env: {}, collector: async () => [] });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = body => projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const names = ['satu', 'dua', 'tiga', 'empat', 'lima'];
+    for (const name of names) assert.equal((await post({ name: `Kasir ${name}`, entity: `Kasir ${name} Saya`, playAppId: `com.toko.${name}` })).status, 200);
+    const ids = ['wondr-merchant', ...names.map(name => `kasir-${name}`)];
+    // 40 permintaan tulis serentak pada berkas yang sama. Tanpa antrean dan nama sementara unik,
+    // dua rename bertabrakan dan meninggalkan data.json yang tidak dapat dibaca ulang —
+    // server gagal start dan seluruh ulasan hilang.
+    const responses = await Promise.all(ids.flatMap(id => Array.from({ length: 8 }, () => post({ action: 'activate', project: id }))));
+    assert.deepEqual(responses.map(r => r.status).filter(status => status !== 200), [], 'tidak ada permintaan yang gagal');
+    const saved = JSON.parse(await readFile(storagePath, 'utf8'));
+    assert.equal(saved.projects.length, ids.length, 'kelima project hasil tulis sebelumnya tetap terdaftar');
+    assert.ok(ids.includes(saved.activeProject), 'project aktif akhir adalah salah satu yang diminta');
+    assert.equal(saved.datasets['wondr-merchant'].reviews.length, seedReviews.length, 'dataset bawaan tidak ikut rusak');
+    assert.deepEqual((await readdir(dir)).filter(entry => entry.endsWith('.tmp')), [], 'tidak ada berkas sementara yang tertinggal');
   } finally {
     await new Promise(resolve => server.close(resolve));
     await rm(dir, { recursive: true, force: true });

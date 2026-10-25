@@ -148,7 +148,7 @@ export function buildDiscovery({ entityName, playHtml = [], itunes = null, now =
       ? 'Kandidat Google Play unggul cukup jauh untuk dipilih otomatis; tetap periksa sebelum penarikan penuh.'
       : status === 'not-found'
         ? 'Pencarian Google Play tidak mengembalikan satu pun judul yang dapat dibaca. Tidak ada ID yang dikarang — isi sendiri bila perlu.'
-        : 'Beberapa judul hasil pencarian sama-sama mirip dengan nama entitas. Pilih salah satu; sistem tidak menebak.',
+        : 'Beberapa judul hasil pencarian sama-sama mirip dengan nama aplikasi. Pilih salah satu; sistem tidak menebak.',
   };
 }
 

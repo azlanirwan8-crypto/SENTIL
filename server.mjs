@@ -1,7 +1,7 @@
 import http from 'node:http';
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { loadLocalEnv } from './local-env.mjs';
 import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
@@ -89,10 +89,25 @@ export async function createDashboardServer({ storagePath, collector = collectOn
       }
     }
   };
-  const persist = async next => {
-    const temporary = dataPath instanceof URL ? new URL(dataPath.href + '.tmp') : dataPath + '.tmp';
-    await writeFile(temporary, JSON.stringify(next,null,2),'utf8');
-    await renameWithRetry(temporary,dataPath);
+  // Berkas data adalah satu-satunya salinan hasil penarikan, jadi penulisannya dibuat berurutan
+  // dan memakai nama sementara yang unik. Dua tulis serentak pada satu berkas sementara pernah
+  // meninggalkan data.json tidak terbaca: server gagal start dan seluruh ulasan hilang.
+  let persistQueue = Promise.resolve();
+  const persist = next => {
+    const task = persistQueue.then(async () => {
+      const temporary = dataPath instanceof URL
+        ? new URL(`${dataPath.href}.${randomUUID()}.tmp`)
+        : `${dataPath}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify(next, null, 2), 'utf8');
+        await renameWithRetry(temporary, dataPath);
+      } catch (error) {
+        await rm(temporary, { force: true }).catch(() => {});
+        throw error;
+      }
+    });
+    persistQueue = task.catch(() => {});
+    return task;
   };
   // Isi permintaan project hanya nama project dan identitas entitas: batas 32 KB dipasang agar
   // permintaan besar tidak menahan memori proses.
@@ -109,6 +124,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   // Project baru dibuat dari hasil penemuan yang sudah dikonfirmasi pengguna, atau dari ID toko
   // yang diisi manual. Datasetnya kosong; data awal tetap milik project bawaan.
   const addProject = async ({ name, entity, discovery, playAppId, appleAppId }) => {
+    if (running) throw new Error('busy');
     const target = discovery
       ? targetFromDiscovery({ discovery, name, id: projectIdFrom(name || entity) })
       : normalizeTarget({ name, entityName: entity, playAppId, appleAppId });
@@ -126,6 +142,10 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     return view(project.id);
   };
   const activateProject = async project => {
+    // Semua aksi yang menulis berkas data menolak berjalan sambil menunggu penarikan: penarikan
+    // mengakhiri dirinya dengan menulis salinan store yang ia baca di awal, jadi project aktif
+    // atau nama yang diubah di tengah jalan akan tertimpa kembali.
+    if (running) throw new Error('busy');
     const id = resolveProjectId(store, project);
     store = { ...store, activeProject: id };
     await persist(store);
@@ -133,6 +153,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   };
   // Mengganti nama project; dataset dan identitas toko tidak disentuh.
   const editProject = async ({ project, name }) => {
+    if (running) throw new Error('busy');
     const next = { ...store, projects: store.projects.map(item => ({ ...item })), datasets: { ...store.datasets } };
     const renamed = renameProject(next, strictProjectId(next, project), name);
     await persist(next);
@@ -141,6 +162,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   };
   // Menghapus project non-bawaan beserta datasetnya; project aktif dikembalikan ke bawaan.
   const dropProject = async project => {
+    if (running) throw new Error('busy');
     const next = { ...store, projects: [...store.projects], datasets: { ...store.datasets } };
     removeProject(next, strictProjectId(next, project));
     await persist(next);
@@ -184,7 +206,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     // Google Play) dan tidak menulis apa pun: hasilnya kandidat untuk dikonfirmasi pengguna.
     if (path === '/api/discover' && req.method === 'GET') {
       const entity = String(url.searchParams.get('entity') || '').trim();
-      if (entity.length < 2) { json(400, { error: 'Nama entitas minimal dua karakter.' }); return; }
+      if (entity.length < 2) { json(400, { error: 'Nama aplikasi minimal dua karakter.' }); return; }
       try {
         json(200, { discovery: await discover({ entityName: entity }) });
       } catch (error) {
@@ -200,16 +222,12 @@ export async function createDashboardServer({ storagePath, collector = collectOn
         const action = String(body.action || 'create');
         if (action === 'activate') { json(200, await activateProject(body.project)); return; }
         if (action === 'rename') { json(200, await editProject(body)); return; }
-        if (action === 'delete') {
-          if (running) { json(409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
-          json(200, await dropProject(body.project));
-          return;
-        }
+        if (action === 'delete') { json(200, await dropProject(body.project)); return; }
         if (action !== 'create') { json(400, { error: 'Aksi project tidak dikenal.' }); return; }
-        if (running) { json(409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
         json(200, await addProject(body));
       } catch (error) {
         const message = String(error.message || '');
+        if (message === 'busy') { json(409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
         if (/^(project_|target_invalid|discovery_unconfirmed|body_too_large)/.test(message)) { json(400, { error: message }); return; }
         console.error('Project gagal disimpan:', message);
         json(500, { error: 'Project tidak dapat disimpan. Data yang sudah ada tetap tersimpan.' });

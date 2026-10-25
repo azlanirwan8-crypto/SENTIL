@@ -107,6 +107,7 @@ try {
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-select option')].map(o=>o.textContent)`),['wondr merchant by BNI']);
   assert.equal(await evaluate(`Boolean(document.querySelector('.project-count,.project-entity,.project-add-label'))`),false,'bilah project hanya dropdown dan tombol ikon');
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.project-bar .project-actions button')].map(b=>b.dataset.action)`),['add-project','manage-project'],'dua tombol ikon: tambah dan kelola project');
+  assert.equal(await evaluate(`document.querySelector('.project-button-manage .project-button-label').textContent`),'Kelola','jalur ganti nama dan hapus project diberi teks, bukan hanya ikon');
   assert.equal(await evaluate(`document.querySelector('.project-bar .project-select').disabled`),false,'pemilih project dapat dipakai saat tidak ada penarikan');
   await evaluate(`Promise.all([400,500,600,700].map(weight=>document.fonts.load(weight+' 13px Poppins')))`);
   for (const [view,label] of [['overview','Dashboard'],['sentiment','Analisis sentimen'],['reviews','Review'],['platforms','Platform']]) {
@@ -672,9 +673,11 @@ try {
   await click('[data-action="add-project"]');
   assert.equal(await evaluate(`document.querySelector('#project-dialog').open`),true,'dialog project terbuka');
   assert.equal(await evaluate(`document.querySelector('[data-action="create-project"]').disabled`),true,'tombol Analisa terkunci sebelum identitas dipilih');
+  assert.equal(await evaluate(`document.querySelector('#project-entity').closest('label').firstChild.textContent.trim()`),'Aplikasi yang akan dianalisis','kolom pencarian memakai istilah aplikasi, bukan entitas');
   await evaluate(`const n=document.querySelector('#project-name');n.value='Kasir Toko';n.dispatchEvent(new Event('input',{bubbles:true}));const e=document.querySelector('#project-entity');e.value='Kasir Saya';e.dispatchEvent(new Event('input',{bubbles:true}));`);
-  await click('[data-action="discover-project"]');
-  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;function check(){if(document.querySelector('.discover-item'))resolve(true);else if(Date.now()>end)reject(Error('Kandidat identitas tidak tampil'));else requestAnimationFrame(check);}check();})`);
+  // Kandidat toko harus muncul sendiri setelah nama aplikasi diisi — tanpa menekan tombol apa pun.
+  await until(`Boolean(document.querySelector('.discover-item'))`,'pencarian identitas tidak berjalan otomatis');
+  assert.doesNotMatch(await evaluate(`document.querySelector('#project-dialog').textContent`),/\bentitas\b/i,'dialog project tidak lagi memakai kata entitas');
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.discover-item strong')].map(e=>e.textContent)`),['Kasir Saya — Toko Retail','Kasir Lain'],'kandidat ditampilkan apa adanya untuk dikonfirmasi');
   assert.match(await evaluate(`document.querySelector('.discover-note').textContent`),/Fixture penemuan identitas/,'keterangan metode penemuan dibaca dari hasil server');
   assert.match(await evaluate(`document.querySelector('.discover-col .badge').textContent`),/beberapa judul mirip/,'kandidat yang seri dinyatakan, bukan dipilih diam-diam');

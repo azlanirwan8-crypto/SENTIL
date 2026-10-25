@@ -124,7 +124,7 @@ const projects = { list:[], active:null, target:null };
 // hasil unduhan project lain tidak diberi merek project bawaan.
 const projectName = () => projects.list.find(project => project.id === projects.active)?.name || 'project';
 const projectSlug = () => projects.active || 'project';
-const discovery = { name:'', entity:'', payload:null, busy:false, error:'', picked:{ play:'', appstore:'' } };
+const discovery = { name:'', entity:'', payload:null, busy:false, error:'', picked:{ play:'', appstore:'' }, searched:'' };
 const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
 const isBusy = () => sync.loading || sync.busy || sync.running;
@@ -197,9 +197,9 @@ const fetchedCount = source => numericCount(source?.fetched);
 function wasFetched(source) {
   return source && !awaitingSource(source) && source.status !== 'snapshot' && (source.fetched === true || fetchedCount(source) > 0 || (['success','partial'].includes(source.status) && source.fetched !== false));
 }
-// Bilah project: hanya pemilih project aktif dan dua tombol ikon — tambah project, dan
-// kelola project (ubah nama / hapus). Identitas toko tidak ditampilkan di sini supaya bilah
-// tetap fokus; rincian itu ada di dialog kelola dan menu Platform.
+// Bilah project: pemilih project aktif, tombol ikon tambah, dan tombol "Kelola" yang membuka
+// dialog ganti nama / hapus. "Kelola" sengaja diberi teks (bukan hanya ikon) karena pengguna
+// tidak boleh menebak-nebak di mana hapus project-nya.
 const projectOptions = () => projects.list.map(project => `<option value="${esc(project.id)}" ${project.id === projects.active ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
 function projectBar() {
   const active = projects.list.find(project => project.id === projects.active) || null;
@@ -213,7 +213,7 @@ function projectBar() {
     </label>
     <div class="project-actions">
       <button class="project-button" data-action="add-project" aria-label="Tambah project" title="Tambah project"${idle}>${icon('plus')}</button>
-      <button class="project-button" data-action="manage-project" aria-label="Kelola project aktif" title="Ubah nama atau hapus project"${active && !busy ? '' : ' disabled'}>${icon('pen')}</button>
+      <button class="project-button project-button-manage" data-action="manage-project" aria-label="Kelola project aktif" title="Ganti nama atau hapus project ini"${active && !busy ? '' : ' disabled'}>${icon('pen')}<span class="project-button-label">Kelola</span></button>
     </div>
   </section>`;
 }
@@ -796,7 +796,7 @@ function openReview(key) {
   </div><div class="dialog-footer"><small>Isi ulasan merupakan pernyataan pengguna yang diambil apa adanya dari sumber publik.</small></div>`;
   if (!dialog.open) dialog.showModal();
 }
-// Dialog project. Nama project dan entitas yang dianalisis diminta di sini; identitas toko
+// Dialog project. Nama project dan aplikasi yang akan dianalisis diminta di sini; identitas toko
 // diambil dari dua sumber gratis (iTunes Search + pencarian Google Play) dan WAJIB dikonfirmasi
 // pengguna sebelum penarikan berjalan. Sistem tidak menebak aplikasi yang mirip.
 const discoveryStoreNames = { play:'Google Play', appstore:'App Store' };
@@ -834,25 +834,25 @@ function renderProjectDiscovery() {
   const d = discovery.payload;
   const targets = projectTargets();
   host.innerHTML = discovery.busy
-    ? `<p class="discover-wait">${icon('clock')} Memeriksa dua sumber gratis…</p>`
+    ? `<p class="discover-wait">${icon('clock')} Mencari otomatis di Google Play dan App Store…</p>`
     : d
       ? `<p class="discover-note">${esc(d.note)}${d.ok === false ? '' : ` Kategori terdeteksi: <strong>${esc(d.category === 'fintech' ? 'Banking &amp; Fintech' : d.category === 'ecommerce' ? 'E-Commerce' : 'General App')}</strong>. Kata kunci turunan: ${esc((d.keywords || []).join(', ') || 'tidak ada')}.`}</p><div class="discover-grid">${discoveryColumn('play')}${discoveryColumn('appstore')}</div>
-        <details class="discover-manual"><summary>Isi ID manual</summary><div class="discover-manual-fields">
+        <details class="discover-manual"><summary>Tidak ketemu? Isi ID toko manual</summary><div class="discover-manual-fields">
           <label>ID paket Google Play<input id="manual-play" type="text" value="${esc(targets.play)}" placeholder="com.contoh.aplikasi" autocomplete="off"></label>
           <label>ID App Store<input id="manual-appstore" type="text" inputmode="numeric" value="${esc(targets.appstore)}" placeholder="1234567890" autocomplete="off"></label>
-        </div><p>Hanya dipakai bila hasil pencarian tidak menemukan aplikasinya. ID yang diisi manual tetap ditampilkan pada konfirmasi sebelum data ditarik.</p></details>
+        </div><p>Jalan pintas bila pencarian otomatis tidak menemukan aplikasinya — misalnya nama tokonya berbeda di tiap toko. ID yang diisi manual tetap ditampilkan pada konfirmasi sebelum data ditarik.</p></details>
         <p class="discover-target" role="status"></p>`
-      : `<p class="discover-idle">Belum ada pemeriksaan identitas. Tekan “Cari identitas” untuk membaca kandidat dari iTunes Search dan halaman pencarian Google Play (keduanya gratis dan tanpa kunci API).</p>`;
+      : `<p class="discover-idle">Kandidat toko dicari otomatis begitu nama aplikasi diisi di atas. Aplikasi membaca dua sumber gratis (iTunes Search dan halaman pencarian Google Play) tanpa kunci API.</p>`;
   updateProjectReadout();
 }
 function openProjectDialog() {
   const dialog = $('#project-dialog');
   if (!dialog) return;
-  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="project-heading">Tambah project analisis</h2><p>Nama project dan entitas yang dianalisis. Data ditarik dari identitas toko yang Anda konfirmasi.</p></div><button class="icon-button" data-close="project-dialog" aria-label="Tutup tambah project">${icon('close')}</button></div>
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="project-heading">Tambah project analisis</h2><p>Nama project dan aplikasi yang akan dianalisis. Data ditarik dari identitas toko yang Anda konfirmasi.</p></div><button class="icon-button" data-close="project-dialog" aria-label="Tutup tambah project">${icon('close')}</button></div>
   <div class="dialog-body"><div class="dialog-form">
     <label>Nama project<input id="project-name" type="text" value="${esc(discovery.name)}" placeholder="Misalnya aplikasi kasir terbaru" autocomplete="off" maxlength="80"></label>
-    <label>Entitas yang dianalisis<input id="project-entity" type="text" value="${esc(discovery.entity)}" placeholder="Nama aplikasi persis seperti di toko" autocomplete="off" maxlength="80"></label>
-    <button class="btn" type="button" data-action="discover-project">${icon('search')}${discovery.busy ? 'Memeriksa…' : 'Cari identitas'}</button>
+    <label>Aplikasi yang akan dianalisis<input id="project-entity" type="text" value="${esc(discovery.entity)}" placeholder="Nama aplikasi persis seperti di toko" autocomplete="off" maxlength="80"><small>Nama ini yang dicari otomatis di Google Play dan App Store; kandidat muncul di bawah tanpa perlu menekan tombol.</small></label>
+    <button class="btn" type="button" data-action="discover-project">${icon('search')}${discovery.busy ? 'Memeriksa…' : 'Cari ulang di toko'}</button>
     <p class="filter-error" id="project-error" role="alert">${esc(discovery.error)}</p>
     <div id="project-discovery" class="project-discovery"></div>
   </div></div>
@@ -860,6 +860,18 @@ function openProjectDialog() {
   renderProjectDiscovery();
   if (!dialog.open) dialog.showModal();
   $('#project-name')?.focus({ preventScroll: true });
+  // Nama aplikasi yang sudah terisi langsung dicari; pengguna tidak perlu menekan tombol cari.
+  if (!discovery.payload && !discovery.busy) scheduleDiscovery();
+}
+// Pemeriksaan identitas dijalankan otomatis setelah nama aplikasi berhenti diketik, dan hanya
+// untuk nama yang belum pernah dibaca. Hasilnya tetap harus dikonfirmasi: dua judul yang sama
+// mirip tidak boleh dipilihkan diam-diam oleh aplikasi ini.
+let discoverTimer;
+function scheduleDiscovery() {
+  clearTimeout(discoverTimer);
+  const entity = String($('#project-entity')?.value || discovery.entity).trim();
+  if (entity.length < 3 || discovery.busy || entity === discovery.searched) return;
+  discoverTimer = setTimeout(() => void discoverIdentity(), 700);
 }
 // Mengirim permintaan project lalu memakai respons yang sama seperti data dasbor lainnya.
 async function requestProject(body) {
@@ -872,12 +884,13 @@ async function requestProject(body) {
   return payload;
 }
 async function discoverIdentity() {
+  if (discovery.busy) return;
   const entity = String($('#project-entity')?.value || discovery.entity).trim();
   discovery.entity = entity; discovery.name = String($('#project-name')?.value || discovery.name);
   const errorHost = $('#project-error');
   if (errorHost) errorHost.textContent = '';
-  if (entity.length < 2) { discovery.error = 'Isi nama entitas terlebih dahulu (minimal dua karakter).'; if (errorHost) errorHost.textContent = discovery.error; return; }
-  discovery.busy = true; discovery.payload = null; discovery.picked = { play: '', appstore: '' };
+  if (entity.length < 2) { discovery.error = 'Isi nama aplikasi terlebih dahulu (minimal dua karakter).'; if (errorHost) errorHost.textContent = discovery.error; return; }
+  discovery.busy = true; discovery.payload = null; discovery.picked = { play: '', appstore: '' }; discovery.searched = entity;
   renderProjectDiscovery();
   try {
     const response = await fetch(`/api/discover?entity=${encodeURIComponent(entity)}`, { cache: 'no-store', headers: { Accept: 'application/json' } });
@@ -892,7 +905,7 @@ async function discoverIdentity() {
     discovery.busy = false;
     renderProjectDiscovery();
     const button = $('[data-action="discover-project"]');
-    if (button) button.innerHTML = `${icon('search')}Cari identitas`;
+    if (button) button.innerHTML = `${icon('search')}Cari ulang di toko`;
   }
 }
 async function createProjectFromDialog() {
@@ -1009,7 +1022,7 @@ function openManageDialog() {
   dialog.innerHTML = `<div class="dialog-header"><div><h2 id="manage-heading">Kelola project</h2><p>Ganti nama project atau hapus beserta datanya.</p></div><button class="icon-button" data-close="manage-dialog" aria-label="Tutup kelola project">${icon('close')}</button></div>
   <div class="dialog-body"><div class="dialog-form">
     <label>Nama project<input id="manage-name" type="text" value="${esc(active.name)}" maxlength="80" autocomplete="off"></label>
-    <p class="manage-facts"><span>Entitas dianalisis</span><strong>${esc(active.entity)}</strong></p>
+    <p class="manage-facts"><span>Aplikasi dianalisis</span><strong>${esc(active.entity)}</strong></p>
     <p class="manage-facts"><span>Identitas toko</span><strong>${esc(active.stores)}</strong></p>
     <p class="manage-facts"><span>Data tersimpan</span><strong>${integer(reviews.length)} teks · penarikan ${esc(lastPull)}</strong></p>
     <p class="note-inline">Identitas toko tidak diubah di sini. Untuk menganalisis aplikasi lain, buat project baru agar datanya tetap terpisah.</p>
@@ -1285,7 +1298,15 @@ document.addEventListener('change',event=>{
 let searchTimer;
 document.addEventListener('input',event=>{
   if (event.target.id==='project-name') { discovery.name=event.target.value; updateProjectReadout(); }
-  if (event.target.id==='project-entity') { discovery.entity=event.target.value; updateProjectReadout(); }
+  if (event.target.id==='project-entity') {
+    discovery.entity=event.target.value;
+    // Kandidat milik nama sebelumnya tidak boleh tetap terpilih: identitasnya berbeda.
+    if (discovery.payload && discovery.entity.trim() !== discovery.searched) {
+      discovery.payload = null; discovery.picked = { play:'', appstore:'' };
+      renderProjectDiscovery();
+    } else updateProjectReadout();
+    scheduleDiscovery();
+  }
   if (event.target.id==='manual-play'||event.target.id==='manual-appstore') { updateProjectReadout(); }
   if (event.target.id==='review-search') {
     clearComplaint(); state.query=event.target.value; state.page=1; clearTimeout(searchTimer);
