@@ -2,7 +2,7 @@
 // Disk /tmp hanya bertahan selama instance hidup, jadi state dipegang di memori
 // dan ditulis ke DATA_PATH agar penarikan berikutnya tetap memakai riwayat yang sama.
 // Berkas yang sama memuat beberapa project; setiap project punya dataset sendiri.
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { collectOnline, collectPlatform, channelConfigurations } from './collectors.mjs';
 import { overlayConfiguration, buildDataset, reclassifyDerived, resumeMap } from './dashboard-core.mjs';
 import { withAbsa } from './model.js';
@@ -10,7 +10,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject,
 } from './projects.mjs';
 
 // Environment dibaca saat dipakai agar fungsi yang baru dimuat ulang mengikuti
@@ -28,6 +28,9 @@ const apifyWaitMs = () => {
 
 let cache = null;
 let running = false;
+// Kegagalan tulis terakhir ikut dikirim ke antarmuka: data sesi masih tampil di memori,
+// tetapi riwayat tidak akan bertahan setelah instance serverless berganti.
+let storageWarning = null;
 
 export const isRunning = () => running;
 
@@ -37,17 +40,46 @@ async function readStored() {
   return null;
 }
 
-async function writeStored(store) {
-  try { await writeFile(storagePath(), JSON.stringify(store, null, 2), 'utf8'); }
-  catch { /* disk sementara tidak dapat ditulis: state memori tetap dipakai */ }
+// rename() di Windows dan beberapa berkas sistem sementara sering gagal sesaat
+// (EBUSY/EPERM/EACCES) ketika antivirus atau indexer masih memegang berkas target.
+async function renameWithRetry(from, to) {
+  for (let attempt = 0; ; attempt += 1) {
+    try { await rename(from, to); return; }
+    catch (error) {
+      if (!['EBUSY', 'EPERM', 'EACCES'].includes(error.code) || attempt >= 3) throw error;
+      await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
+    }
+  }
 }
 
-function readyDataset(dataset) {
+// Ditulis ke berkas sementara lalu dipindahkan agar pembaca berikutnya tidak pernah melihat
+// berkas setengah tertulis, dan kegagalan dilaporkan, tidak ditelan diam-diam.
+async function writeStored(store) {
+  const path = storagePath();
+  const temporary = `${path}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify(store, null, 2), 'utf8');
+    await renameWithRetry(temporary, path);
+    storageWarning = null;
+  } catch (error) {
+    storageWarning = `Data berhasil dibaca dan dihitung, tetapi belum sempat disimpan ke ${path}: ${error.message}. Instance baru akan memulai dari berkas yang ada.`;
+    console.error('[dashboard-store] gagal menyimpan data:', error.message);
+    await rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
+function datasetTarget(store, id) {
+  // Dataset peninggalan berkas lama dapat tidak memiliki entri project; labelnya dinilai
+  // dengan aturan bawaan, bukan membuat project asing muncul secara diam-diam.
+  return findProject(store, id) ? projectTarget(store, id) : null;
+}
+
+function readyDataset(dataset, target = null) {
   // Label otomatis dihitung ulang setiap kali data dibaca, sehingga perbaikan aturan langsung
   // berlaku pada baris yang sudah tersimpan, di semua project.
   return {
     ...dataset,
-    reviews: withAbsa(reclassifyDerived(dataset.reviews)),
+    reviews: withAbsa(reclassifyDerived(dataset.reviews, target)),
     sources: overlayConfiguration(dataset.sources, channelConfigurations()),
   };
 }
@@ -55,7 +87,7 @@ function readyDataset(dataset) {
 // Status konfigurasi hanya menimpa hasil baca pertama; hasil penarikan yang baru disimpan
 // dikembalikan apa adanya agar kanal yang barusan berhasil tidak kembali dibaca "perlu konfigurasi".
 function readyStore(base) {
-  return { ...base, datasets: Object.fromEntries(Object.entries(base.datasets).map(([id, dataset]) => [id, readyDataset(dataset)])) };
+  return { ...base, datasets: Object.fromEntries(Object.entries(base.datasets).map(([id, dataset]) => [id, readyDataset(dataset, datasetTarget(base, id))])) };
 }
 
 async function loadStore() {
@@ -74,6 +106,7 @@ async function view(project) {
     activeProject: id,
     target: projectTarget(store, id),
     running,
+    storageWarning,
   };
 }
 
@@ -102,7 +135,7 @@ export async function addProject({ name, entity, discovery, playAppId, appleAppI
   const project = createProject({ name: name || entity, entity, target });
   if (findProject(store, project.id)) throw new Error('project_exists: project dengan nama itu sudah ada');
   store.projects.push(project);
-  store.datasets[project.id] = readyDataset(emptyDataset());
+  store.datasets[project.id] = readyDataset(emptyDataset(), projectTarget(store, project.id));
   store.activeProject = project.id;
   cache = store;
   await writeStored(store);
@@ -117,6 +150,18 @@ export async function activateProject(project) {
   return view(id);
 }
 
+// Menghapus project dan seluruh datasetnya. Project bawaan ditolak, dan project aktif
+// dikembalikan ke bawaan; dataset project lain tidak tersentuh.
+export async function dropProject(project) {
+  if (running) throw new Error('busy');
+  const store = await loadStore();
+  const id = resolveProjectId(store, project);
+  removeProject(store, id);
+  cache = store;
+  await writeStored(store);
+  return view(undefined);
+}
+
 async function runStep(project, produce, { recordRun }) {
   if (running) throw new Error('busy');
   running = true;
@@ -128,7 +173,7 @@ async function runStep(project, produce, { recordRun }) {
     const target = projectTarget(store, id);
     const results = await produce(previous, { resume: resumeMap(previous), apifyWaitMs: apifyWaitMs(), target });
     const finishedAt = new Date().toISOString();
-    setDataset(store, id, buildDataset({ previous, results, startedAt, finishedAt, channelConfig: channelConfigurations(), recordRun }), { pulledAt: recordRun ? finishedAt : undefined });
+    setDataset(store, id, buildDataset({ previous, results, startedAt, finishedAt, channelConfig: channelConfigurations(), recordRun, target }), { pulledAt: recordRun ? finishedAt : undefined });
     cache = store;
     await writeStored(store);
     return view(id);

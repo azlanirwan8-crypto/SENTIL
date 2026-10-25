@@ -103,6 +103,7 @@ const paths = {
   youtube:'<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3V9Z"/>',
   caret:'<path d="m7 14 5-5 5 5"/>',
   pen:'<path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13 6 4 4"/>',
+  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6m4-6v6"/>',
   clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/>',
   user:'<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5c1-3.6 3.8-5.5 7.5-5.5s6.5 1.9 7.5 5.5"/>',
   link:'<path d="M10 13.5a4.4 4.4 0 0 0 6.3 0l2.8-2.8a4.4 4.4 0 0 0-6.2-6.2l-1 1"/><path d="M14 10.5a4.4 4.4 0 0 0-6.3 0l-2.8 2.8a4.4 4.4 0 0 0 6.2 6.2l1-1"/>',
@@ -115,10 +116,14 @@ const paths = {
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.message}</svg>`; }
 let reviews = [...seedReviews];
 const state = { view:'overview', platform:'all', period:'all', from:'', to:'', sentiment:'all', query:'', tag:'', group:null, groupName:'', complaint:'', cluster:'', aspect:'', page:1, size:10, sort:{ key:'date', dir:'desc' } };
-const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null };
+const sync = { sources:[], lastRun:null, runs:[], running:false, loading:true, busy:false, requesting:false, loaded:false, attempt:null, pull:null, storageWarning:null };
 // Project analisis: satu berkas data dapat memuat beberapa project, masing-masing dengan
 // dataset dan target tokonya sendiri. Penarikan selalu mengikuti project aktif.
 const projects = { list:[], active:null, target:null };
+// Nama dan slug project aktif dipakai pada judul laporan dan nama berkas ekspor, sehingga
+// hasil unduhan project lain tidak diberi merek project bawaan.
+const projectName = () => projects.list.find(project => project.id === projects.active)?.name || 'project';
+const projectSlug = () => projects.active || 'project';
 const discovery = { name:'', entity:'', payload:null, busy:false, error:'', picked:{ play:'', appstore:'' } };
 const views = { overview:'Dashboard', sentiment:'Analisis sentimen', reviews:'Review', platforms:'Platform', methodology:'Metode & data' };
 let toastTimer, refreshTimer;
@@ -196,7 +201,10 @@ function projectBar() {
       <select class="project-select" aria-label="Pilih project aktif">${projectOptions()}</select>
       <span class="project-entity">${esc(active ? `${active.entity} · ${active.stores}` : 'Belum ada project terbuka')}</span>
     </label>
-    <button class="btn project-add" data-action="add-project" title="Tambah project analisis">${icon('plus')}<span class="project-add-label">Tambah project</span></button>
+    <div class="project-actions">
+      <button class="btn project-add" data-action="add-project" title="Tambah project analisis">${icon('plus')}<span class="project-add-label">Tambah project</span></button>
+      ${active && !active.builtIn ? `<button class="btn project-remove" data-action="delete-project" title="Hapus project aktif beserta datanya">${icon('trash')}<span class="project-add-label">Hapus</span></button>` : ''}
+    </div>
   </section>`;
 }
 function nav() {
@@ -468,7 +476,7 @@ function incidentReportHtml(data) {
   const kpi = (label, value) => `<div class="report-kpi"><span>${esc(label)}</span><strong>${value}</strong></div>`;
   const list = rows => rows.length ? `<ul>${rows.map(x => `<li>${x}</li>`).join('')}</ul>` : '<p class="report-plain">Tidak ada baris yang memenuhi syarat ini pada lingkup laporan.</p>';
   return `<header class="report-head">
-    <h1>Laporan Insiden Sentimen — wondr merchant by BNI</h1>
+    <h1>Laporan Insiden Sentimen — ${esc(projectName())}</h1>
     <p class="report-meta">Lingkup data: ${esc(reportScopeLabel())}</p>
     <p class="report-meta">Dibuat ${esc(timeLabel(generatedAt))} (${esc(generatedAt)}) · Penarikan terakhir: ${esc(lastPull)} · Penjenisan: rules-v1 · ABSA: aspek/emosi/niat aturan kata kunci · Proyeksi: ${esc(projectionMethod)}</p>
   </header>
@@ -510,12 +518,12 @@ function openIncidentReport(kind) {
   const negative = data.filter(r => r.sentiment === 'negative');
   if (!negative.length) { notify('Tidak ada ulasan negatif dalam filter ini, jadi laporan insiden tidak dibuat.'); return; }
   if (kind === 'csv') {
-    download(exportCsv(negative), `wondr-insiden-${state.platform}-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
+    download(exportCsv(negative), `${projectSlug()}-insiden-${state.platform}-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
     notify(`${negative.length} ulasan negatif diekspor sebagai laporan insiden.`);
     return;
   }
   reportTitleBefore = document.title;
-  document.title = `Laporan Insiden Sentimen wondr merchant ${new Date().toISOString().slice(0, 10)}`;
+  document.title = `Laporan Insiden Sentimen ${projectName()} ${new Date().toISOString().slice(0, 10)}`;
   $('#report-root').innerHTML = incidentReportHtml(data);
   document.body.classList.add('reporting');
   window.print();
@@ -627,9 +635,15 @@ function coverage() {
   const readSources = sync.sources.filter(source=>['success','partial'].includes(source.status)).length;
   const activeProject = projects.list.find(project => project.id === projects.active) || null;
   const targetIds = [projects.target?.play?.appId ? `Google Play ${projects.target.play.appId}` : null, projects.target?.appstore?.appId ? `App Store ${projects.target.appstore.appId}` : null].filter(Boolean).join(' · ');
-  return `<p class="coverage-intro"><strong>Project aktif: ${esc(activeProject?.name || 'belum ada project')}</strong> — penarikan mengikuti ${esc(targetIds || 'identitas toko yang belum lengkap')}. ${readSources} dari ${platforms.length} sumber memiliki hasil pengambilan berhasil atau sebagian pada status terakhir. ${socialCount?`${socialCount} komentar sosial tersimpan; hanya teks dengan relevansi dan sentimen yang cukup jelas masuk perhitungan NSS.`:'Belum ada komentar media sosial yang tersimpan. Angka sentimen saat ini bukan analisis media sosial.'} Konfigurasi API tidak sama dengan akses yang sudah berhasil. Kegagalan pengambilan tidak menghapus data tersimpan.</p><div class="coverage-grid">${platforms.filter(p=>state.platform==='all'||p.id===state.platform).map(p=>{
+  const storageNotice = sync.storageWarning ? `<p class="coverage-warning" role="status">${esc(sync.storageWarning)}</p>` : '';
+  return `${storageNotice}<p class="coverage-intro"><strong>Project aktif: ${esc(activeProject?.name || 'belum ada project')}</strong> — penarikan mengikuti ${esc(targetIds || 'identitas toko yang belum lengkap')}. ${readSources} dari ${platforms.length} sumber memiliki hasil pengambilan berhasil atau sebagian pada status terakhir. ${socialCount?`${socialCount} komentar sosial tersimpan; hanya teks dengan relevansi dan sentimen yang cukup jelas masuk perhitungan NSS.`:'Belum ada komentar media sosial yang tersimpan. Angka sentimen saat ini bukan analisis media sosial.'} Konfigurasi API tidak sama dengan akses yang sudah berhasil. Kegagalan pengambilan tidak menghapus data tersimpan.</p><div class="coverage-grid">${platforms.filter(p=>state.platform==='all'||p.id===state.platform).map(p=>{
     const source=sourceFor(p), data=scoped.filter(r=>r.platform===p.id), s=summary(data), rating=ratingSummary(data);
     const stored=reviews.filter(r=>r.platform===p.id).length, listing=latestListing(p.id), url=safeHttps(p.url);
+    const histogram=p.type==='Toko aplikasi'?storeHistogram(p.id):null;
+    // Google dan Apple memublikasikan angka agregat dan bucket histogram pada elemen halaman
+    // yang berbeda; selisihnya nyata ada di sumber, jadi ditampilkan apa adanya, tidak dipaksa sama.
+    const aggregateCount=numericCount(listing?.ratingCount);
+    const histogramGap=histogram&&Number.isInteger(aggregateCount)&&aggregateCount!==histogram.reduce((a,b)=>a+b,0)?aggregateCount-histogram.reduce((a,b)=>a+b,0):null;
     const installs = source.installs ?? listing?.installs ?? p.installs ?? null;
     const status=Object.hasOwn(sourceStatusNames,source.status)?source.status:'snapshot';
     const fetched=fetchedCount(source), serverCount=numericCount(source.count);
@@ -661,7 +675,7 @@ function coverage() {
       </dl>
       ${unavailable?'':`<div class="coverage-rating-panel">
         <div class="coverage-rating"><h4>Penilaian bintang</h4><div class="coverage-rating-value">${rating.total?`<strong>${decimal(rating.average)} / 5 <span aria-hidden="true">★</span></strong><span>dari ${rating.total} ulasan</span>`:'<strong>N/A</strong><span>Tidak ada penilaian bintang</span>'}</div><p>Dalam periode terpilih. ${isStore?'Bukan penilaian seluruh halaman toko.':'Bukan penilaian seluruh platform.'}</p></div>
-        ${isStore?`<div class="coverage-rating listing-rating"><h4>Skor halaman toko</h4><div class="coverage-rating-value">${listing?`<strong>${number(listing.rating)} / 5</strong><span>· ${numericCount(listing.ratingCount)!==null?integer(numericCount(listing.ratingCount)):'N/A'} penilaian halaman toko</span>`:'<strong>N/A</strong><span>Belum ada pengambilan berhasil</span>'}</div><p>${listing?`Diambil pada ${esc(timeLabel(listing.lastSuccessAt || listing.checkedAt))}. Bukan jumlah teks ulasan atau data waktu nyata.`:'Data awal tidak ditampilkan sebagai data terbaru.'}</p>${storeHistogram(p.id)?`<div class="listing-histogram">${histogramRows(storeHistogram(p.id),`Distribusi seluruh penilaian halaman toko ${p.name}`)}</div>`:''}</div>`:''}
+        ${isStore?`<div class="coverage-rating listing-rating"><h4>Skor halaman toko</h4><div class="coverage-rating-value">${listing?`<strong>${number(listing.rating)} / 5</strong><span>· ${numericCount(listing.ratingCount)!==null?integer(numericCount(listing.ratingCount)):'N/A'} penilaian halaman toko</span>`:'<strong>N/A</strong><span>Belum ada pengambilan berhasil</span>'}</div><p>${listing?`Diambil pada ${esc(timeLabel(listing.lastSuccessAt || listing.checkedAt))}. Bukan jumlah teks ulasan atau data waktu nyata.`:'Data awal tidak ditampilkan sebagai data terbaru.'}</p>${histogram?`<div class="listing-histogram">${histogramRows(histogram,`Distribusi seluruh penilaian halaman toko ${p.name}`)}</div>`:''}${histogramGap!==null?`<p class="listing-histogram-note">Jumlah bucket histogram (${integer(histogram.reduce((a,b)=>a+b,0))}) berbeda ${integer(Math.abs(histogramGap))} dari angka agregat halaman toko (${integer(aggregateCount)}). Kedua angka dipublikasikan sumber pada elemen halaman yang berbeda dan tidak dipaksa sama; tidak ada penilaian yang ditambahkan atau dibuang.</p>`:''}</div>`:''}
       </div>`}
       ${status==='success'?`<details class="coverage-scope"><summary>Cakupan pengambilan</summary><p class="source-message">${esc(message)}</p></details>`:!unavailable?`<p class="source-message source-alert">${esc(message)}</p>`:''}
       ${!unavailable||url?`<div class="coverage-actions">${unavailable?'':`<button class="btn-text" data-open-platform="${esc(p.id)}">Jelajahi ulasan ${icon('arrow')}</button>`}${url?`<a class="btn-text action-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Halaman publik ${icon('external')}</a>`:''}</div>`:''}
@@ -670,8 +684,15 @@ function coverage() {
 }
 function methodology() {
   const base=summary(seedReviews);
+  const active = projects.list.find(project => project.id === projects.active) || null;
+  const builtInView = !active || active.builtIn;
+  // Kalimat sumber mengikuti project aktif: angka data awal hanya berlaku untuk dataset bawaan,
+  // project lain melaporkan hasil penarikannya sendiri.
+  const dataOrigin = builtInView
+    ? `Data awal diambil pada ${esc(dateLabel(observationDate,{year:'numeric'}))}: <strong>${seedReviews.filter(r=>r.platform==='play').length} ulasan tertulis Google Play</strong> dan <strong>${seedReviews.filter(r=>r.platform==='appstore').length} ulasan tertulis App Store</strong>. Aplikasi yang dianalisis adalah wondr merchant by BNI (Play: <strong>id.bni.wfb</strong>; App Store: <strong>id6741567238</strong>). Aplikasi wondr untuk konsumen dan BNI Merchant lama tidak termasuk dalam analisis ini.`
+    : `Dataset project <strong>${esc(active.name)}</strong> saat ini memuat <strong>${integer(reviews.filter(r=>r.platform==='play').length)} ulasan tertulis Google Play</strong> dan <strong>${integer(reviews.filter(r=>r.platform==='appstore').length)} ulasan tertulis App Store</strong> hasil penarikan. Aplikasi yang dianalisis adalah ${esc(active.name)} (Play: <strong>${esc(projects.target?.play?.appId || 'tidak terpasang')}</strong>; App Store: <strong>${esc(projects.target?.appstore?.appId || 'tidak terpasang')}</strong>). Identitas toko ini yang Anda konfirmasi saat project dibuat; aplikasi lain dengan nama serupa tidak termasuk.`;
   return `<div class="method-grid">
-    <article class="card method-card"><h2>Sumber dan cakupan</h2><p>Data awal diambil pada ${esc(dateLabel(observationDate,{year:'numeric'}))}: <strong>${seedReviews.filter(r=>r.platform==='play').length} ulasan tertulis Google Play</strong> dan <strong>${seedReviews.filter(r=>r.platform==='appstore').length} ulasan tertulis App Store</strong>. Aplikasi yang dianalisis adalah wondr merchant by BNI (Play: <strong>id.bni.wfb</strong>; App Store: <strong>id6741567238</strong>). Aplikasi wondr untuk konsumen dan BNI Merchant lama tidak termasuk dalam analisis ini.</p><p>Tombol Tarik Analisis mengambil data dari kedua toko aplikasi yang terhubung dan memuat seluruh halaman pada setiap kumpulan ulasan yang tersedia, dengan urutan terbaru. Google Play memisahkan daftar ulasannya menurut bahasa antarmuka, sehingga kumpulan bahasa Indonesia dan kumpulan bahasa Inggris dibaca keduanya lalu digabung berdasarkan ID ulasan. Jumlah ulasan tertulis berbeda dari ${integer(storeRatingCount('play'))} penilaian Play Store dan ${integer(storeRatingCount('appstore'))} penilaian App Store karena penilaian tanpa teks tidak menyertakan nama atau isi yang dapat dianalisis. Filter hanya membatasi tampilan, bukan proses pengambilan data. Platform lain belum terhubung dan dilaporkan sebagai belum diambil, bukan nol keluhan.</p><div class="method-callout">Konten promosi resmi, pemberitaan, ulasan duplikat, dan komentar tentang produk lain tidak diperlakukan sebagai pengalaman merchant.</div><p><strong>Unduhan.</strong> Google Play hanya mempublikasikan rentang unduhan, saat ini ${esc(storeInstalls('play') || 'belum terbaca')}. Apple tidak mempublikasikan jumlah unduhan di halaman publik, sehingga metrik tersebut tidak tersedia dan tidak diperkirakan. Keduanya bukan ukuran jumlah pengguna aktif.</p></article>
+    <article class="card method-card"><h2>Sumber dan cakupan</h2><p>${dataOrigin}</p><p>Tombol Tarik Analisis mengambil data dari kedua toko aplikasi yang terhubung dan memuat seluruh halaman pada setiap kumpulan ulasan yang tersedia, dengan urutan terbaru. Google Play memisahkan daftar ulasannya menurut bahasa antarmuka, sehingga kumpulan bahasa Indonesia dan kumpulan bahasa Inggris dibaca keduanya lalu digabung berdasarkan ID ulasan. Jumlah ulasan tertulis berbeda dari ${integer(storeRatingCount('play'))} penilaian Play Store dan ${integer(storeRatingCount('appstore'))} penilaian App Store karena penilaian tanpa teks tidak menyertakan nama atau isi yang dapat dianalisis. Filter hanya membatasi tampilan, bukan proses pengambilan data. Platform lain belum terhubung dan dilaporkan sebagai belum diambil, bukan nol keluhan.</p><div class="method-callout">Konten promosi resmi, pemberitaan, ulasan duplikat, dan komentar tentang produk lain tidak diperlakukan sebagai pengalaman merchant.</div><p><strong>Unduhan.</strong> Google Play hanya mempublikasikan rentang unduhan, saat ini ${esc(storeInstalls('play') || 'belum terbaca')}. Apple tidak mempublikasikan jumlah unduhan di halaman publik, sehingga metrik tersebut tidak tersedia dan tidak diperkirakan. Keduanya bukan ukuran jumlah pengguna aktif.</p></article>
     <article class="card method-card"><h2>Cara membaca sentimen</h2><ul><li><strong>Positif:</strong> pujian, kepuasan, atau manfaat yang dinyatakan pengguna.</li><li><strong>Negatif:</strong> keluhan, masalah penggunaan, dan kekurangan yang mengganggu.</li><li><strong>Netral:</strong> informasi atau pertanyaan tanpa penilaian yang jelas; bukan label pengganti untuk teks yang tidak dipahami.</li><li><strong>Perlu tinjauan:</strong> teks belum cukup jelas untuk dinilai; tidak dihitung sebagai netral dan tidak termasuk dasar perhitungan persentase sentimen maupun NSS.</li></ul><div class="formula">NSS = (positif − negatif) ÷ jumlah ulasan berlabel × 100</div><p>Ulasan berlabel sentimen mencakup ulasan positif, negatif, dan netral. Data awal: (${base.positive} − ${base.negative}) ÷ ${base.classified} × 100 = <strong>${base.nss>0?'+':''}${number(base.nss)} poin</strong>.</p></article>
     <article class="card method-card"><h2>Pelabelan dan keterbatasan</h2><ul><li><strong>Manual:</strong> label pada data awal ditentukan dari pembacaan teks; teks yang tidak berubah mempertahankan labelnya. Belum ada pemeriksaan oleh penilai kedua.</li><li><strong>Otomatis (versi 1):</strong> menggunakan aturan kata kunci sederhana, bukan model bahasa. Negasi, sarkasme, dan ulasan dengan beberapa aspek dapat dinilai keliru; teks yang tidak dikenali ditandai perlu ditinjau.</li><li>Penilaian bintang tidak menentukan sentimen secara otomatis.</li><li>Google Play memisahkan daftar ulasan menurut bahasa antarmuka. Kedua kumpulan dibaca dan digabung berdasarkan ID ulasan, sehingga tidak ada ulasan yang terlewat pada salah satu kumpulan. Kumpulan ulasan tertulis ini bukan sampel acak dan tidak mewakili seluruh ${integer(storeRatingCount('play'))} penilai di halaman toko maupun seluruh pengguna.</li><li>Grafik tanggal hanya menampilkan ulasan tertulis yang memiliki tanggal. Ulasan tanpa tanggal tidak masuk rentang tanggal atau tren, tetapi datanya tetap tersimpan.</li><li>Peringkat keluhan hanya memakai ulasan negatif unik per kategori. Persentase dihitung dari seluruh ulasan negatif pada platform dan tanggal terpilih, bukan dari jumlah kategori. Satu ulasan dapat masuk beberapa kategori.</li><li>Penilaian umum tidak membuktikan kegagalan fitur; penyebutan keluhan belum tentu merupakan insiden yang terkonfirmasi.</li></ul></article>
     <article class="card method-card"><h2>Penyimpanan dan jejak perubahan</h2><p>Hasil pengambilan data disimpan di komputer ini, bukan di peramban. Dasbor memuat data tersimpan saat dibuka; pembaruan tidak berlangsung terus-menerus. Status sumber dan waktu pemeriksaan mengikuti data tersimpan. Gangguan pengambilan tidak menghapus data yang sudah tersedia.</p><p>Ulasan baru ditambahkan, sedangkan perubahan teks, penilaian bintang, atau tanggal disimpan sebagai versi sebelumnya. Detail ulasan menampilkan waktu pengambilan, waktu pertama dan terakhir tercatat, serta riwayat perubahan. Versi lama tidak dihitung sebagai ulasan baru dalam grafik.</p><p>Jika data tersimpan tidak dapat dimuat saat awal, data awal tetap ditampilkan disertai pesan kesalahan yang jelas. Penilaian halaman toko hanya ditampilkan dari data daring yang berhasil diambil dan dipisahkan dari penilaian pada ulasan. Sumber publik tidak memverifikasi identitas penulis maupun kebenaran isi keluhan.</p></article>
@@ -895,6 +916,7 @@ function applyPayload(payload) {
   if (typeof payload.activeProject==='string') projects.active=payload.activeProject;
   if (payload.target && typeof payload.target==='object') projects.target=payload.target;
   if (!payload.running) sync.attempt=null;
+  sync.storageWarning = typeof payload.storageWarning === 'string' ? payload.storageWarning : null;
 }
 async function switchProject(id) {
   if (!id || id === projects.active) return;
@@ -907,6 +929,39 @@ async function switchProject(id) {
   sync.loading = false;
   render();
 }
+// Penghapusan project adalah satu-satunya jalur yang membuang baris ulasan, jadi ia meminta
+// konfirmasi eksplisit dan tidak pernah berlaku pada project bawaan.
+function openDeleteDialog() {
+  const active = projects.list.find(project => project.id === projects.active) || null;
+  if (!active) return;
+  if (active.builtIn) { notify('Project bawaan tidak dapat dihapus.'); return; }
+  if (isBusy()) { notify('Tunggu penarikan selesai sebelum menghapus project.'); return; }
+  const dialog = $('#delete-dialog');
+  if (!dialog) return;
+  const lost = `${integer(reviews.length)} teks ulasan dan ${integer(sync.runs.length)} catatan penarikan` +
+    (active.lastPulledAt ? ` (penarikan terakhir ${timeLabel(active.lastPulledAt)})` : ' (belum pernah ditarik)');
+  dialog.innerHTML = `<div class="dialog-header"><div><h2 id="delete-heading">Hapus project</h2><p>Project aktif akan dihapus berikut seluruh datanya.</p></div><button class="icon-button" data-close="delete-dialog" aria-label="Tutup hapus project">${icon('close')}</button></div>
+  <div class="dialog-body"><p class="delete-target"><strong>${esc(active.name)}</strong><br>${esc(active.entity)} · ${esc(active.stores)}</p>
+  <p>Yang hilang: ${lost}. Penghapusan ini tidak dapat dibatalkan dari dasbor; unduh laporan terlebih dahulu bila datanya masih diperlukan. Project bawaan dan datanya tidak terpengaruh.</p></div>
+  <div class="dialog-footer"><div><small>Project bawaan tetap tersedia setelah penghapusan.</small></div><div class="dialog-actions"><button class="btn" data-close="delete-dialog">Batal</button><button class="btn btn-danger" data-action="confirm-delete-project">${icon('trash')}Hapus project</button></div></div>`;
+  if (!dialog.open) dialog.showModal();
+}
+async function deleteActiveProject(button) {
+  const active = projects.list.find(project => project.id === projects.active) || null;
+  if (!active || active.builtIn) return;
+  if (button) button.disabled = true;
+  try {
+    applyPayload(await requestProject({ action: 'delete', project: active.id }));
+    $('#delete-dialog')?.close();
+    clearReviewFilters();
+    render();
+    notify(`Project "${active.name}" dihapus beserta datanya. Project bawaan kini yang aktif.`);
+  } catch (error) {
+    if (button) button.disabled = false;
+    notify(`Project tidak dapat dihapus. ${error instanceof Error ? error.message : 'Kesalahan tidak dikenal.'}`);
+  }
+}
+
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
   if (sync.running) refreshTimer=setTimeout(()=>loadData(),2000);
@@ -1102,13 +1157,15 @@ document.addEventListener('click',event=>{
   if (action==='add-project') { openProjectDialog(); return; }
   if (action==='discover-project') { button.innerHTML=`${icon('clock')}Memeriksa…`; void discoverIdentity(); return; }
   if (action==='create-project') { void createProjectFromDialog(); return; }
+  if (action==='delete-project') { openDeleteDialog(); return; }
+  if (action==='confirm-delete-project') { void deleteActiveProject(button); return; }
   if (action==='clear-complaint') { clearComplaint(); state.page=1; render(); }
   if (action==='clear-aspect') { state.aspect=''; state.page=1; render(); }
   if (action==='clear-group') { state.group=null; state.groupName=''; state.page=1; render(); }
   if (action==='export') {
     const data=visibleReviews();
     if (!data.length) { notify('Tidak ada ulasan untuk diekspor dalam filter ini.'); return; }
-    download(exportCsv(data),`wondr-sentiment-${state.platform}-${new Date().toISOString().slice(0,10)}.csv`,'text/csv;charset=utf-8');
+    download(exportCsv(data),`${projectSlug()}-sentiment-${state.platform}-${new Date().toISOString().slice(0,10)}.csv`,'text/csv;charset=utf-8');
     notify(`${data.length} ulasan diekspor sesuai filter aktif.`);
   }
   if (action==='print-incident') { openIncidentReport('pdf'); return; }

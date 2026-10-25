@@ -424,6 +424,7 @@ try {
     ratingSections:card.querySelectorAll('.coverage-rating-panel > .coverage-rating').length,
     ratings:card.querySelector('.coverage-rating-panel').textContent,
     histogramRows:card.querySelectorAll('.listing-histogram .rating-row').length,
+    noteText:card.querySelector('.listing-histogram-note')?.textContent || '',
     scoreColor:getComputedStyle(card.querySelector('.coverage-score')).color,
     totalColor:getComputedStyle(card.querySelector('.coverage-stats strong')).color,
     factsSeparated:[...card.querySelectorAll('.source-facts > div')].every(row=>row.querySelector('dt').getBoundingClientRect().right<=row.querySelector('dd').getBoundingClientRect().left)
@@ -438,6 +439,8 @@ try {
   assert.match(storeLayout[0].ratings,/1 ★\s*14/);
   assert.equal(storeLayout[1].histogramRows,5);
   assert.match(storeLayout[1].ratings,/5 ★\s*16/);
+  assert.match(storeLayout[0].noteText,/bucket histogram \(75\) berbeda 1 dari angka agregat halaman toko \(74\)/,'selisih angka sumber diungkapkan, tidak disembunyikan');
+  assert.equal(storeLayout[1].noteText,'','angka sumber yang cocok tidak diberi catatan selisih');
   assert.equal(await evaluate(`document.querySelectorAll('.is-unavailable .coverage-rating-panel').length`),0);
   await evaluate(`document.querySelector('[data-source-card="play"] .coverage-scope summary').focus()`);
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});
@@ -659,8 +662,25 @@ try {
   assert.equal(await evaluate(`document.querySelector('.topbar-brand').textContent`),'WONDR MERCHANT BY BNI');
   await screenshot('project-second.png');
   completed.push('Add-project flow: name + entity, confirmed store identity, isolated dataset per project, and project-aware pull');
+  // Menghapus project: konfirmasi merinci apa yang hilang, project bawaan tetap utuh,
+  // dan tombol hapus hanya ditawarkan pada project non-bawaan.
+  await evaluate(`(()=>{const pick=document.querySelector('.project-bar .project-select');pick.value='kasir-toko';pick.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){if(document.querySelector('[data-action="delete-project"]'))resolve(true);else if(Date.now()>end)reject(Error('Tombol hapus tidak tampil untuk project non-bawaan'));else requestAnimationFrame(check);}check();})`);
+  await click('[data-action="delete-project"]');
+  assert.equal(await evaluate(`document.querySelector('#delete-dialog').open`),true,'dialog konfirmasi hapus terbuka');
+  assert.match(await evaluate(`document.querySelector('#delete-dialog .dialog-body').textContent`),/Yang hilang: 0 teks ulasan/,'konfirmasi merinci data yang akan dihapus');
+  assert.match(await evaluate(`document.querySelector('#delete-dialog .delete-target').textContent`),/Kasir Toko/,'project yang dihapus disebut namanya');
+  await screenshot('project-delete.png');
+  await click('[data-action="confirm-delete-project"]');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const c=document.querySelector('.project-count strong');if(c&&c.textContent==='1')resolve(true);else if(Date.now()>end)reject(Error('Project tidak berkurang: '+document.querySelector('.project-count strong')?.textContent));else requestAnimationFrame(check);}check();})`);
+  assert.equal(await evaluate(`document.querySelector('.project-count strong').textContent`),'1');
+  assert.equal(await evaluate(`document.querySelector('.project-bar .project-select').value`),'wondr-merchant','project aktif dipindahkan ke bawaan');
+  assert.equal(await evaluate(`Boolean(document.querySelector('[data-action="delete-project"]'))`),false,'project bawaan tidak menawarkan tombol hapus');
+  assert.equal(await evaluate(`document.querySelectorAll('.project-bar .project-select option').length`),1,'option project yang dihapus dibersihkan dari pemilih');
+  await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+10000;function check(){const b=document.querySelector('.summary-card .badge');if(b&&b.textContent===${JSON.stringify(defaultBadge)})resolve(true);else if(Date.now()>end)reject(Error('Dataset bawaan berubah setelah penghapusan: '+JSON.stringify({badge:b?.textContent,expected:${JSON.stringify(defaultBadge)}})));else requestAnimationFrame(check);}check();})`);
+  completed.push('Delete flow: explicit confirmation, dataset removed, built-in project protected and untouched');
   assert.deepEqual(errors,[]);completed.push('No browser runtime or console errors');
-  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png']},null,2));
+  console.log(JSON.stringify({passed:completed.length,tests:completed,screenshots:['dashboard-desktop.png','store-rating-play.png','pull-progress.png','sentiment-analysis.png','review-detail.png','reviews-desktop.png','platform-coverage.png','platform-mobile.png','dashboard-mobile.png','project-dialog.png','project-empty-mobile.png','project-second.png','project-delete.png']},null,2));
   await send('Browser.close',{},null);
 } finally {
   if(socket?.readyState===WebSocket.OPEN)socket.close();

@@ -1,8 +1,9 @@
-// Membuat project baru atau memindahkan project aktif. Batas waktu function dinyatakan di
-// sini agar cocok dengan konfigurasi deployment ($0 tier).
+// Membuat project baru, memindahkan project aktif, atau menghapus project non-bawaan
+// beserta datasetnya. Batas waktu function dinyatakan di sini agar cocok dengan konfigurasi
+// deployment ($0 tier).
 export const config = { maxDuration: 30 };
 
-import { addProject, activateProject, isRunning } from '../dashboard-store.mjs';
+import { addProject, activateProject, dropProject, isRunning } from '../dashboard-store.mjs';
 
 const json = (response, status, body) => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -51,6 +52,7 @@ export default async function handler(request, response, run = runProject) {
 function runProject(body) {
   const action = String(body.action || 'create');
   if (action === 'activate') return activateProject(body.project);
+  if (action === 'delete') return dropProject(body.project);
   if (action !== 'create') throw new Error('project_action: aksi project tidak dikenal');
   return addProject(body);
 }

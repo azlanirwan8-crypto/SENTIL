@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seedReviews, platforms } from './data.js';
-import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
+import { summary, filterReviews, timeline, timelineMode, upsertReviews, classifyText, classifyReview, rulesFor, complaintStats, complaintBreakdown, projection, absaOf, withAbsa, aspectStats, clusterStats, ratingSummary, exportCsv, groupStats, painGroups, validSource, anomalyScan, nssBand, dailySeries, spikeBadges, platformMatrix, aspectChannelRings, squarify, painTreemapNodes } from './model.js';
 import { createDashboardServer, deploymentConfig } from './server.mjs';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { get, request as httpRequest } from 'node:http';
@@ -13,7 +13,7 @@ import { parsePlaySearchResults, parseItunesResults, buildDiscovery, discoverTar
 import { defaultTarget, normalizeTarget, identityPattern, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, emptyDataset, projectList, resolveProjectId,
-  projectTarget, createProject, projectIdFrom, defaultProjectId, defaultProject,
+  projectTarget, createProject, projectIdFrom, defaultProjectId, defaultProject, removeProject,
 } from './projects.mjs';
 
 // Berkas tersimpan kini memuat beberapa project; pemeriksaan lama cukup membuka dataset project aktif.
@@ -2471,8 +2471,89 @@ test('Server menyimpan beberapa project, memisahkan datanya, dan menarik mengiku
     assert.equal(saved.version, storeVersion);
     assert.equal(saved.datasets['kasir-toko'].reviews.length, 1);
     assert.equal(saved.datasets[defaultProjectId].reviews.length, seedReviews.length);
+
+    const removed = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', project: 'kasir-toko' }) });
+    assert.equal(removed.status, 200);
+    assert.equal(removed.body.projects.length, 1, 'daftar project berkurang satu');
+    assert.equal(removed.body.activeProject, defaultProjectId, 'project aktif dikembalikan ke bawaan');
+    assert.equal(removed.body.reviews.length, seedReviews.length, 'dataset bawaan tidak tersentuh penghapusan');
+    const afterDelete = JSON.parse(await readFile(storagePath, 'utf8'));
+    assert.equal(afterDelete.datasets['kasir-toko'], undefined, 'dataset project yang dihapus tidak meninggalkan baris');
+    assert.equal(afterDelete.datasets[defaultProjectId].reviews.length, seedReviews.length);
+    assert.equal((await projectFetch(base, `/api/data?project=kasir-toko`)).status, 400, 'project yang sudah dihapus tidak dapat dibuka lagi');
+    const deleteBuiltIn = await projectFetch(base, '/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', project: defaultProjectId }) });
+    assert.equal(deleteBuiltIn.status, 400);
+    assert.match(deleteBuiltIn.body.error, /project_builtIn/, 'project bawaan menolak dihapus');
+    assert.equal((await projectFetch(base, '/api/data')).body.reviews.length, seedReviews.length);
   } finally {
     await new Promise(resolve => server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Penghapusan project hanya menerima project yang terdaftar dan bukan bawaan', () => {
+  const store = initialStore();
+  assert.throws(() => removeProject(store, 'tidak-ada'), /project_unknown/);
+  assert.throws(() => removeProject(store, defaultProjectId), /project_builtIn/);
+  assert.equal(store.projects.length, 1, 'percobaan gagal tidak mengubah store');
+  assert.equal(store.datasets[defaultProjectId].reviews.length, seedReviews.length);
+  store.projects.push(createProject({ name: 'Kasir Toko', entity: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' }));
+  store.datasets['kasir-toko'] = emptyDataset();
+  store.activeProject = 'kasir-toko';
+  const removed = removeProject(store, 'kasir-toko');
+  assert.equal(removed.name, 'Kasir Toko');
+  assert.deepEqual(store.projects.map(project => project.id), [defaultProjectId]);
+  assert.equal(store.datasets['kasir-toko'], undefined);
+  assert.equal(store.activeProject, defaultProjectId, 'project aktif tidak menggantung pada project yang hilang');
+});
+
+test('Penilaian relevansi mengikuti target project, bukan satu merek tetap', async () => {
+  const other = normalizeTarget({ id: 'kasir-toko', name: 'Kasir Toko', entityName: 'Kasir Toko Saya', playAppId: 'com.toko.kasir' });
+  assert.equal(rulesFor(defaultTarget), rulesFor(null), 'target bawaan memakai aturan merek yang sama seperti sebelumnya');
+  for (const row of seedReviews) {
+    assert.deepEqual(classifyReview(row, defaultTarget), classifyReview(row), `baris bawaan ${row.platform}|${row.id} tidak berubah penilaian`);
+  }
+  const video = { platform: 'youtube', id: 'kasir-1', author: 'pedagang', date: '2026-10-20', text: 'Kasir Toko Saya gagal login terus', sourceUrl: 'https://www.youtube.com/watch?v=abc', context: { channelId: 'UCpemilik' } };
+  const foreign = classifyReview(video);
+  assert.equal(foreign.relevance.status, 'uncertain', 'tanpa target, teks milik aplikasi lain tidak dikenali sebagai pengalaman pelanggan');
+  assert.equal(foreign.sentiment, 'unclassified');
+  const own = classifyReview(video, other);
+  assert.equal(own.relevance.status, 'relevant', 'teks yang menyebut identitas project sendiri dihitung sebagai pengalaman pelanggan');
+  assert.equal(own.sentiment, 'negative', 'sentimen project lain tidak dibuang karena tidak menyebut wondr');
+  assert.match(own.relevance.reason, /Kasir Toko/, 'alasan menyebut project yang sedang aktif');
+
+  const sibling = { platform: 'play', id: 'kasir-2', author: 'Uji', date: '2026-10-20', text: 'Seperti m-banking dulu, kasir toko saya lambat', sourceUrl: 'https://play.google.com/store/apps/details?id=com.toko.kasir' };
+  assert.equal(classifyReview(sibling).sentiment, 'unclassified', 'bawaan: teks yang hanya menyebut aplikasi konsumen BNI tidak dinilai otomatis');
+  assert.equal(classifyReview(sibling, other).sentiment, 'negative', 'project lain tidak menyaring merek yang bukan miliknya');
+
+  const officialOther = classifyReview({ platform: 'x', id: 'kasir-3', author: 'KasirTokoSaya', text: 'Kasir Toko Saya kini lebih cepat', context: {} }, other);
+  assert.equal(officialOther.relevance.status, 'excluded', 'akun resmi project lain tetap disimpan sebagai konteks pemilik');
+  assert.equal(classifyReview({ platform: 'x', id: 'kasir-4', author: 'BNI46', text: 'Kasir Toko Saya lambat sekali', context: {} }, other).relevance.status, 'relevant', 'akun merek lain bukan akun resmi project ini');
+
+  const merged = upsertReviews([], [video], '2026-10-25T00:00:00.000Z', other);
+  assert.equal(merged.reviews[0].relevance.status, 'relevant', 'ulasan baru yang dimasukkan memakai target project');
+  const { reclassifyDerived } = await import('./dashboard-core.mjs');
+  assert.equal(reclassifyDerived([{ ...video, labeling: 'rules-v1' }], other)[0].relevance.status, 'relevant', 'pelabelan ulang memakai target project');
+});
+
+test('Kegagalan menyimpan data dilaporkan, dan penulisan sukses tidak meninggalkan berkas sementara', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'wondr-store-'));
+  const previous = process.env.DATA_PATH;
+  try {
+    process.env.DATA_PATH = join(dir, 'belum-dibuat', 'online-data.json');
+    const broken = await freshStore('write-fail');
+    const result = await broken.pull({ collector: async () => [{ id: 'play', status: 'success', fetched: 1, message: '1 ulasan dibaca', reviews: [storedReview] }] });
+    assert.equal(result.reviews.length, seedReviews.length + 1, 'hasil penarikan tetap dikirim walau berkas tidak dapat ditulis');
+    assert.match(result.storageWarning, /belum sempat disimpan/, 'kegagalan tulis dilaporkan, tidak ditelan diam-diam');
+    assert.deepEqual(await readdir(dir), [], 'berkas sementara yang gagal ditulis ikut dibersihkan');
+
+    process.env.DATA_PATH = join(dir, 'online-data.json');
+    const healthy = await freshStore('write-ok');
+    const saved = await healthy.pull({ collector: async () => [{ id: 'play', status: 'success', fetched: 1, message: '1 ulasan dibaca', reviews: [storedReview] }] });
+    assert.equal(saved.storageWarning, null);
+    assert.deepEqual(await readdir(dir), ['online-data.json'], 'penulisan atomik hanya menyisakan berkas data');
+  } finally {
+    if (previous === undefined) delete process.env.DATA_PATH; else process.env.DATA_PATH = previous;
     await rm(dir, { recursive: true, force: true });
   }
 });

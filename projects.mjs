@@ -127,3 +127,16 @@ export function projectTarget(store, id) {
   if (project.builtIn) return defaultTarget;
   return normalizeTarget({ ...project.target, entityName: project.target?.entityName || project.entity });
 }
+
+// Menghapus project beserta datasetnya. Ini satu-satunya jalur yang membuang baris ulasan, jadi
+// project bawaan (data awal aplikasi yang selama ini dianalisis) ditolak dan pemanggil wajib
+// menyertakan ID project secara eksplisit. Project aktif dipindahkan kembali ke project bawaan.
+export function removeProject(store, id) {
+  const project = findProject(store, id);
+  if (!project) throw new Error('project_unknown: project yang diminta tidak terdaftar');
+  if (project.builtIn) throw new Error('project_builtIn: project bawaan tidak dapat dihapus');
+  store.projects = store.projects.filter(item => item.id !== id);
+  delete store.datasets[id];
+  if (store.activeProject === id) store.activeProject = defaultProjectId;
+  return project;
+}

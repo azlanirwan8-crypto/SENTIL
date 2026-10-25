@@ -509,30 +509,97 @@ export function classifyText(text) {
 export const merchantKeywords = ['wondr merchant', 'merchant', 'qris', 'edc', 'settlement', 'pencairan', 'toko', 'kasir'];
 const merchantContext = new RegExp(`\\b(?:${merchantKeywords.join('|')})\\b`, 'i');
 const productIdentity = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])|\b(?:id)?6741567238\b/i;
-export const hasMerchantContext = value => productIdentity.test(String(value || '')) || merchantContext.test(String(value || ''));
-export function classifyReview(raw) {
+const neverMatch = /(?!)/;
+const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const builtInTargetId = 'wondr-merchant';
+// Aturan merek untuk target bawaan dipertahankan apa adanya — termasuk penyaring aplikasi
+// konsumen BNI dan daftar akun resmi — karena keduanya berasal dari pengetahuan merek, bukan
+// dari data target, dan label yang sudah tersimpan tidak boleh berubah.
+const builtInRules = {
+  label: 'wondr merchant',
+  productKey: builtInTargetId,
+  identity: /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])/i,
+  product: productIdentity,
+  context: merchantContext,
+  sibling: /\bwondr\s+by\s+bni\b|mobile banking|bni mobile|m[- ]?banking/i,
+  otherProduct: /\b(?:aplikasi|qris|mesin)\s+(?:bank\s+)?lain\b|aplikasi\s+sebelah|bukan\s+wondr/i,
+  official: /^(?:bni(?:[\W_]*46)?|official[\W_]*bni(?:[\W_]*46)?|bni[\W_]*official(?:[\W_]*46)?|wondr[\W_]*merchant(?:[\W_]*by[\W_]*bni)?)$/i,
+  storeConsumerReason: 'Teks ulasan toko menyebut aplikasi konsumen BNI, bukan wondr merchant; perlu diperiksa manusia sebelum dihitung sebagai pengalaman merchant.',
+  officialReason: author => `Penulis "${author}" adalah akun resmi BNI atau produk ini, sehingga isinya promosi pemilik, bukan pengalaman pelanggan independen.`,
+  siblingReason: both => both
+    ? 'Teks juga membahas produk konsumen. Target sentimen belum dipisahkan, sehingga teks tidak dinilai otomatis sebagai pengalaman wondr merchant.'
+    : 'Teks menyebut produk konsumen, bukan wondr merchant.',
+  otherProductReason: 'Teks mengarah ke aplikasi atau perangkat milik pihak lain, bukan pengalaman menggunakan wondr merchant.',
+  vagueReason: 'Komentar pada video terkait belum cukup untuk memastikan pengalaman terhadap aplikasi merchant.',
+  relevantReason: 'Teks menyebut aplikasi merchant atau aspek usaha pada video dengan identitas produk yang sesuai; penentuan otomatis masih perlu pemeriksaan manusia.',
+};
+const targetWords = target => String(target?.entityName || target?.name || '')
+  .normalize('NFKD').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+
+// Aturan relevansi diturunkan dari target project, supaya project kedua tidak otomatis kehilangan
+// sentimen hanya karena teksnya menyebut aplikasinya sendiri, bukan wondr merchant. Target lain
+// juga tidak menyaring teks karena merek saudara yang tidak dikenalnya.
+export function rulesFor(target) {
+  if (!target || target.id === builtInTargetId) return builtInRules;
+  const words = targetWords(target);
+  const label = target.name || target.entityName || 'project ini';
+  const identityParts = [];
+  if (words.length) identityParts.push(`\\b${words.join('\\s+')}\\b`);
+  if (target.play?.appId) identityParts.push(`\\b${escapeRegExp(target.play.appId)}(?![\\w.])`);
+  const parts = [...identityParts];
+  if (target.appstore?.appId) parts.push(`\\b(?:id)?${escapeRegExp(target.appstore.appId)}\\b`);
+  const pattern = list => (list.length ? new RegExp(list.join('|'), 'i') : neverMatch);
+  const handle = words.join('[\\W_]*');
+  return {
+    label,
+    productKey: target.id,
+    identity: pattern(identityParts),
+    product: pattern(parts),
+    // Tanpa daftar kata konteks merek, identitas target satu-satunya bukti yang dapat dipakai.
+    context: pattern(identityParts),
+    sibling: null,
+    otherProduct: pattern([
+      '\\b(?:aplikasi|situs|layanan|qris|mesin)\\s+lain\\b', 'aplikasi\\s+sebelah',
+      ...(words[0] ? [`bukan\\s+${escapeRegExp(words[0])}`] : []),
+    ]),
+    official: words.length ? new RegExp(`^(?:official[\\W_]*${handle}|${handle}[\\W_]*official|${handle})$`, 'i') : neverMatch,
+    storeConsumerReason: '',
+    officialReason: author => `Penulis "${author}" adalah akun resmi ${label}, sehingga isinya promosi pemilik, bukan pengalaman pelanggan independen.`,
+    siblingReason: () => `Teks tidak dinilai otomatis karena identitas ${label} belum pasti pada teks ini.`,
+    otherProductReason: `Teks mengarah ke aplikasi atau perangkat milik pihak lain, bukan pengalaman menggunakan ${label.toLowerCase()}.`,
+    vagueReason: `Komentar pada video terkait belum cukup untuk memastikan pengalaman terhadap aplikasi ${label.toLowerCase()}.`,
+    relevantReason: `Teks menyebut identitas ${label} atau aspek usaha pada video dengan identitas produk yang sesuai; penentuan otomatis masih perlu pemeriksaan manusia.`,
+  };
+}
+export const hasMerchantContext = (value, target = null) => {
+  const text = String(value || '');
+  const rules = rulesFor(target);
+  return rules.product.test(text) || rules.context.test(text);
+};
+export function classifyReview(raw, target = null) {
+  const rules = rulesFor(target);
   const label = classifyText(raw.text);
   const text = raw.text.toLocaleLowerCase('id');
-  const merchant = /\bwondr\s+merchant\b|\bid\.bni\.wfb(?![\w.])/.test(text);
-  const consumer = /\bwondr\s+by\s+bni\b|mobile banking|bni mobile|m[- ]?banking/.test(text);
+  const merchant = rules.identity.test(text);
+  const consumer = rules.sibling ? rules.sibling.test(text) : false;
   // Keluhan yang jelas ditujukan ke aplikasi lain bukan pengalaman produk ini.
-  const otherApp = /\b(?:aplikasi|qris|mesin)\s+(?:bank\s+)?lain\b|aplikasi\s+sebelah|bukan\s+wondr/.test(text);
+  const otherApp = rules.otherProduct.test(text);
   // Akun resmi pemilik produk mengiklankan aplikasinya sendiri. Teks seperti itu
   // disimpan sebagai konteks, tetapi tidak dihitung sebagai sentimen pelanggan.
   const handle = String(raw.author ?? '').replace(/^@+/, '').trim().toLowerCase();
-  const officialAccount = /^(?:bni(?:[\W_]*46)?|official[\W_]*bni(?:[\W_]*46)?|bni[\W_]*official(?:[\W_]*46)?|wondr[\W_]*merchant(?:[\W_]*by[\W_]*bni)?)$/.test(handle);
+  const officialAccount = rules.official.test(handle);
   if (raw.platform === 'play' || raw.platform === 'appstore') {
     // Ulasan toko dinilai langsung dari teksnya. Teks yang hanya menyebut aplikasi konsumen
     // BNI tidak boleh dihitung sebagai pengalaman merchant.
     if (!consumer || merchant) return label;
-    const reason = 'Teks ulasan toko menyebut aplikasi konsumen BNI, bukan wondr merchant; perlu diperiksa manusia sebelum dihitung sebagai pengalaman merchant.';
+    const reason = rules.storeConsumerReason;
     return { ...label, sentiment:'unclassified', tags:['general'], relevance:{ status:'uncertain', reason, method:'merchant-context-v1' }, rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.` };
   }
   const promotion = /(?:^|[.!?:]|\b(?:ayo|yuk|buruan|segera)\b)\s*(?:download|unduh|install)\b|\bdapatkan\s+(?:cashback|bonus|promo)\b|\binfo\s+promo\b/.test(text);
   const question = /\b(?:apakah|kalau|jika|seandainya|bisakah)\b|\bbelum\s+(?:pernah\s+)?(?:mencoba|coba|pakai|menggunakan)\b/.test(text);
-  let status = 'uncertain', reason = 'Komentar pada video terkait belum cukup untuk memastikan pengalaman terhadap aplikasi merchant.';
+  let status = 'uncertain', reason = rules.vagueReason;
   if (officialAccount) {
-    status = 'excluded'; reason = `Penulis "${raw.author}" adalah akun resmi BNI atau produk ini, sehingga isinya promosi pemilik, bukan pengalaman pelanggan independen.`;
+    status = 'excluded'; reason = rules.officialReason(raw.author);
   } else if (raw.authorChannelId && raw.authorChannelId === raw.context?.channelId) {
     status = 'excluded'; reason = 'Balasan pemilik video disimpan sebagai konteks, bukan opini pelanggan independen.';
   } else if (['news', 'blog', 'forum'].includes(raw.platform)) {
@@ -540,20 +607,20 @@ export function classifyReview(raw) {
   } else if (promotion) {
     status = 'excluded'; reason = 'Ajakan promosi tidak diperlakukan sebagai pengalaman pelanggan.';
   } else if (consumer) {
-    status = 'excluded'; reason = merchant ? 'Teks juga membahas produk konsumen. Target sentimen belum dipisahkan, sehingga teks tidak dinilai otomatis sebagai pengalaman wondr merchant.' : 'Teks menyebut produk konsumen, bukan wondr merchant.';
+    status = 'excluded'; reason = rules.siblingReason(merchant);
   } else if (otherApp) {
-    reason = 'Teks mengarah ke aplikasi atau perangkat milik pihak lain, bukan pengalaman menggunakan wondr merchant.';
+    reason = rules.otherProductReason;
   } else if (question) {
     reason = 'Pertanyaan, kondisi hipotetis, atau pernyataan belum mencoba belum cukup untuk menetapkan pengalaman pelanggan; perlu tinjauan konteks.';
-  } else if (merchant || (raw.platform === 'youtube' && raw.context?.product === 'wondr-merchant' && merchantContext.test(text) && label.tags.some(tag => tag !== 'general'))) {
-    status = 'relevant'; reason = 'Teks menyebut aplikasi merchant atau aspek usaha pada video dengan identitas produk yang sesuai; penentuan otomatis masih perlu pemeriksaan manusia.';
+  } else if (merchant || (raw.platform === 'youtube' && raw.context?.product === rules.productKey && rules.context.test(text) && label.tags.some(tag => tag !== 'general'))) {
+    status = 'relevant'; reason = rules.relevantReason;
   }
   const relevance = {status,reason,method:'merchant-context-v1'};
   if (status === 'relevant') return {...label,relevance};
   return {...label,sentiment:'unclassified',tags:['general'],relevance,rationale:`${reason} Tetap tersimpan dan dihitung dalam total teks, tetapi tidak dalam persentase sentimen atau NSS.`};
 }
 const fingerprint = r => ['play','appstore'].includes(r.platform) && r.author && r.author !== 'N/A' && r.date ? `${r.platform}|${r.author.trim().toLowerCase()}|${r.date}|${r.text.trim().toLowerCase()}` : null;
-export function upsertReviews(existing, incoming, observedAt) {
+export function upsertReviews(existing, incoming, observedAt, target = null) {
   const reviews = existing.map(r => ({ ...r }));
   const ids = new Map(reviews.map((r,i) => [`${r.platform}|${r.id}`, i]));
   const prints = new Map(reviews.map((r,i) => [fingerprint(r), i]).filter(([key]) => key));
@@ -562,7 +629,7 @@ export function upsertReviews(existing, incoming, observedAt) {
     const key = `${raw.platform}|${raw.id}`, print = fingerprint(raw);
     const index = ids.get(key) ?? (print ? prints.get(print) : undefined);
     if (index === undefined) {
-      const r = { ...raw, ...classifyReview(raw), observedAt, firstSeenAt: observedAt, lastSeenAt: observedAt, history: [] };
+      const r = { ...raw, ...classifyReview(raw, target), observedAt, firstSeenAt: observedAt, lastSeenAt: observedAt, history: [] };
       ids.set(key,reviews.length); if (print) prints.set(print,reviews.length);
       reviews.push(r); added++;
     } else {
@@ -574,7 +641,7 @@ export function upsertReviews(existing, incoming, observedAt) {
       if (changed) { const { history: ignored, ...version } = old; history.push(version); updated++; } else unchanged++;
       const oldPrint = fingerprint(old);
       if (oldPrint) prints.delete(oldPrint);
-      reviews[index] = { ...old, ...raw, id: old.id, ...(textChanged || raw.platform === 'youtube' ? classifyReview(raw) : {}), observedAt, firstSeenAt: old.firstSeenAt || old.observedAt, lastSeenAt: observedAt, history };
+      reviews[index] = { ...old, ...raw, id: old.id, ...(textChanged || raw.platform === 'youtube' ? classifyReview(raw, target) : {}), observedAt, firstSeenAt: old.firstSeenAt || old.observedAt, lastSeenAt: observedAt, history };
       ids.set(key,index); if (print) prints.set(print,index);
     }
   }

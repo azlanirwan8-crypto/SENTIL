@@ -9,7 +9,7 @@ import { discoverTarget } from './discovery.mjs';
 import { normalizeTarget, targetFromDiscovery } from './target.mjs';
 import {
   storeVersion, migrateStore, initialStore, projectList, resolveProjectId, datasetFor, setDataset,
-  projectTarget, findProject, createProject, projectIdFrom, emptyDataset,
+  projectTarget, findProject, createProject, projectIdFrom, emptyDataset, removeProject,
 } from './projects.mjs';
 import { withAbsa } from './model.js';
 
@@ -62,12 +62,13 @@ export async function createDashboardServer({ storagePath, collector = collectOn
   const environment = env ?? await loadLocalEnv().then(() => process.env);
   const channelConfig = channelConfigurations(environment);
   // Status konfigurasi hanya menimpa tampilan; data tersimpan tidak diubah dan kunci tidak pernah dikirim ke browser.
-  const readyDataset = dataset => ({
+  const readyDataset = (dataset, target = null) => ({
     ...dataset,
-    reviews: withAbsa(reclassifyDerived(dataset.reviews)),
+    reviews: withAbsa(reclassifyDerived(dataset.reviews, target)),
     sources: overlayConfiguration(dataset.sources, channelConfig),
   });
-  store = { ...store, datasets: Object.fromEntries(Object.entries(store.datasets).map(([id, dataset]) => [id, readyDataset(dataset)])) };
+  const datasetTarget = (source, id) => (findProject(source, id) ? projectTarget(source, id) : null);
+  store = { ...store, datasets: Object.fromEntries(Object.entries(store.datasets).map(([id, dataset]) => [id, readyDataset(dataset, datasetTarget(store, id))])) };
   let running = false;
   // Dataset yang dikirim selalu milik satu project, disertai daftar project agar antarmuka dapat
   // menampilkan jumlah project dan pemilihnya tanpa permintaan kedua. Status konfigurasi hanya
@@ -115,7 +116,8 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     if (findProject(store, project.id)) throw new Error('project_exists: project dengan nama itu sudah ada');
     // Dataset baru langsung dibaca dengan status konfigurasi terkini: kanal tanpa kunci tampil
     // "perlu konfigurasi", kanal toko diberi keterangan "belum diambil pada project ini".
-    store = { ...store, projects: [...store.projects, project], activeProject: project.id, datasets: { ...store.datasets, [project.id]: readyDataset(emptyDataset()) } };
+    const next = { ...store, projects: [...store.projects, project] };
+    store = { ...next, activeProject: project.id, datasets: { ...store.datasets, [project.id]: readyDataset(emptyDataset(), projectTarget(next, project.id)) } };
     await persist(store);
     return view(project.id);
   };
@@ -124,6 +126,14 @@ export async function createDashboardServer({ storagePath, collector = collectOn
     store = { ...store, activeProject: id };
     await persist(store);
     return view(id);
+  };
+  // Menghapus project non-bawaan beserta datasetnya; project aktif dikembalikan ke bawaan.
+  const dropProject = async project => {
+    const next = { ...store, projects: [...store.projects], datasets: { ...store.datasets } };
+    removeProject(next, resolveProjectId(next, project));
+    await persist(next);
+    store = next;
+    return view(next.activeProject);
   };
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -165,6 +175,11 @@ export async function createDashboardServer({ storagePath, collector = collectOn
         const body = await readJsonBody(req);
         const action = String(body.action || 'create');
         if (action === 'activate') { json(200, await activateProject(body.project)); return; }
+        if (action === 'delete') {
+          if (running) { json(409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
+          json(200, await dropProject(body.project));
+          return;
+        }
         if (action !== 'create') { json(400, { error: 'Aksi project tidak dikenal.' }); return; }
         if (running) { json(409, { error: 'Pengambilan data sedang berjalan. Tunggu hingga selesai.' }); return; }
         json(200, await addProject(body));
@@ -198,7 +213,7 @@ export async function createDashboardServer({ storagePath, collector = collectOn
         const finishedAt = new Date().toISOString();
         const recordRun = finish || !platform;
         const next = { ...store };
-        setDataset(next, project, buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun }), { pulledAt: recordRun ? finishedAt : undefined });
+        setDataset(next, project, buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun, target: runOptions.target }), { pulledAt: recordRun ? finishedAt : undefined });
         await persist(next);
         store = next;
         running = false;

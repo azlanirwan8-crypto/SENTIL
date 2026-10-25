@@ -3,11 +3,12 @@ import { upsertReviews, classifyReview, withAbsa } from './model.js';
 
 const connectedSources = new Set(['play', 'appstore']);
 
-// Label otomatis dihitung ulang setiap kali data dibaca, sehingga perbaikan aturan
-// langsung berlaku pada baris yang sudah tersimpan. Baris berlabel manual (dataset
-// awal) tidak pernah ditimpa oleh classifier.
-export function reclassifyDerived(rows) {
-  return rows.map(row => row.labeling === 'rules-v1' ? { ...row, ...classifyReview(row) } : { ...row });
+// Label otomatis dihitung ulang setiap kali data dibaca, sehingga perbaikan aturan langsung
+// berlaku pada baris yang sudah tersimpan. Baris berlabel manual (dataset awal) tidak pernah
+// ditimpa oleh classifier. Target project ikut dipakai agar relevansi dinilai terhadap aplikasi
+// yang benar, bukan terhadap satu merek tetap.
+export function reclassifyDerived(rows, target = null) {
+  return rows.map(row => row.labeling === 'rules-v1' ? { ...row, ...classifyReview(row, target) } : { ...row });
 }
 // Daftar sumber awal disusun di satu tempat agar server lokal dan function serverless
 // memulai dari keadaan yang sama persis.
@@ -57,8 +58,8 @@ export function resumeMap(previous) {
     }]));
 }
 
-export function buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun = true }) {
-  const merged = upsertReviews(reclassifyDerived(previous.reviews), results.flatMap(r => r.reviews || []), finishedAt);
+export function buildDataset({ previous, results, startedAt, finishedAt, channelConfig, recordRun = true, target = null }) {
+  const merged = upsertReviews(reclassifyDerived(previous.reviews, target), results.flatMap(r => r.reviews || []), finishedAt, target);
   const sources = platforms.map(p => {
     const result = results.find(r => r.id === p.id);
     const before = previous.sources.find(s => s.id === p.id) || { id: p.id };

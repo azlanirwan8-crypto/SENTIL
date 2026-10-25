@@ -1479,6 +1479,23 @@ main {
   margin-top: 10px;
 }
 
+.listing-histogram-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Kegagalan penyimpanan data dilaporkan di kartu Platform, tidak ditelan diam-diam. */
+.coverage-warning {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  color: var(--warning-text);
+  font-size: 13px;
+}
+
 .sample-rating p strong {
   color: var(--heading);
   font-size: 24px;
@@ -4403,6 +4420,13 @@ th[aria-sort='descending'] .th-sort.active .icon {
   border-bottom: 1px solid rgba(255, 255, 255, .14);
 }
 
+.project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .project-count {
   display: flex;
   align-items: baseline;
@@ -4475,6 +4499,36 @@ th[aria-sort='descending'] .th-sort.active .icon {
 
 .project-add .icon { width: 14px; height: 14px; }
 .project-add:hover { background: var(--surface-soft); }
+
+/* Hapus project: tombol sekunder (bukan putih penuh) agar tidak tertukar dengan Tambah. */
+.project-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: var(--radius);
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.project-remove .icon { width: 14px; height: 14px; }
+.project-remove:hover { background: rgba(240, 101, 72, .28); border-color: var(--danger); }
+
+.btn-danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover { background: var(--danger-text); border-color: var(--danger-text); }
+.btn-danger .icon { width: 15px; height: 15px; }
+.delete-target { margin: 0 0 10px; color: var(--heading); }
 
 .topbar-project { display: none; }
 
@@ -4555,6 +4609,7 @@ th[aria-sort='descending'] .th-sort.active .icon {
   .project-bar { padding: 0 8px 12px; justify-items: center; }
   .project-bar .project-pick, .project-count span { display: none; }
   .project-add { padding: 8px; }
+  .project-remove { padding: 8px; }
   .project-add-label { display: none; }
   .topbar-project { display: block; }
   .topbar-brand { display: none; }
