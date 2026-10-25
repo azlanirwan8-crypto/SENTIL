@@ -402,7 +402,10 @@ const topicRules = {
 // ulang kapan pun karena fungsinya murni.
 export const aspectGroups = [
   { id: 'payment', name: 'Pembayaran, QRIS & pencairan', tags: ['transactions', 'settlement', 'notifications'] },
-  { id: 'access', name: 'Masuk, OTP & keamanan akun', tags: ['login', 'onboarding', 'migration'] },
+  // Grup ini memang mencakup pendaftaran/verifikasi, masuk aplikasi, dan migrasi dari aplikasi
+  // lama; namanya harus menyebut ketiganya supaya pendorong negatif tidak disalahkan pada
+  // OTP/keamanan padahal keluhannya proses verifikasi yang lama.
+  { id: 'access', name: 'Pendaftaran, masuk & keamanan akun', tags: ['login', 'onboarding', 'migration'] },
   { id: 'performance', name: 'Performa & gangguan teknis', tags: ['performance'] },
   { id: 'uxui', name: 'Kemudahan tampilan & navigasi', tags: ['ux', 'features', 'benefit'] },
   { id: 'service', name: 'Layanan pelanggan', tags: ['support'] },

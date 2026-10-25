@@ -354,7 +354,7 @@ try {
   await click('[data-platform="all"]');completed.push('Complaint chart reusing the topic bar grammar, projection card with Poisson range, exact drilldown and zero-value bars');
   assert.equal(await evaluate(`document.querySelector('.summary-card h2').textContent.startsWith('Ringkasan')`),true);
   assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Dari 64 teks berlabel pada pilihan ini, 64,1% positif dan 34,4% negatif; NSS \+29,7 poin\./,'kalimat ringkasan memakai angka hasil perhitungan');
-  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Masuk, OTP & keamanan akun — 14 ulasan \(63,6% dari 22 negatif\); Pembayaran, QRIS & pencairan — 8 ulasan \(36,4% dari 22 negatif\)/);
+  assert.match(await evaluate(`document.querySelector('.summary-main').textContent`),/Pendorong negatif utama: Pendaftaran, masuk & keamanan akun — 14 ulasan \(63,6% dari 22 negatif\); Pembayaran, QRIS & pencairan — 8 ulasan \(36,4% dari 22 negatif\)/);
   assert.equal(await evaluate(`document.querySelectorAll('.stat-card').length`),3,'kepala ringkas memuat tepat tiga kartu angka');
   assert.equal(await evaluate(`document.querySelectorAll('.summary-main > p').length`),2,'ringkasan maksimal dua kalimat');
   assert.match(await evaluate(`document.querySelector('.summary-card .chart-notes').textContent`),/bukan model bahasa/,'sumber ringkasan dinyatakan terbuka');
@@ -401,7 +401,7 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('#report-root .incident-table tbody tr').length`),22,'seluruh ulasan negatif masuk daftar insiden, tanpa sampling');
   assert.equal(await evaluate(`document.querySelectorAll('#report-root .report-kpi').length`),8,'lingkup laporan: semua kanal dan semua tanggal');
   assert.match(await evaluate(`document.querySelector('#report-root .report-head').textContent`),/Lingkup data: Semua kanal · Semua tanggal/);
-  assert.match(await evaluate(`document.querySelector('#report-root .report-block:nth-of-type(1)').textContent`),/Pendorong negatif terbesar: Masuk, OTP & keamanan akun/,'laporan memakai aspek hitungan yang sama dengan dasbor');
+  assert.match(await evaluate(`document.querySelector('#report-root .report-block:nth-of-type(1)').textContent`),/Pendorong negatif terbesar: Pendaftaran, masuk & keamanan akun/,'laporan memakai aspek hitungan yang sama dengan dasbor');
   assert.equal(await evaluate(`document.querySelectorAll('#report-root script, #report-root style').length`),0,'laporan tidak menyisipkan skrip');
   await evaluate('document.body.classList.remove("reporting");true');
   await evaluate('window.__downloadText=null;true');
