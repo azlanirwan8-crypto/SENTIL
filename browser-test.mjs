@@ -146,6 +146,10 @@ try {
   assert.match(methodText,/Uji luar sampel dari label Anda/,'uji luar sampel punya bagian sendiri');
   assert.match(methodText,/Belum dapat diukur/,'tanpa label analis, akurasi luar sampel tidak dikarang');
   assert.match(methodText,/bukan akurasi pada teks baru/,'angka in-sample tidak dipasarkan sebagai akurasi');
+  await click('[data-view="sentiment"]');
+  const methodCard = await evaluate(`document.querySelector('.method-card')?.textContent||''`);
+  assert.match(methodCard,/mesin hybrid rules-v2/i,'kartu metode menyebut mesin hybrid yang aktif');
+  assert.doesNotMatch(methodCard,/keliru pada negasi/i,'negasi tidak lagi diklaim tidak ditangani');
   await click('[data-view="overview"]');
   completed.push('Five menus including the reachable methodology page, no workspace or profile chrome');
   assert.doesNotMatch(await evaluate('document.title'),/wondr pulse/i);
