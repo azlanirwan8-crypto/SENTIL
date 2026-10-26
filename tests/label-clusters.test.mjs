@@ -289,4 +289,35 @@ describe('gerombol frasa menjadi label', () => {
     });
     assert.deepEqual(result.labels[0].channels, [{ id: 'play', count: 5, pool: 40 }]);
   });
+
+  test('kategori = istilah halaman toko yang lebih padat di dalam gerombol', () => {
+    const hits = new Map([['lama sekali', range(0, 2)], ['tidak jelas', range(0, 2)]]);
+    const items = [item('lama sekali', 3, { anchor: 'lama' }), item('tidak jelas', 3, { anchor: 'jelas' })];
+    const topicsOf = new Map([[0, ['pencairan']], [1, ['pencairan']], [2, ['aplikasi']]]);
+    for (let index = 3; index < 23; index += 1) topicsOf.set(index, ['aplikasi']);
+    const result = build(hits, new Map(), items, 40, new Map(), {
+      negativeIndexes: [...Array(40).keys()],
+      topicsOf,
+      topicNames: new Map([['pencairan', 'Pencairan'], ['aplikasi', 'Aplikasi']]),
+    });
+    const label = result.labels[0];
+    assert.equal(label.reviewCount, 3);
+    assert.equal(label.category.id, 'pencairan');
+    assert.equal(label.category.name, 'Pencairan');
+    assert.equal(label.category.inside, 2);
+    assert.equal(label.category.pool, 2);
+    assert.equal(result.metrics.categorized, 1);
+  });
+
+  test('satu ulasan yang kebetulan memuat istilah toko tidak cukup untuk menamai kategori', () => {
+    const hits = new Map([['lama sekali', range(0, 2)]]);
+    const items = [item('lama sekali', 3)];
+    const topicsOf = new Map([[0, ['pencairan']]]);
+    const result = build(hits, new Map(), items, 40, new Map(), {
+      negativeIndexes: [...Array(40).keys()],
+      topicsOf,
+    });
+    assert.equal(result.labels[0].category, null);
+    assert.equal(result.metrics.categorized, 0);
+  });
 });

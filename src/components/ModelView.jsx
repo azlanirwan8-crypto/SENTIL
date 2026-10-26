@@ -234,6 +234,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const topics = Array.isArray(model.topics) ? model.topics : [];
   const pain = model.painPoints || {};
   const painLabels = Array.isArray(pain.labels) && pain.labelRules ? pain.labels : [];
+  const aiNames = pain.naming?.status === 'named' ? pain.naming.names || {} : null;
   const labelMetrics = pain.labelMetrics || {};
   const signals = model.signals || null;
   const signalItems = Array.isArray(signals?.items) ? signals.items : [];
@@ -462,6 +463,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <th scope="col" className="pb-1.5 pr-2 font-bold">#</th>
                   <th scope="col" className="pb-1.5 pr-2 font-bold">Label</th>
+                  <th scope="col" className="pb-1.5 pr-2 font-bold">Kategori</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Frasa</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Mention</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Ulasan beda</th>
@@ -481,6 +483,13 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                         {entry.phrases.slice(0, 3).map(phrase => phrase.text).join(' · ')}
                         {entry.phrases.length > 3 ? ` · +${entry.phrases.length - 3} lagi` : ''}
                       </p>
+                    </td>
+                    <td className="py-1.5 pr-2 align-top text-[10px]">
+                      {aiNames?.[entry.id]?.category
+                        ? <span title={`Kategori diberi nama oleh ${pain.naming.model} berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span>{aiNames[entry.id].subLabel ? <span className="block truncate text-slate-500">{aiNames[entry.id].subLabel}</span> : null}</span>
+                        : entry.category
+                          ? <span title={`Istilah halaman toko yang lebih padat di gerombol ini daripada di keluhan lain (${formatNumber(entry.category.inside)} dari ${formatNumber(entry.reviewCount)} ulasan gerombol)`}><span className="font-semibold text-slate-300">{entry.category.name}</span><span className="block text-slate-500">dari teks toko</span></span>
+                          : <span className="text-slate-600" title="Belum ada penamaan yang lolos uji bukti untuk gerombol ini">N/A</span>}
                     </td>
                     <td className="num py-1.5 pr-2 text-right text-[11px] text-slate-200">{formatNumber(entry.phraseCount)}</td>
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))}</td>
@@ -516,7 +525,10 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               {pain.labelRules?.link || 'Dua frasa digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan.'}{' '}
               {pain.labelRules?.closure || 'Gabungan diterima hanya kalau seluruh silangan anggotanya lolos uji, jadi gerombol tidak menyatu karena rantai.'}{' '}
               Arah dihitung dari {pain.labelMetrics?.trend ? `rentang ${pain.labelMetrics.trend.firstDay} sampai ${pain.labelMetrics.trend.lastDay}` : 'rentang tanggal yang tidak tersedia'}.{' '}
-              Kolom <span className="font-semibold text-slate-300">Kanal</span> adalah kanal yang paling banyak memuat label itu, dibaca sebagai porsi keluhan kanal tersebut.
+              Kolom <span className="font-semibold text-slate-300">Kanal</span> adalah kanal yang paling banyak memuat label itu, dibaca sebagai porsi keluhan kanal tersebut.{' '}
+              {pain.labelRules?.category || 'Kategori sebuah gerombol hanya boleh berupa istilah halaman toko yang lebih padat di gerombol itu daripada di keluhan lain.'}{' '}
+              Kolom <span className="font-semibold text-slate-300">Kategori</span> adalah satu-satunya bagian yang boleh berupa interpretasi: kalau terisi, sumbernya ditulis di tooltip baris itu
+              (model bahasa atau teks halaman toko), dan tidak ada angka yang datang dari penamaan itu.
             </p>
           </div>
         ) : (

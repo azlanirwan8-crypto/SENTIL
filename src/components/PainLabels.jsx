@@ -87,6 +87,12 @@ export function PainLabels({ pain, filtered = false }) {
   const meta = `${labels.length === clusters ? `${formatNumber(clusters)} clusters` : `${labels.length} of ${formatNumber(clusters)} clusters`} · ${formatNumber(pool)} 1–2★ reviews${filtered ? ' · whole corpus' : ''}`;
   const singletons = metrics.singletons || 0;
   const named = metrics.namedFromTerm || 0;
+  // Kategori punya dua sumber yang keduanya ditandai di kolomnya: nama dari model bahasa
+  // (interpretasi atas frasa yang sudah diukur) dan istilah halaman toko yang lolos uji
+  // kepadatan. Angka baris tidak pernah datang dari keduanya.
+  const aiNames = pain.naming?.status === 'named' ? pain.naming.names || {} : null;
+  const aiCount = aiNames ? labels.filter(entry => aiNames[entry.id]?.category).length : 0;
+  const storeCount = labels.filter(entry => entry.category).length;
 
   return (
     <ChartFrame
@@ -98,11 +104,12 @@ export function PainLabels({ pain, filtered = false }) {
       <div className="min-h-0 flex-1 overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">
-            Complaint labels found by the corpus engine: theme name, supporting phrases, distinct 1–2 star reviews, share of the complaint pool, 4–5 star reviews using the same wording, direction of the daily rate, and severity.
+            Complaint labels found by the corpus engine: theme name, an optional category naming, supporting phrases, distinct 1–2 star reviews, share of the complaint pool, 4–5 star reviews using the same wording, direction of the daily rate, and severity.
           </caption>
           <thead>
             <tr className="border-b border-slate-800">
               <Header>Label</Header>
+              <Header className="w-[132px]">Category</Header>
               <Header className="w-[54px] text-right">Phrases</Header>
               <Header className="w-[54px] text-right">1–2★</Header>
               <Header className="w-[48px] text-right">Share</Header>
@@ -115,6 +122,8 @@ export function PainLabels({ pain, filtered = false }) {
             {labels.map((entry, index) => {
               const active = open === entry.id;
               const width = Math.max(2, (entry.reviewCount / ceiling) * 100);
+              const ai = aiNames?.[entry.id]?.category ? aiNames[entry.id] : null;
+              const store = entry.category;
               return (
                 <tr key={entry.id} className={`border-b border-slate-800/50 last:border-0 ${active ? 'bg-slate-800/40' : ''}`}>
                   <th scope="row" className="py-1 pr-3 text-left font-normal">
@@ -160,6 +169,21 @@ export function PainLabels({ pain, filtered = false }) {
                       </div>
                     ) : null}
                   </th>
+                  <td className="py-1 pr-3 align-top text-[11px]">
+                    {ai ? (
+                      <span title={`Category named by ${pain.naming.model} from the phrases in this row; every number here is measured`}>
+                        <span className="font-semibold text-slate-200">{ai.category}</span>
+                        {ai.subLabel ? <span className="block truncate text-[10px] text-slate-500">{ai.subLabel}</span> : null}
+                      </span>
+                    ) : store ? (
+                      <span title={`Store term carried by ${formatNumber(store.inside)} of ${formatNumber(entry.reviewCount)} reviews in this cluster, denser than among other complaints`}>
+                        <span className="font-semibold text-slate-300">{store.name}</span>
+                        <span className="block text-[10px] text-slate-500">from store listing</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-600" title="No naming cleared the evidence test for this cluster">—</span>
+                    )}
+                  </td>
                   <td className="num py-1 pr-3 text-right text-[11px] text-slate-400">{formatNumber(entry.phraseCount)}</td>
                   <td className="num py-1 pr-3 text-right text-[12px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
                   <td className="num py-1 pr-3 text-right text-[11px] text-neg">{formatPercent(entry.reviewCount, pool)}</td>
@@ -175,14 +199,21 @@ export function PainLabels({ pain, filtered = false }) {
         </table>
       </div>
       <p className="mt-2 shrink-0 text-[10px] leading-relaxed text-slate-400">
-        Nothing here is a category a model guessed: each label groups phrases that real reviewers
-        wrote, and the name is the word those phrases agree on {named ? <span className="num">({formatNumber(named)} of {formatNumber(labels.length)} named this way)</span> : null}. Two phrases are grouped only
+        The label itself is reviewer wording: each row groups phrases real reviewers wrote, and the
+        name is the word those phrases agree on {named ? <span className="num">({formatNumber(named)} of {formatNumber(labels.length)} named this way)</span> : null}. Two phrases are grouped only
         when more reviews carry both than chance explains. Trend is the daily rate of the second
         half of the observed period against the first. {formatNumber(singletons)} {singletons === 1 ? 'label is' : 'labels are'} {singletons === 1 ? 'a single phrase' : 'single phrases'};{' '}
         {metrics.trimmedLabels
           ? <>{formatNumber(metrics.trimmedLabels)} clusters fell outside the display budget and are counted in the metrics instead of being dropped silently.</>
           : 'every cluster fits the display budget.'}
         {filtered ? ' Counts cover the whole corpus, not the active filter.' : ''}
+      </p>
+      <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+        The Category column is the one interpreted part, and it says where each name came from:
+        {' '}{aiCount ? <span className="num">{formatNumber(aiCount)} by {pain.naming.model}</span> : 'none by a model'}
+        {storeCount ? <>, {formatNumber(storeCount)} from a store-listing term that is denser inside the cluster than among other complaints</> : null}
+        {aiCount || storeCount ? '.' : '; no naming cleared the evidence test on this corpus, so the column is empty rather than guessed.'}
+        {' '}No number in the table comes from naming — counts, shares and trend are measured.
       </p>
     </ChartFrame>
   );
