@@ -3,7 +3,7 @@
 // gerbangnya adalah penolakan permintaan lintas situs agar kuota sumber tidak dipicu
 // dari halaman lain, ditambah validasi masukan di server. Kunci database hanya hidup
 // di environment fungsi ini.
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 300 };
 
 import { SyncError, normalizeSocialTargets, syncService } from '../lib/sync-core.mjs';
 import { database } from '../lib/db.mjs';
