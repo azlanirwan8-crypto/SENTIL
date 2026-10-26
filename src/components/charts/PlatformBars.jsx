@@ -107,9 +107,6 @@ export function PlatformBars({ platforms }) {
                     <text x={bandX + band / 2} y={MARGIN.top + plotHeight + 15} textAnchor="middle" className={`text-[10px] font-semibold ${active ? 'fill-slate-100' : 'fill-slate-400'}`}>
                       {platformLabel(platform.id)}
                     </text>
-                    <text x={bandX + band / 2} y={MARGIN.top + plotHeight + 27} textAnchor="middle" className="fill-slate-400 text-[10px] num">
-                      {formatNumber(platform.total)} reviews
-                    </text>
                   </g>
                 );
               })}
