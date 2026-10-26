@@ -40,7 +40,7 @@ export function Welcome({ onAdd }) {
           <span className="chip">2 public channels</span>
           <span className="chip">1 h cache</span>
           <span className="chip">0 manual dictionaries</span>
-          <span className="chip">Stored locally</span>
+          <span className="chip">Nothing stored in your browser</span>
         </div>
       </section>
     </div>
