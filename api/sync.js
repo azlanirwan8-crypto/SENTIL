@@ -274,7 +274,13 @@ export function createSyncHandler(service = syncService, { db = database } = {})
         return;
       }
       console.error('[api/sync] kegagalan tak terduga:', error);
-      json(response, 500, { error: 'internal_error', message: 'The pull failed with an internal error. Older data is still stored in the browser; please try again.' });
+      // Kode saja, bukan pesan internal: log runtime tidak selalu bisa dibaca dari luar,
+      // dan detail database tidak boleh keluar ke peramban.
+      json(response, 500, {
+        error: 'internal_error',
+        code: typeof error?.code === 'string' ? error.code : null,
+        message: 'The server could not complete this request. Nothing was changed and no stored data was removed; please try again.',
+      });
     }
   };
 }

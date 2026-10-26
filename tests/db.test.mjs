@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test, { describe } from 'node:test';
 
 import { DbError, createDatabase, dbConfiguration } from '../lib/db.mjs';
@@ -75,6 +76,18 @@ describe('konfigurasi database', () => {
     const config = dbConfiguration(ENV);
     assert.equal(config.enabled, true);
     assert.equal(config.baseUrl, 'https://example.supabase.co');
+  });
+
+  test('setiap metode yang dipanggil api/sync benar-benar ada di objek database', () => {
+    // db.test selama ini memakai stub yang punya semua metode, jadi metode yang lupa
+    // diekspor dari createDatabase lolos pengujian dan baru meledak di produksi sebagai 500.
+    const source = readFileSync(new URL('../api/sync.js', import.meta.url), 'utf8');
+    const used = [...new Set([...source.matchAll(/\bdb\.([a-zA-Z]+)\(/g)].map(m => m[1]))];
+    assert.ok(used.length >= 8, `daftar metode terlalu pendek: ${used.join(',')}`);
+    const db = createDatabase({ env: ENV });
+    for (const name of used) {
+      assert.equal(typeof db[name], 'function', `createDatabase() tidak mengekspos ${name}()`);
+    }
   });
 
   test('status jujur ketika database belum dipasang, tanpa permintaan jaringan', () => {
