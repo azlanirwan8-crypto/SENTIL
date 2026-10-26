@@ -222,6 +222,9 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const metrics = model.metrics || {};
   const labels = model.labels || { positive: 0, neutral: 0, negative: 0, unclassified: 0 };
   const topics = Array.isArray(model.topics) ? model.topics : [];
+  const pain = model.painPoints || {};
+  const painLabels = Array.isArray(pain.labels) ? pain.labels : [];
+  const labelMetrics = pain.labelMetrics || {};
   const terms = model.terms || {};
   const coverage = model.coverage || {};
   const channels = Array.isArray(dataset.channels) ? dataset.channels : [];
@@ -256,7 +259,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           </div>
           {exportButton}
         </header>
-        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x divide-slate-800/70">
+        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-5 xl:divide-x divide-slate-800/70">
           <Step
             index="01"
             title="Normalisasi regex"
@@ -280,6 +283,12 @@ export function ModelView({ dataset, workspace, db, onExport }) {
             title="Topik dari teks toko"
             detail="Istilah fitur diambil dari judul, ringkasan, dan deskripsi aplikasi di tokonya, lalu dihitung pada ulasan 1-2★."
             metric={`${formatNumber(topics.length)} topik · ${formatNumber(coverage.topicReviews)} ulasan menyebut minimal satu topik`}
+          />
+          <Step
+            index="05"
+            title="Gerombol frasa jadi label"
+            detail="Frasa 2–4 token yang benar-benar ditulis reviewers digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan (z>1 dua arah). Dukungan label dihitung dari union ulasan, bukan penjumlahan frasa."
+            metric={`${formatNumber(labelMetrics.clusters || 0)} gerombol · ${formatNumber(labelMetrics.links || 0)} ikatan · ${formatNumber(labelMetrics.trimmedLabels || 0)} terpangkas`}
           />
         </div>
       </section>
@@ -374,6 +383,68 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           </div>
         ) : (
           <EmptyState compact icon={IconInfo} title="Belum ada topik" body="Tidak ada istilah fitur dari teks daftar aplikasi yang muncul di cukup banyak ulasan 1–2 bintang." />
+        )}
+      </Panel>
+
+      <Panel
+        title="Gerombol label keluhan"
+        meta={painLabels.length
+          ? `${formatNumber(labelMetrics.clusters || painLabels.length)} gerombol · ${formatNumber(labelMetrics.links)} ikatan · ${formatNumber(labelMetrics.singletons)} beranggota satu`
+          : `${formatNumber(pain.metrics?.reportedPhrases || 0)} frasa dipelajari`}
+        action={<span className="hidden text-[10px] text-slate-400 sm:inline">nama label = frasa yang ditulis reviewers</span>}
+      >
+        {painLabels.length ? (
+          <div className="scroll-x">
+            <table className="w-full min-w-[720px] border-collapse text-left">
+              <caption className="sr-only">Gerombol label keluhan: frasa pencetak nama, jumlah frasa anggota, jumlah mention, jumlah ulasan berbeda, porsi dari pool 1–2 bintang, dan pujian 4–5 bintang yang menyebut frasa yang sama</caption>
+              <thead>
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <th scope="col" className="pb-1.5 pr-2 font-bold">#</th>
+                  <th scope="col" className="pb-1.5 pr-2 font-bold">Label</th>
+                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Frasa</th>
+                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Mention</th>
+                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Ulasan beda</th>
+                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Porsi</th>
+                  <th scope="col" className="pb-1.5 text-right font-bold">Pujian</th>
+                </tr>
+              </thead>
+              <tbody>
+                {painLabels.map((entry, index) => (
+                  <tr key={entry.id} className="border-t border-slate-800/60">
+                    <td className="num py-1.5 pr-2 text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</td>
+                    <td className="py-1.5 pr-2">
+                      <span className="rounded bg-slate-800/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{entry.label}</span>
+                      <p className="mt-0.5 truncate text-[10px] text-slate-400" title={entry.phrases.map(phrase => phrase.text).join(' · ')}>
+                        {entry.phrases.slice(0, 3).map(phrase => phrase.text).join(' · ')}
+                        {entry.phrases.length > 3 ? ` · +${entry.phrases.length - 3} lagi` : ''}
+                      </p>
+                    </td>
+                    <td className="num py-1.5 pr-2 text-right text-[11px] text-slate-200">{formatNumber(entry.phraseCount)}</td>
+                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))}</td>
+                    <td className="num py-1.5 pr-2 text-right text-[11px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
+                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatPercent(entry.reviewCount, pain.pools?.negative || 0)}</td>
+                    <td className="num py-1.5 text-right text-[10px] text-slate-400">{entry.praiseCount == null ? 'N/A' : formatNumber(entry.praiseCount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2.5 border-t border-slate-800/70 pt-2 text-[10px] leading-relaxed text-slate-400">
+              Kolom <span className="font-semibold text-slate-300">Mention</span> adalah penjumlahan setiap frasa anggotanya; kolom{' '}
+              <span className="font-semibold text-slate-300">Ulasan beda</span> adalah jumlah ulasan yang sebenarnya. Selisihnya adalah orang yang sama
+              yang dihitung berulang — tidak pernah ditampilkan sebagai temuan. {formatNumber(labelMetrics.trimmedLabels)} gerombol di luar anggaran
+              tampil tetap dihitung dan dilaporkan di angka ini. Aturan ikatan: {pain.labelParameters?.significance || 'N/A'}, minimal{' '}
+              {formatNumber(pain.labelParameters?.sharedReviews || 0)} ulasan bersama.
+            </p>
+          </div>
+        ) : (
+          <EmptyState
+            compact
+            icon={IconInfo}
+            title={Array.isArray(pain.labels) ? 'Belum ada ikatan antar frasa' : 'Snapshot ini dibuat sebelum lapisan label'}
+            body={Array.isArray(pain.labels)
+              ? `${formatNumber(pain.metrics?.matchedReviews || 0)} ulasan 1–2★ memuat minimal satu frasa tersimpan, tetapi tidak ada pasangan frasa yang muncul bersama melampaui kebetulan. Tidak ada kategori yang dikarang untuk mengisi tabel ini.`
+              : `Frasa tersimpan oleh ${pain.version || 'versi lama'}, yang belum punya langkah penggerombolan. Tarik ulang project ini untuk membentuk label dari frasa yang sama.`}
+          />
         )}
       </Panel>
 

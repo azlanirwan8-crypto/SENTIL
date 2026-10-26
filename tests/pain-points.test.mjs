@@ -287,4 +287,39 @@ describe('lapisan frasa di dalam model korpus', () => {
     assert.equal(texts.some(text => /r{3,}/.test(text)), false, 'bentuk mentah tidak boleh lolos jadi frasa');
     assert.ok(model.painPoints.metrics.droppedCovered > 0, 'potongan pendek dari frasa yang sama dihitung sebagai varian');
   });
+
+  test('label diturunkan dari frasa korpus, bukan ditulis tangan', () => {
+    const reviews = [];
+    let id = 0;
+    for (const text of SERVER_CORPUS.negative) reviews.push(reviewOf(id++, 1, text));
+    for (const text of SERVER_CORPUS.positive) reviews.push(reviewOf(id++, 5, text));
+    const { model } = analyzeCorpus(reviews, { generatedAt: '2026-01-06T00:00:00.000Z', listing: '', entity: 'Uji Sinyal' });
+    const pain = model.painPoints;
+    const known = new Set(pain.items.map(item => item.text));
+    assert.ok(pain.labels.length, 'korpus cukup untuk membentuk label');
+    for (const label of pain.labels) {
+      assert.ok(known.has(label.label), `nama label bukan frasa asli korpus: ${label.label}`);
+      assert.ok(label.phrases.every(entry => known.has(entry.text)), 'anggota gerombol harus frasa asli');
+      const biggest = Math.max(...label.phrases.map(entry => entry.dfNegative));
+      const sum = label.phrases.reduce((total, entry) => total + entry.dfNegative, 0);
+      assert.equal(label.phrases.length, label.phraseCount, 'seluruh anggota gerombol dikirim ke klien');
+      assert.ok(label.reviewCount >= biggest, `union ulasan kurang dari frasa terbesarnya: ${label.label}`);
+      assert.ok(label.reviewCount <= sum, 'satu ulasan tidak boleh dihitung dua kali');
+      assert.ok(label.reviewCount <= pain.pools.negative, 'dukungan label tidak boleh melebihi pool 1-2★');
+    }
+    assert.equal(pain.labelMetrics.clusters >= pain.labelMetrics.reportedLabels, true);
+    assert.equal(pain.labelMetrics.reportedLabels, pain.labels.length, 'pemangkasan harus dilaporkan, bukan diam-diam');
+  });
+
+  test('label selamat melewati JSON karena tidak memakai Map', () => {
+    const reviews = [];
+    let id = 0;
+    for (const text of SERVER_CORPUS.negative) reviews.push(reviewOf(id++, 1, text));
+    for (const text of SERVER_CORPUS.positive) reviews.push(reviewOf(id++, 5, text));
+    const { model } = analyzeCorpus(reviews, { generatedAt: '2026-01-06T00:00:00.000Z', listing: '', entity: 'Uji Sinyal' });
+    const restored = JSON.parse(JSON.stringify(model.painPoints));
+    assert.equal(restored.labels.length, model.painPoints.labels.length);
+    assert.equal(restored.labels[0].reviewCount, model.painPoints.labels[0].reviewCount);
+    assert.equal(restored.labelMetrics.clusters, model.painPoints.labelMetrics.clusters);
+  });
 });

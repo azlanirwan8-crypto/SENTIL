@@ -3,6 +3,7 @@ import { formatNumber, platformLabel } from '../lib/format.js';
 import { scopeDataset } from '../lib/scope.js';
 import { KpiRow } from './KpiRow.jsx';
 import { ChannelStrip } from './ChannelStrip.jsx';
+import { PainLabels } from './PainLabels.jsx';
 import { DailyTrend } from './charts/DailyTrend.jsx';
 import { ChannelDonut } from './charts/ChannelDonut.jsx';
 import { TopicMap } from './charts/TopicMap.jsx';
@@ -107,6 +108,9 @@ export function Overview({ dataset, workspace }) {
             </div>
             <div className="min-w-0 xl:col-span-5">
               <PlatformBars platforms={scoped.model.platforms} />
+            </div>
+            <div className="min-w-0 xl:col-span-12">
+              <PainLabels pain={dataset.model?.painPoints} filtered={scoped.filtered} />
             </div>
           </div>
         </>
