@@ -5,11 +5,18 @@ import { IconGrid } from '../icons.jsx';
 import { ChartFrame } from './ChartFrame.jsx';
 import { SERIES_COLORS } from './palette.js';
 
-const LABEL_WIDTH = 96;
+const LABEL_WIDTH = 132;
 
+const wordsOf = topic => (Array.isArray(topic.matchedTerms) ? topic.matchedTerms.slice(0, 4).map(entry => entry.term) : []);
+
+// Bar chart paling atas menentukan apa yang dibaca orang di seluruh panel ini, jadi urutannya
+// tidak boleh menyerah pada alphabet: keluhan terbanyak di atas, dan nama bar adalah istilah
+// fitur dari kamus domain, bukan kata yang dipungut dari kalimat ulasan.
 export function TopicMap({ topics, filtered = false }) {
   const [selected, setSelected] = useState(null);
-  const data = Array.isArray(topics) ? topics.filter(topic => Number(topic.low) > 0) : [];
+  const data = (Array.isArray(topics) ? topics : [])
+    .filter(topic => Number(topic.low) > 0)
+    .sort((a, b) => b.low - a.low || String(a.id).localeCompare(String(b.id)));
   const max = Math.max(1, ...data.map(topic => topic.low));
 
   if (!data.length) {
@@ -19,7 +26,7 @@ export function TopicMap({ topics, filtered = false }) {
           compact
           icon={IconGrid}
           title="No complaint topic yet"
-          body="Topics come from feature terms in the app's own store listing. While that text has not been read, no topic can be named."
+          body="Reviews were read, but none of them matched a feature term in the domain dictionary. Nothing is forced into a topic to fill this chart."
         />
       </ChartFrame>
     );
@@ -41,11 +48,12 @@ export function TopicMap({ topics, filtered = false }) {
       className="h-full"
       bodyClassName="flex flex-col"
     >
-      <div role="group" aria-label="Complaint topics taken from the store listing text" className="flex flex-1 flex-col justify-between gap-0.5 py-0.5">
+      <div role="group" aria-label="Complaint topics named by the domain dictionary" className="flex flex-1 flex-col justify-between gap-0.5 py-0.5">
         {data.map(topic => {
           const activeRow = selected === topic.id;
           const complaintWidth = Math.max(1.5, (topic.low / max) * 100);
           const praiseWidth = Math.max(0, Math.min(100 - complaintWidth, (topic.high / max) * 100));
+          const words = wordsOf(topic);
           return (
             <button
               key={topic.id}
@@ -53,10 +61,10 @@ export function TopicMap({ topics, filtered = false }) {
               onClick={() => setSelected(current => (current === topic.id ? null : topic.id))}
               aria-pressed={activeRow}
               aria-label={`${topic.name}: ${formatNumber(topic.low)} 1–2 star reviews, ${formatPercent(topic.share, 100)} of the complaint pool, ${formatNumber(topic.high)} 4–5 star reviews.`}
-              title={`Mentioned ${formatNumber(topic.listingMentions)}x in the store listing text`}
+              title={words.length ? `Reviewers wrote: ${words.join(', ')}` : 'Named by the domain dictionary'}
               className={`flex w-full items-center gap-2 rounded px-1 py-[3px] text-left transition ${activeRow ? 'bg-slate-800/70' : 'hover:bg-slate-800/40'}`}
             >
-              <span className={`shrink-0 truncate font-mono text-[10px] font-semibold uppercase tracking-wider ${activeRow ? 'text-slate-50' : 'text-slate-300'}`} style={{ width: LABEL_WIDTH }}>
+              <span className={`shrink-0 truncate text-[10px] font-semibold ${activeRow ? 'text-slate-50' : 'text-slate-300'}`} style={{ width: LABEL_WIDTH }}>
                 {topic.name}
               </span>
               <span className="relative h-3 min-w-0 flex-1 overflow-hidden rounded-[2px] bg-slate-800/50">
@@ -76,6 +84,10 @@ export function TopicMap({ topics, filtered = false }) {
         {active ? (
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <span className="text-[11px] font-bold text-slate-100">{active.name}</span>
+            {active.nameId && <span className="text-[10px] text-slate-400">{active.nameId}</span>}
+            {active.clusterName && (
+              <span className="rounded bg-slate-800/70 px-1.5 py-0.5 text-[10px] text-slate-200">{active.clusterName.en}</span>
+            )}
             <span className="num text-[10px] text-slate-400">
               {formatNumber(active.low)} complaints · {formatNumber(active.mid)} neutral · {formatNumber(active.high)} praise
               {active.unrated ? ` · ${formatNumber(active.unrated)} unstarred` : ''}
@@ -83,11 +95,15 @@ export function TopicMap({ topics, filtered = false }) {
             {isNumber(active.complaintRate) && (
               <span className="num text-[10px] text-slate-400">{Math.round(toNumber(active.complaintRate))}% of its mentions are complaints</span>
             )}
-            <span className="num text-[10px] text-slate-400">mentioned {formatNumber(active.listingMentions)}x in the store text</span>
+            {wordsOf(active).length > 0 && (
+              <span className="font-mono text-[10px] text-slate-400">matched: {wordsOf(active).join(', ')}</span>
+            )}
           </div>
         ) : (
           <p className="text-[10px] leading-relaxed text-slate-400">
-            Each bar is a feature term the publisher wrote on its own store page, counted across 1–2★ reviews. The green segment shows 4–5★ reviews that use the same term. One review can belong to several topics.
+            Each bar is a product feature named by the domain dictionary, counted across 1–2★ reviews; the green segment counts
+            4–5★ reviews using the same words. Names come from the dictionary in English and Indonesian, never from filler words
+            inside a review. One review can carry several topics, so the bars do not add up to 100%.
           </p>
         )}
       </div>

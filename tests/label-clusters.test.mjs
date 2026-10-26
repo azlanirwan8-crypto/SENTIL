@@ -231,10 +231,12 @@ describe('gerombol frasa menjadi label', () => {
     const other = result.labels.find(label => label.id !== ad.id);
     assert.ok(other.name !== 'iklan');
 
-    // Tanpa pesaing yang lebih identifying, 'tidak' tetap sah jadi nama gerombolnya sendiri.
+    // Kata tugas tidak boleh menjadi nama walaupun tidak ada pesaing: headline jatuh ke frasa
+    // terberat, yang masih berisi keluhan yang sebenarnya ditulis reviewer.
     const alone = build(new Map([['tidak jelas sekali', range(0, 19)], ['tidak ada bunyi', range(0, 19)]]), new Map(), [items[4], items[5]]);
-    assert.equal(alone.labels[0].name, 'tidak');
-    assert.equal(alone.labels[0].nameSource, 'term');
+    assert.equal(alone.labels[0].name, 'tidak jelas sekali');
+    assert.equal(alone.labels[0].nameSource, 'phrase', 'kata tugas tidak lagi dijadikan istilah nama');
+    assert.notEqual(alone.labels[0].name, 'tidak');
   });
 
   test('arah label dihitung dari rentang tanggal yang teramati', () => {

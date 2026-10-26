@@ -6,17 +6,54 @@
 // environment fungsi ini.
 export const config = { maxDuration: 300 };
 
-import { SyncError, normalizeSocialTargets, syncService } from '../lib/sync-core.mjs';
+import { SyncError, normalizeSocialTargets, summarizeDataset, syncService } from '../lib/sync-core.mjs';
 import { database } from '../lib/db.mjs';
 import { buildComparison } from '../lib/compare-engine.mjs';
 import { storeResult } from '../lib/persist.mjs';
 import { createQuota } from '../lib/rate-limit.mjs';
+import { analyzeCorpus, ENGINE_VERSION } from '../lib/corpus-engine.mjs';
 
 const BODY_LIMIT = 16384;
-// Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset,
-// compare, limits) tidak dikenai kuota: murah, dan memblokirnya justru membuat
-// dasbor tidak bisa dibaca.
+// Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset, compare,
+// limits, job) tidak dikenai kuota: murah, dan memblokirnya justru membuat dasbor tidak terbaca.
 const QUOTA_ACTIONS = new Set(['sync', 'discover']);
+// Pull adalah aksi mahal. Di Vercel ia dipindahkan ke latar belakang (waitUntil) sehingga
+// peramban menerima jawaban dalam hitungan milidetik dan menyambungnya lewat polling; di luar
+// Vercel (server lokal, uji) tidak ada waitUntil, jadi penarikan tetap diselesaikan dalam
+// permintaan. Deteksinya malas dan sekali saja — impor top-level bisa membuat berkas fungsi
+// ini gagal dibangun di runtime yang tidak mengenal await tingkat modul.
+let backgroundWaitUntil = null;
+
+// waitUntil hanya dipakai kalau fungsi ini benar-benar berjalan di Vercel. Di server lokal, di
+// uji, atau di host Node lain, penarikan tetap diselesaikan dalam permintaan — perilaku yang sama
+// seperti sebelum lapisan asinkron ada, jadi tidak ada jalur tersembunyi yang tidak diuji.
+async function loadWaitUntil(env = process.env) {
+  if (!env.VERCEL && !env.VERCEL_ENV) return null;
+  if (backgroundWaitUntil !== null) return backgroundWaitUntil;
+  try {
+    const module = await import('@vercel/functions');
+    backgroundWaitUntil = typeof module?.waitUntil === 'function' ? module.waitUntil : false;
+  } catch {
+    backgroundWaitUntil = false;
+  }
+  return backgroundWaitUntil;
+}
+
+// Pengaman baca data lama: kalau snapshot sebelumnya tidak bisa dibaca, penarikan berjalan
+// penuh seperti sebelum ada cache inkremental — lebih lambat daripada kehilangan baris.
+async function readIncremental(db, workspaceId, force) {
+  if (!db.enabled || !workspaceId || force) return { since: null, carry: null, note: 'full pull requested' };
+  try {
+    const cursor = await db.reviewCursor(workspaceId);
+    if (!cursor || !Object.keys(cursor.platforms || {}).length) return { since: null, carry: null, note: 'no stored watermark yet' };
+    const stored = await db.loadDataset(workspaceId);
+    const carry = Array.isArray(stored?.reviews) && stored.reviews.length ? stored.reviews : null;
+    if (!carry) return { since: null, carry: null, note: 'stored rows could not be read' };
+    return { since: cursor.platforms, carry, note: `incremental from ${Object.entries(cursor.platforms).map(([id, at]) => `${id} ${at}`).join(', ')} over ${carry.length} stored rows` };
+  } catch (error) {
+    return { since: null, carry: null, note: `incremental cache unavailable (${String(error?.message || error).slice(0, 120)})` };
+  }
+}
 
 const json = (response, status, body, extra = {}) => {
   response.writeHead(status, {
@@ -111,7 +148,98 @@ function workspaceFrom(value) {
   };
 }
 
-export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }) } = {}) {
+export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }), env = process.env, waitUntil = null } = {}) {
+  async function note(run) {
+    if (!db.enabled) return;
+    try { await db.logRun(run); } catch { /* riwayat tidak boleh menggagalkan penarikan */ }
+  }
+
+  // Satu pekerjaan penarikan: baca penanda inkremental, tarik, analisis, simpan. Dipakai baik
+  // oleh jalur latar belakang (Vercel) maupun jalur inline (server lokal / uji), jadi hanya ada
+  // satu urutan kerja untuk keduanya.
+  async function runPullJob(args, workspace, { jobId = null } = {}) {
+    const startedAt = Date.now();
+    const { since, carry, note: cacheNote } = await readIncremental(db, workspace?.id, args.force);
+    // Cap 'running' hanya ditulis kalau pekerjaan ini benar-benar punya project: tanpa identitas,
+    // tidak ada yang bisa mem-polling dan baris tanpa workspace_id hanya mengotori riwayat.
+    if (workspace?.id) await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: cacheNote, elapsedMs: null });
+    try {
+      const result = await service.sync({ ...args, since, carry });
+      const stored = await storeResult(db, workspace, result);
+      return { ...result, stored, jobId, incremental: { ...(result.incremental || {}), note: cacheNote } };
+    } catch (error) {
+      if (workspace?.id) {
+        await note({
+          workspaceId: workspace.id,
+          entity: args.entity,
+          status: 'error',
+          reviews: null,
+          channels: null,
+          error: String(error?.message || error).slice(0, 300),
+          elapsedMs: Date.now() - startedAt,
+        });
+      }
+      throw error;
+    }
+  }
+
+  // Hitung ulang tanpa menyentuh sumber: baris yang sudah tersimpan dianalisis lagi oleh mesin
+  // versi sekarang. Inilah jalur yang membersihkan analisis lama yang tercemar tanpa perlu
+  // menarik ulang 69.000 ulasan, dan tanpa mengubah satu baris teks ulasan pun.
+  async function recomputeStored(workspaceId) {
+    if (!db.enabled) throw new SyncError('db_unavailable', 'The database is not configured on this server, so there is nothing to recompute.', 400);
+    const probe = await db.status();
+    if (!probe.reachable) return { action: 'recompute', db: probe, workspaceId, recomputed: false, message: 'The database is not reachable, so nothing was recomputed.' };
+    const stored = await db.loadDataset(workspaceId);
+    if (!stored || !Array.isArray(stored.reviews) || !stored.reviews.length) {
+      throw new SyncError('dataset_missing', 'This project has no stored reviews to recompute. Pull it once first.', 400);
+    }
+    const [workspaces] = await Promise.all([db.listWorkspaces()]);
+    const workspace = workspaces.find(entry => entry.id === workspaceId);
+    if (!workspace) throw new SyncError('workspace_missing', 'The project record could not be found.', 400);
+    const listing = [...new Set((Array.isArray(stored.channels) ? stored.channels : []).map(channel => channel?.app?.listing).filter(Boolean))].join('\n');
+    const startedAt = Date.now();
+    const raw = stored.reviews.map(({ analysis, ...rest }) => rest);
+    const { rows, model } = analyzeCorpus(raw, { generatedAt: stored.fetchedAt || new Date().toISOString(), listing, entity: stored.entity || workspace.entity || '' });
+    const rebuilt = {
+      ...stored,
+      engine: {
+        ...(stored.engine || {}),
+        version: ENGINE_VERSION,
+        dictionary: model.taxonomy?.version || 'none',
+        dictionaryScope: 'topic names only — weights, phrase labels, and every count are learned from this corpus',
+        languages: model.languages?.version || null,
+        recomputedAt: new Date().toISOString(),
+      },
+      model,
+      reviews: rows,
+      summary: summarizeDataset(rows, model, Array.isArray(stored.channels) ? stored.channels : []),
+    };
+    const saved = await db.saveSnapshot({ workspace, dataset: rebuilt });
+    await note({
+      workspaceId,
+      entity: rebuilt.entity,
+      status: 'recomputed',
+      reviews: rows.length,
+      channels: (Array.isArray(stored.channels) ? stored.channels : []).map(channel => ({ id: channel.id, status: channel.status, fetched: channel.fetched })),
+      error: null,
+      elapsedMs: Date.now() - startedAt,
+    });
+    return {
+      action: 'recompute',
+      ok: true,
+      db: probe,
+      workspaceId,
+      recomputed: true,
+      rows: rows.length,
+      revision: saved.revision,
+      elapsedMs: Date.now() - startedAt,
+      engine: { version: ENGINE_VERSION, taxonomy: model.taxonomy?.version, languages: model.languages?.version },
+      topics: model.topics.map(topic => ({ id: topic.id, name: topic.name, low: topic.low })),
+      message: `${rows.length} stored reviews were re-analysed with ${ENGINE_VERSION}. No source was contacted and no review text was changed.`,
+    };
+  }
+
   return async function handler(request, response) {
     if (request.method !== 'POST') {
       response.writeHead(405, { allow: 'POST', 'cache-control': 'no-store' });
@@ -157,14 +285,57 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       }
       if (payload.action === 'sync') {
         const workspace = workspaceFrom(payload.workspace);
-        const result = await service.sync({
+        const args = {
           entity: payload.entity,
           playAppId: payload.playAppId,
           appleAppId: payload.appleAppId,
           social,
           force,
+        };
+        const hold = typeof waitUntil === 'function' ? waitUntil : await loadWaitUntil(env);
+        if (hold) {
+          // Jawaban keluar dulu, pekerjaan jalan di belakang. Peramban menyambungkan statusnya
+          // lewat aksi "job" — tidak ada lagi permintaan HTTP yang menggantung 90+ detik.
+          const jobId = `${workspace?.id || 'anonymous'}:${Date.now()}`;
+          hold(runPullJob(args, workspace, { jobId }).catch(error => {
+            if (error instanceof SyncError || Number.isInteger(error?.status)) return;
+            console.error('[api/sync] kegagalan pekerjaan latar belakang:', error);
+          }));
+          json(response, 202, {
+            action: 'sync',
+            accepted: true,
+            jobId,
+            workspaceId: workspace?.id || null,
+            pollingMs: 4000,
+            message: 'The pull is running on the server. Stored data is untouched until it finishes; poll "job" for this project for the status.',
+          });
+          return;
+        }
+        json(response, 200, await runPullJob(args, workspace, { jobId: null }));
+        return;
+      }
+      if (payload.action === 'job') {
+        const probe = await db.status();
+        const workspaceId = typeof payload.workspaceId === 'string' ? payload.workspaceId : '';
+        if (!probe.reachable || !WORKSPACE_ID.test(workspaceId)) {
+          json(response, 200, { action: 'job', db: probe, workspaceId, run: null });
+          return;
+        }
+        const run = await db.latestRun(workspaceId);
+        json(response, 200, {
+          action: 'job',
+          db: probe,
+          workspaceId,
+          pending: run?.status === 'running',
+          finished: run ? run.status !== 'running' : false,
+          run,
         });
-        json(response, 200, { ...result, stored: await storeResult(db, workspace, result) });
+        return;
+      }
+      if (payload.action === 'recompute') {
+        const workspaceId = typeof payload.workspaceId === 'string' ? payload.workspaceId : '';
+        if (!WORKSPACE_ID.test(workspaceId)) throw new SyncError('workspace_invalid', 'A project ID is required to recompute its analysis.', 400);
+        json(response, 200, await recomputeStored(workspaceId));
         return;
       }
       if (payload.action === 'state') {
@@ -246,7 +417,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
         }));
         return;
       }
-      throw new SyncError('action_invalid', 'The action must be "discover", "sync", "limits", "limits-reset", "state", "dataset", "compare", "workspace-save", or "workspace-delete".');
+      throw new SyncError('action_invalid', 'The action must be "discover", "sync", "recompute", "job", "limits", "limits-reset", "state", "dataset", "compare", "workspace-save", or "workspace-delete".');
     } catch (error) {
       if (error instanceof SyncError || (error && Number.isInteger(error.status) && error.status >= 400 && error.status < 500)) {
         json(response, error.status || 400, { error: error.code || 'request_invalid', message: error.message });

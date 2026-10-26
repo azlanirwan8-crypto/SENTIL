@@ -86,3 +86,11 @@ export function fetchLimits({ entity, playAppId, appleAppId, social = {} }) {
 export function resetLimits({ entity, playAppId, appleAppId, social = {} }) {
   return post({ action: 'limits-reset', entity, playAppId: playAppId || null, appleAppId: appleAppId || null, social });
 }
+
+export function fetchJob(workspaceId) {
+  return post({ action: 'job', workspaceId });
+}
+
+export function recomputeWorkspace(workspaceId) {
+  return post({ action: 'recompute', workspaceId });
+}

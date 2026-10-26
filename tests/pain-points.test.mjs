@@ -268,8 +268,9 @@ describe('lapisan frasa di dalam model korpus', () => {
     assert.equal(model.painPoints.version, PAIN_VERSION);
     assert.equal(model.painPoints.status, 'ready');
     assert.ok(model.painPoints.items.every(item => item.tokens.length >= 2 && item.tokens.length <= 4));
-    assert.ok(model.topics.length === 0, 'tanpa teks daftar aplikasi, topik berbasis daftar tetap kosong');
-    assert.equal(model.topicSource, null);
+    assert.equal(model.listingTopics.length, 0, 'tanpa teks daftar aplikasi, bukti berbasis daftar tetap kosong');
+    assert.equal(model.listingTopicSource, null);
+    assert.equal(model.topicSource, 'domain-taxonomy', 'nama topik tidak membutuhkan teks daftar');
     assert.ok(model.painPoints.items.some(item => item.text === 'server error'), 'frasa harus datang dari ulasan itu sendiri');
   });
 

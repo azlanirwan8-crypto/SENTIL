@@ -13,7 +13,7 @@ import { ConfirmDeleteDialog } from './components/ConfirmDialog.jsx';
 import { BootScreen, SyncScreen, WorkspaceEmpty } from './components/WorkspaceStates.jsx';
 import { Notice, StorageWarning } from './components/Notices.jsx';
 import { ToastStack } from './components/Toast.jsx';
-import { syncWorkspace } from './lib/api.js';
+import { fetchJob, recomputeWorkspace, syncWorkspace } from './lib/api.js';
 import { exportWorkspace } from './lib/export.js';
 import { formatNumber, platformLabel } from './lib/format.js';
 import {
@@ -30,6 +30,41 @@ import {
 // query daftar), dan di bawah ini yang dibayar per project hanyalah pembacaan dataset
 // ketika capnya benar-benar bergeser.
 const STATE_POLL_MS = 75_000;
+// Penarikan tidak lagi ditunggu dalam satu permintaan. Halaman menanyakan status pekerjaan tiap
+// beberapa detik, dan berhenti menunggu setelah anggaran ini — kalau lewat, yang ditampilkan
+// tetap snapshot terakhir yang utuh, bukan separuh hasil.
+const JOB_POLL_MS = 4_000;
+const JOB_BUDGET_MS = 8 * 60_000;
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Menyambungkan penarikan yang berjalan di latar belakang: tunggu status selesai, lalu baca
+// kembali dataset yang baru disimpan. Yang dikembalikan berbentuk sama seperti jawaban penarikan
+// biasa, jadi sisa halaman tidak perlu tahu ada dua jalur.
+async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = JOB_BUDGET_MS } = {}) {
+  const startedAt = Date.now();
+  let run = null;
+  while (Date.now() - startedAt < budgetMs) {
+    await sleep(pollingMs);
+    let state;
+    try {
+      state = await fetchJob(workspaceId);
+    } catch (error) {
+      return { ok: false, reason: error.message || 'The pull status could not be read.' };
+    }
+    if (state.run) run = state.run;
+    if (state.finished) break;
+  }
+  if (!run || run.status === 'running') {
+    return { ok: false, stillRunning: true, reason: 'The pull is still running on the server. What is on screen is still the last complete snapshot — check again in a moment.' };
+  }
+  if (run.status === 'error') return { ok: false, reason: run.error || 'The pull failed on the server.' };
+  if (run.status === 'unchanged') return { ok: true, unchanged: true, run };
+  const loaded = await loadDataset(workspaceId);
+  if (loaded.error) return { ok: false, reason: loaded.error };
+  if (!loaded.dataset) return { ok: false, reason: 'The finished pull could not be read back from the database.' };
+  return { ok: true, data: loaded.dataset, db: loaded.db, run };
+}
 
 function snapshotOf(data) {
   const summary = data.summary || {};
@@ -189,7 +224,34 @@ export default function App() {
     setSyncing({ workspaceId: workspace.id, force, startedAt: Date.now() });
     setSyncError(null);
     try {
-      const data = await syncWorkspace({ workspace, entity: workspace.entity, playAppId, appleAppId, social, force });
+      let data = await syncWorkspace({ workspace, entity: workspace.entity, playAppId, appleAppId, social, force });
+      if (data.accepted) {
+        // Jawaban pertama hanya berisi "pekerjaan diterima". Data datang setelah pekerjaan di
+        // server selesai, dibaca ulang dari database lewat status pekerjaan.
+        pushToast('The pull is running on the server. Keep browsing; this screen updates when it finishes.', 'info', 'Pull moved to the background');
+        const awaited = await awaitPullJob(workspace.id, { pollingMs: data.pollingMs });
+        if (!awaited.ok) {
+          setSyncError(awaited.reason);
+          pushToast(awaited.reason, awaited.stillRunning ? 'warning' : 'error', awaited.stillRunning ? 'Still running' : 'Pull did not complete');
+          return;
+        }
+        if (awaited.unchanged) {
+          const checkedAt = new Date().toISOString();
+          pushToast('The sources answered and nothing new came in since the stored snapshot, so no analysis was repeated and nothing was overwritten.', 'info', 'No new reviews');
+          applyWorkspaces(workspacesRef.current.map(item => (item.id === workspace.id ? { ...item, lastSyncedAt: checkedAt, updatedAt: checkedAt } : item)));
+          return;
+        }
+        data = {
+          ...awaited.data,
+          db: awaited.db,
+          stored: {
+            ok: true,
+            revision: awaited.data.stored?.revision ?? null,
+            rows: awaited.data.stored?.reviewCount ?? awaited.data.reviews.length,
+            elapsedMs: awaited.run?.elapsedMs ?? null,
+          },
+        };
+      }
       if (data.db) setDbStatus(data.db);
       const channels = Array.isArray(data.channels) ? data.channels : [];
       const allFailed = channels.length > 0 && channels.every(channel => channel.status === 'error');
@@ -238,6 +300,32 @@ export default function App() {
       setSyncing(null);
     }
   }, [applyDataset, applyWorkspaces, pushToast]);
+
+  // Build lama menyimpan analisis yang namanya masih meminjam kata dari ulasan. Tombol ini
+  // menyusun ulang seluruh label dari baris yang sudah tersimpan — tanpa penarikan ulang.
+  const runRecompute = useCallback(async workspace => {
+    if (!workspace || syncingRef.current) return;
+    syncingRef.current = true;
+    setSyncing({ workspaceId: workspace.id, force: false, startedAt: Date.now() });
+    setSyncError(null);
+    try {
+      const result = await recomputeWorkspace(workspace.id);
+      pushToast(result.message || `${formatNumber(result.rows || 0)} stored reviews were re-analysed.`, 'success', 'Analysis rebuilt');
+      const loaded = await loadDataset(workspace.id);
+      if (loaded.dataset && activeIdRef.current === workspace.id) {
+        applyDataset(loaded.dataset);
+        setDatasetError(null);
+      } else if (loaded.error) {
+        pushToast(loaded.error, 'warning', 'Could not read the new snapshot');
+      }
+    } catch (error) {
+      setSyncError(error.message || 'Re-running the analysis failed.');
+      pushToast(error.message || 'Re-running the analysis failed.', 'error', 'Re-run failed');
+    } finally {
+      syncingRef.current = false;
+      setSyncing(null);
+    }
+  }, [applyDataset, pushToast]);
 
   async function switchWorkspace(id) {
     if (!id || id === activeIdRef.current) return;
@@ -361,6 +449,23 @@ export default function App() {
     notices.push(
       <Notice key="model" tone="amber" title="The model cannot learn a distinguishing term yet">
         The corpus needs both low-rated and high-rated reviews. The volume that was read is still shown as it is.
+      </Notice>,
+    );
+  }
+  if (dataset && !dataset.model?.taxonomy) {
+    notices.push(
+      <Notice
+        key="stale"
+        tone="amber"
+        title="This snapshot was analysed by the previous engine"
+        action={(
+          <button type="button" onClick={() => runRecompute(activeWorkspace)} disabled={Boolean(syncing)} className="btn btn-secondary btn-xs">
+            Re-run analysis
+          </button>
+        )}
+      >
+        Topic names in it can still contain ordinary words lifted from review text. Re-running rebuilds every label from
+        the domain dictionary using the reviews already stored here — nothing is pulled again and no review text is altered.
       </Notice>,
     );
   }

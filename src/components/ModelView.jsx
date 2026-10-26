@@ -165,8 +165,8 @@ function AuditPanel({ channel, store, workspaceStore }) {
   const cache = channel?.cache || null;
   const histogram = Array.isArray(app?.ratingHistogram) && app.ratingHistogram.length === 5 ? app.ratingHistogram : null;
   const coveragePairs = !coverage ? [] : store === 'play'
-    ? [['Halaman', coverage.pages], ['Baris', coverage.rows], ['Duplikat', coverage.duplicates], ['Dibuang', coverage.skipped], ['Batas sampel', coverage.sampleLimit == null ? 'tidak ada' : coverage.sampleLimit]]
-    : [['Halaman', coverage.shelfPages], ['Feed', coverage.feedPages], ['Ulasan halaman', coverage.shelfReviews], ['Ulasan feed', coverage.feedReviews], ['Berbagi', coverage.sharedReviews], ['Dibuang', coverage.skipped]];
+    ? [['Halaman', coverage.pages], ['Baris', coverage.rows], ['Duplikat', coverage.duplicates], ['Dibuang', coverage.skipped], ['Lewat karena sudah tersimpan', coverage.olderSkipped], ['Penanda tanggal', coverage.since ? formatDateTime(coverage.since) : 'tidak ada'], ['Batas sampel', coverage.sampleLimit == null ? 'tidak ada' : coverage.sampleLimit]]
+    : [['Halaman', coverage.shelfPages], ['Feed', coverage.feedPages], ['Ulasan halaman', coverage.shelfReviews], ['Ulasan feed', coverage.feedReviews], ['Berbagi', coverage.sharedReviews], ['Dibuang', coverage.skipped], ['Lewat karena sudah tersimpan', coverage.olderSkipped]];
 
   return (
     <div className="min-w-0 p-3">
@@ -240,6 +240,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const signalItems = Array.isArray(signals?.items) ? signals.items : [];
   const terms = model.terms || {};
   const coverage = model.coverage || {};
+  const languages = model.languages || { total: 0, counts: {} };
+  const taxonomy = model.taxonomy || {};
   const channels = Array.isArray(dataset.channels) ? dataset.channels : [];
   const byId = new Map(channels.map(channel => [channel.id, channel]));
   const exportButton = (
@@ -268,11 +270,11 @@ export function ModelView({ dataset, workspace, db, onExport }) {
         <header className="flex min-h-[34px] flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
           <div className="flex items-baseline gap-2">
             <h2 className="label">Pipeline mesin</h2>
-            <span className="text-[10px] text-slate-400">otonom · tanpa kamus · bintang sebagai sinyal lemah</span>
+            <span className="text-[10px] text-slate-400">otonom · bobot dipelajari dari korpus · nama topik dari kamus domain bilingual</span>
           </div>
           {exportButton}
         </header>
-        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-6 xl:divide-x divide-slate-800/70">
+        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-4 xl:divide-x divide-slate-800/70">
           <Step
             index="01"
             title="Normalisasi regex"
@@ -281,30 +283,38 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           />
           <Step
             index="02"
+            title="Deteksi bahasa"
+            detail="Profil kata tugas memisahkan Indonesia dan Inggris per ulasan, tanpa model bahasa. Kata serapan yang dipakai dua bahasa ('update', 'app') sengaja tidak dihitung sebagai penanda."
+            metric={languages.total
+              ? `${formatNumber(languages.counts.id)} ID · ${formatNumber(languages.counts.en)} EN · ${formatNumber(languages.counts.mixed)} campuran`
+              : 'belum ada bahasa yang tercatat di snapshot ini'}
+          />
+          <Step
+            index="03"
             title="Pemisah kosakata"
             detail="Suatu istilah dianggap beban kosakata hanya kalau bobotnya tidak bisa dibedakan dari nol pada korpus ini. Tidak ada fraksi frekuensi dan tidak ada daftar kata."
             metric={`${formatNumber(metrics.informativeTerms)} informatif · ${formatNumber(metrics.nonInformativeTerms)} beban kosakata`}
           />
           <Step
-            index="03"
+            index="04"
             title="Bobot korelasi bintang"
             detail="Rasio kemunculan 4–5★ terhadap 1–2★ dengan smoothing Jeffreys dan penyusutan dukungan."
             metric={`${formatNumber(metrics.learnedTerms)} istilah · ${formatNumber(coverage.lowRatings)} rendah vs ${formatNumber(coverage.highRatings)} tinggi`}
           />
           <Step
-            index="04"
-            title="Topik dari teks toko"
-            detail="Istilah fitur diambil dari judul, ringkasan, dan deskripsi aplikasi di tokonya, lalu dihitung pada ulasan 1-2★."
-            metric={`${formatNumber(topics.length)} topik · ${formatNumber(coverage.topicReviews)} ulasan menyebut minimal satu topik`}
+            index="05"
+            title="Topik dari kamus domain"
+            detail="Nama topik diambil dari kamus fitur produk yang dituliskan tangan dalam dua bahasa, bukan dari kata yang kebetulan sering muncul. Kosakata halaman toko tetap dihitung dan dilaporkan, tetapi tidak lagi boleh menamai sesuatu."
+            metric={`${formatNumber(topics.length)} topik dilaporkan dari ${formatNumber(taxonomy.defined || 0)} definisi · ${formatNumber(coverage.topicReviews)} ulasan menyebut minimal satu topik`}
           />
           <Step
-            index="05"
+            index="06"
             title="Gerombol frasa jadi label"
             detail="Frasa 2–4 token yang benar-benar ditulis reviewers digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan. Namanya diambil dari kata jangkar yang dijagokan lebih dari satu anggota, dan arah dihitung dari rentang tanggal yang teramati."
             metric={`${formatNumber(labelMetrics.clusters || 0)} gerombol · ${formatNumber(labelMetrics.namedFromTerm || 0)} nama dari jangkar · ${formatNumber(labelMetrics.trimmedLabels || 0)} terpangkas`}
           />
           <Step
-            index="06"
+            index="07"
             title="Tulis sinyal dari hasil ukur"
             detail="Tiap baris analisis ditulis mesin dari dua proporsi yang dibandingkan: kalau selisihnya tidak lebih besar daripada simpangan baku selisih itu, barisnya tidak ada. Tidak ada kalimat yang dirangkai manusia atau model bahasa."
             metric={signals
@@ -411,19 +421,25 @@ export function ModelView({ dataset, workspace, db, onExport }) {
         </div>
       </Panel>
 
-      <Panel title="Topik keluhan" meta={`${formatNumber(topics.length)} topik`} action={<span className="hidden text-[10px] text-slate-400 sm:inline">istilah dari teks daftar aplikasi</span>}>
+      <Panel
+        title="Topik keluhan"
+        meta={`${formatNumber(topics.length)} topik dari ${formatNumber(taxonomy.defined || 0)} definisi kamus`}
+        action={<span className="hidden text-[10px] text-slate-400 sm:inline">nama dari kamus domain dua bahasa, bukan dari kata yang sering muncul</span>}
+      >
         {topics.length ? (
           <div className="scroll-x">
-            <table className="w-full min-w-[560px] border-collapse text-left">
-              <caption className="sr-only">Topik keluhan: nomor, istilah, jumlah ulasan 1–2 bintang, porsi dari pool keluhan, sebutan di teks toko, dan jumlah ulasan 4–5 bintang yang menyebut istilah sama</caption>
+            <table className="w-full min-w-[760px] border-collapse text-left">
+              <caption className="sr-only">Topik keluhan: nama kamus Indonesia dan Inggris, klaster fitur, kata yang benar-benar ditulis reviewers, jumlah ulasan 1–2 bintang, porsi dari pool keluhan, jumlah ulasan 4–5 bintang yang menyebut kata sama, dan berapa persen seluruh sebutan topik itu berupa keluhan</caption>
               <thead>
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <th scope="col" className="pb-1.5 pr-2 font-bold">#</th>
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">Istilah</th>
+                  <th scope="col" className="pb-1.5 pr-2 font-bold">Topik</th>
+                  <th scope="col" className="pb-1.5 pr-2 font-bold">Klaster</th>
+                  <th scope="col" className="pb-1.5 pr-2 font-bold">Kata yang ditulis reviewers</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Keluhan</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Porsi</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Di teks toko</th>
-                  <th scope="col" className="pb-1.5 text-right font-bold">Pujian</th>
+                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Pujian</th>
+                  <th scope="col" className="pb-1.5 text-right font-bold">Keluhan / sebutan</th>
                 </tr>
               </thead>
               <tbody>
@@ -431,20 +447,39 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                   <tr key={topic.id} className="border-t border-slate-800/60">
                     <td className="num py-1.5 pr-2 text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</td>
                     <td className="py-1.5 pr-2">
-                      <span className="rounded bg-slate-800/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{topic.name}</span>
-                      {topic.nameLike && <span className="text-[10px] text-slate-400">{' '}ditulis sebagai nama</span>}
+                      <span className="rounded bg-slate-800/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">{topic.name}</span>
+                      <span className="block truncate text-[10px] text-slate-400" title="Nama Indonesia dari kamus yang sama">{topic.nameId}</span>
+                    </td>
+                    <td className="py-1.5 pr-2 align-top text-[10px] text-slate-300">
+                      {topic.clusterName?.en || 'N/A'}
+                      <span className="block text-slate-400">{topic.clusterName?.id || ''}</span>
+                    </td>
+                    <td className="py-1.5 pr-2 align-top">
+                      <span className="block truncate font-mono text-[10px] text-slate-400" title={(topic.matchedTerms || []).map(entry => `${entry.term} ×${entry.count}`).join(' · ')}>
+                        {(topic.matchedTerms || []).slice(0, 4).map(entry => entry.term).join(', ') || 'N/A'}
+                        {(topic.matchedTerms || []).length > 4 ? ` · +${(topic.matchedTerms || []).length - 4} lagi` : ''}
+                      </span>
                     </td>
                     <td className="num py-1.5 pr-2 text-right text-[11px] font-bold text-slate-200">{formatNumber(topic.low)}</td>
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatPercent(topic.share, 100)}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(topic.listingMentions)}×</td>
-                    <td className="num py-1.5 text-right text-[10px] text-slate-400">{formatNumber(topic.high)}</td>
+                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(topic.high)}</td>
+                    <td className="num py-1.5 text-right text-[10px] text-slate-400">
+                      {isNumber(topic.complaintRate) ? `${Math.round(toNumber(topic.complaintRate))}%` : 'N/A'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+              Kolom <span className="font-semibold text-slate-300">Keluhan</span> dan <span className="font-semibold text-slate-300">Pujian</span> adalah jumlah
+              ulasan yang benar-benar memuat kata topik itu pada bintang 1–2 dan 4–5; satu ulasan bisa dihitung di beberapa topik karena satu ulasan bisa menyebut beberapa fitur.
+              Kolom terakhir membandingkan keduanya dengan seluruh sebutan topik, jadi angka kecil berarti topiknya juga disebut orang yang puas.
+              {taxonomy.reported === 0 ? '' : ` ${formatNumber(taxonomy.reported || 0)} topik dilaporkan dan ${formatNumber(taxonomy.unmatchedReviews || 0)} ulasan berteks tidak cocok dengan satu pun definisi kamus — ulasan itu tetap dihitung di seluruh angka, hanya tidak berpura-pura punya topik.`}{' '}
+              Kosakata yang ditulis penerbit di halaman tokonya sendiri tetap diukur — <span className="num">{formatNumber(metrics.listingTopicCount || 0)}</span> istilah tersimpan di model sebagai bukti — tetapi lapisan itu tidak lagi boleh menamai satu pun baris tabel ini.
+            </p>
           </div>
         ) : (
-          <EmptyState compact icon={IconInfo} title="Belum ada topik" body="Tidak ada istilah fitur dari teks daftar aplikasi yang muncul di cukup banyak ulasan 1–2 bintang." />
+          <EmptyState compact icon={IconInfo} title="Belum ada topik" body="Tidak ada ulasan yang memuat kata fitur dari kamus domain dua bahasa. Tidak ada baris yang dipaksa masuk topik demi mengisi tabel ini." />
         )}
       </Panel>
 
@@ -488,7 +523,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                       {aiNames?.[entry.id]?.category
                         ? <span title={`Kategori diberi nama oleh ${pain.naming.model} berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span><span className="block truncate text-slate-400">{aiNames[entry.id].subLabel || 'nama model'}</span></span>
                         : entry.category
-                          ? <span title={`Istilah halaman toko yang lebih padat di gerombol ini daripada di keluhan lain (${formatNumber(entry.category.inside)} dari ${formatNumber(entry.reviewCount)} ulasan gerombol)`}><span className="font-semibold text-slate-300">{entry.category.name}</span><span className="block text-slate-400">dari teks toko</span></span>
+                          ? <span title={`Nama topik kamus domain yang lebih padat di gerombol ini daripada di keluhan lain (${formatNumber(entry.category.inside)} dari ${formatNumber(entry.reviewCount)} ulasan gerombol)`}><span className="font-semibold text-slate-300">{entry.category.name}</span><span className="block text-slate-400">dari kamus domain</span></span>
                           : <span className="text-slate-400" title="Belum ada penamaan yang lolos uji bukti untuk gerombol ini">N/A</span>}
                     </td>
                     <td className="num py-1.5 pr-2 text-right text-[11px] text-slate-200">{formatNumber(entry.phraseCount)}</td>
@@ -526,7 +561,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               {pain.labelRules?.closure || 'Gabungan diterima hanya kalau seluruh silangan anggotanya lolos uji, jadi gerombol tidak menyatu karena rantai.'}{' '}
               Arah dihitung dari {pain.labelMetrics?.trend ? `rentang ${pain.labelMetrics.trend.firstDay} sampai ${pain.labelMetrics.trend.lastDay}` : 'rentang tanggal yang tidak tersedia'}.{' '}
               Kolom <span className="font-semibold text-slate-300">Kanal</span> adalah kanal yang paling banyak memuat label itu, dibaca sebagai porsi keluhan kanal tersebut.{' '}
-              Kolom <span className="font-semibold text-slate-300">Kategori</span> punya dua sumber dan keduanya ditulis di barisnya: istilah halaman toko yang lolos uji kepadatan
+              Kolom <span className="font-semibold text-slate-300">Kategori</span> punya dua sumber dan keduanya ditulis di barisnya: nama topik kamus domain yang lolos uji kepadatan
               ({pain.labelRules?.category || 'lebih dari satu ulasan gerombol memuatnya, dan porsinya beda nyata dari keluhan lain'}), atau nama yang diberi model bahasa
               ({pain.naming?.status === 'named' ? `${pain.naming.model} atas ${formatNumber(pain.naming.clusters || 0)} gerombol, ${formatNumber(painLabels.filter(entry => pain.naming.names?.[entry.id]?.category).length)} baris tampil bernama model` : `lapisan penamaan berstatus ${pain.naming?.status || 'belum ada di snapshot ini'}${pain.naming?.reason ? ` — ${pain.naming.reason}` : ''}`}).
               {' '}Yang tidak pernah terjadi: angka ikut menamai atau ikut dinamai — seluruh kolom jumlah, porsi, pujian, arah, dan kanal tetap pengukuran mesin.
@@ -547,7 +582,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
       <section className="card overflow-hidden" aria-label="Audit kanal">
         <header className="flex min-h-[34px] items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
           <h2 className="label">Audit kanal &amp; cache</h2>
-          <span className="num text-[10px] text-slate-400">cache {formatNumber((dataset.cache?.ttlMs || 0) / 60000)} menit · force sync melewatinya</span>
+          <span className="num text-[10px] text-slate-400">cache {formatNumber((dataset.cache?.ttlMs || 0) / 60000)} menit · penarikan berikutnya berhenti di ulasan yang sudah tersimpan</span>
         </header>
         <div className="grid gap-0 md:grid-cols-2 md:divide-x divide-slate-800/70">
           {['play', 'appstore'].map(store => (
@@ -565,7 +600,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
             ['Snapshot', formatDateTime(dataset.fetchedAt)],
             ['Mesin', dataset.engine?.version || 'N/A'],
             ['Supervisi', dataset.engine?.supervision === 'weak-rating' ? 'sinyal bintang lemah' : dataset.engine?.supervision || 'N/A'],
-            ['Kamus', dataset.engine?.dictionary === 'none' ? 'tidak ada' : dataset.engine?.dictionary || 'N/A'],
+            ['Kamus topik', dataset.engine?.dictionary && dataset.engine.dictionary !== 'none' ? dataset.engine.dictionary : 'tidak ada di snapshot ini'],
+            ['Deteksi bahasa', languages.version || 'tidak ada di snapshot ini'],
             ['Ukuran', formatBytes(snapshotBytes)],
           ].map(([label, value]) => (
             <div key={label} className="min-w-0">

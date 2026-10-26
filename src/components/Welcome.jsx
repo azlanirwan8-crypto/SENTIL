@@ -3,7 +3,7 @@ import { IconArrowRight, IconPlus } from './icons.jsx';
 const STEPS = [
   { n: '01', title: 'Fill in two fields', body: 'Analysis name and target entity.' },
   { n: '02', title: 'Pick the store channels', body: 'Play and App Store candidates appear automatically.' },
-  { n: '03', title: 'Pull & read', body: 'Every review that is read enters the corpus model.' },
+  { n: '03', title: 'Pull & read', body: 'The pull runs on the server and the page checks back; every review that is read enters the corpus model.' },
 ];
 
 export function Welcome({ onAdd }) {
@@ -37,9 +37,10 @@ export function Welcome({ onAdd }) {
         </ol>
 
         <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 bg-slate-950/40 px-4 py-2.5">
-          <span className="chip">2 public channels</span>
-          <span className="chip">1 h cache</span>
-          <span className="chip">0 manual dictionaries</span>
+          <span className="chip">9 channels</span>
+          <span className="chip">1 h cache · incremental pull</span>
+          <span className="chip">23-topic ID/EN dictionary</span>
+          <span className="chip">0 hand-written sentiment rules</span>
           <span className="chip">Nothing stored in your browser</span>
         </div>
       </section>

@@ -97,8 +97,8 @@ export function PainLabels({ pain, filtered = false }) {
   const aiRows = labels.filter(entry => aiNames?.[entry.id]?.category);
   const aiCount = aiRows.length;
   const storeRows = labels.filter(entry => entry.category && !aiNames?.[entry.id]?.category);
-  const storeCount = storeRows.length;
-  const maskedStoreCount = labels.filter(entry => entry.category && aiNames?.[entry.id]?.category).length;
+  const termCount = storeRows.length;
+  const maskedTermCount = labels.filter(entry => entry.category && aiNames?.[entry.id]?.category).length;
   const orphanNames = aiNames ? Object.keys(aiNames).length - aiCount : 0;
 
   return (
@@ -218,11 +218,11 @@ export function PainLabels({ pain, filtered = false }) {
       <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
         The Category column is the one interpreted part, and its state is reported as it is:
         {' '}{naming?.status === 'named'
-          ? <>it ran with <span className="font-semibold text-slate-400">{naming.model}</span> over {formatNumber(naming.clusters || 0)} clusters and {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : 'no'} of the rows shown {aiCount === 1 ? 'carries' : 'carry'} its name{storeCount ? <>, {formatNumber(storeCount)} carry a store-listing term that is denser inside the cluster than among other complaints</> : null}{maskedStoreCount ? <>, {formatNumber(maskedStoreCount)} further store term{maskedStoreCount === 1 ? '' : 's'} measured here but hidden behind a model name</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} returned name{orphanNames === 1 ? '' : 's'} matched no row on this table and {orphanNames === 1 ? 'was' : 'were'} ignored</> : null}.</>
+          ? <>it ran with <span className="font-semibold text-slate-400">{naming.model}</span> over {formatNumber(naming.clusters || 0)} clusters and {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : 'no'} of the rows shown {aiCount === 1 ? 'carries' : 'carry'} its name{termCount ? <>, {formatNumber(termCount)} carry a domain topic name denser inside this cluster than among other complaints</> : null}{maskedTermCount ? <>, {formatNumber(maskedTermCount)} further topic name{maskedTermCount === 1 ? '' : 's'} measured here but hidden behind a model name</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} returned name{orphanNames === 1 ? '' : 's'} matched no row on this table and {orphanNames === 1 ? 'was' : 'were'} ignored</> : null}.</>
           : naming?.status === 'skipped'
-            ? <>it did not run — {naming.reason || 'the naming layer was not configured'} — so any category below comes from the store listing or is empty.</>
+            ? <>it did not run — {naming.reason || 'the naming layer was not configured'} — so any category below comes from the domain dictionary or is empty.</>
             : naming?.status === 'failed'
-              ? <>it ran and failed — {naming.reason || 'no usable names came back'}{naming.detail ? <>, source said: {naming.detail}</> : null}{Array.isArray(naming.tried) && naming.tried.length > 1 ? <>, models tried: <span className="font-mono">{naming.tried.map(entry => `${entry.model} (${entry.status ?? 'no answer'})`).join(', ')}</span></> : null} — so any category below comes from the store listing or is empty.</>
+              ? <>it ran and failed — {naming.reason || 'no usable names came back'}{naming.detail ? <>, source said: {naming.detail}</> : null}{Array.isArray(naming.tried) && naming.tried.length > 1 ? <>, models tried: <span className="font-mono">{naming.tried.map(entry => `${entry.model} (${entry.status ?? 'no answer'})`).join(', ')}</span></> : null} — so any category below comes from the domain dictionary or is empty.</>
               : 'this snapshot has no naming record at all; it was pulled before the naming layer existed, or nothing was clustered to name.'}
         {' '}No number in the table comes from naming — counts, shares and trend are measured.
       </p>

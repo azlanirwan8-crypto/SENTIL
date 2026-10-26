@@ -90,11 +90,23 @@ describe('normalisasi otonom', () => {
 });
 
 describe('mesin korpus tanpa kamus', () => {
-  test('versi mesin konstan dan tidak ada kamus yang diekspor', async () => {
+  test('versi mesin konstan dan nama topik hanya boleh datang dari kamus domain', async () => {
     const module = await import('../lib/corpus-engine.mjs');
-    assert.equal(ENGINE_VERSION, 'corpus-rating-v2');
-    const dictionaryExports = Object.keys(module).filter(key => /dictionary|lexicon|keyword/i.test(key));
-    assert.deepEqual(dictionaryExports, []);
+    assert.equal(ENGINE_VERSION, 'corpus-rating-v3');
+    const { TOPIC_BY_ID, isJunkTerm } = await import('../lib/domain-taxonomy.mjs');
+    const { model } = module.analyzeCorpus(buildTopicCorpus(), { listing: TOPIC_LISTING, entity: 'Contoh App' });
+    assert.ok(model.topics.length > 0, 'topik domain tidak butuh teks daftar aplikasi untuk ada');
+    for (const topic of model.topics) {
+      const source = TOPIC_BY_ID.get(topic.id);
+      assert.ok(source, `topik ${topic.id} harus terdaftar di kamus domain`);
+      assert.equal(topic.name, source.label, 'nama yang tampil adalah nama kamus, bukan kata dari ulasan');
+      assert.equal(topic.nameId, source.labelId, 'setiap topik membawa nama Indonesianya');
+      assert.equal(isJunkTerm(topic.name), false, 'nama topik tidak pernah berisi kata tugas');
+    }
+    // Kosakata halaman toko masih diukur, tapi tidak lagi menjadi nama yang dibaca manajer.
+    assert.ok(model.listingTopics.length > 0, 'istilah toko tetap terukur sebagai bukti');
+    assert.equal(model.topicSource, 'domain-taxonomy');
+    assert.equal(model.listingTopicSource, 'store-listing');
   });
 
   test('setiap baris dihitung: total label sama persis dengan jumlah ulasan', () => {
@@ -182,17 +194,22 @@ describe('mesin korpus tanpa kamus', () => {
     const rows = buildTopicCorpus();
     const { model } = analyzeCorpus(rows, { listing: TOPIC_LISTING, entity: 'Contoh App' });
     const lowWithText = rows.filter(review => review.rating <= 2 && review.text.trim().length).length;
-    assert.deepEqual(model.topics.map(topic => topic.id), ['transaksi', 'verifikasi', 'notifikasi'], 'diurutkan dari keluhan terbanyak');
-    assert.equal(model.topics[0].low, 24);
-    assert.equal(model.topics[1].low, 18);
-    assert.equal(model.topics[2].low, 12);
-    assert.equal(model.coverage.topicReviews, 54, 'setiap ulasan keluhan mendapat topiknya');
-    for (const topic of model.topics) {
+    const listing = model.listingTopics;
+    assert.deepEqual(listing.map(topic => topic.id), ['transaksi', 'verifikasi', 'notifikasi'], 'istilah toko diurutkan dari keluhan terbanyak');
+    assert.equal(listing[0].low, 24);
+    assert.equal(listing[1].low, 18);
+    assert.equal(listing[2].low, 12);
+    for (const topic of listing) {
       assert.ok(topic.low <= lowWithText, 'jumlah keluhan topik tidak boleh melebihi dokumen rating rendah');
       assert.ok(topic.total >= topic.low, 'total sebutan harus menutup jumlah keluhan');
       assert.ok(topic.share > 0 && topic.share <= 100, 'porsi dihitung dari pool keluhan 1-2 bintang');
-      assert.ok(topic.listingMentions >= 1, 'setiap topik harus benar-benar tertulis di teks daftar aplikasi');
+      assert.ok(topic.listingMentions >= 1, 'setiap istilah toko harus benar-benar tertulis di teks daftar');
     }
+    // Topik domain diukur pada korpus yang sama: setiap baris uji memuat "eror".
+    assert.equal(model.coverage.topicReviews, 54, 'setiap ulasan keluhan mendapat topik domainnya');
+    assert.deepEqual(model.topics.map(topic => topic.id), ['app_crash']);
+    assert.equal(model.topics[0].low, 54);
+    assert.equal(model.topics[0].cluster, 'reliability');
   });
 
   test('baris topik menutup dirinya: jumlah baris per topik sama dengan total sebutan', () => {
@@ -225,28 +242,39 @@ describe('mesin korpus tanpa kamus', () => {
     for (let i = 0; i < 18; i += 1) push(1, 'notifikasi tidak masuk');
     for (let i = 0; i < 20; i += 1) push(5, 'verifikasi cepat sekali');
     const { model } = analyzeCorpus(rows, { listing, entity: 'Contoh App' });
-    const ids = model.topics.map(topic => topic.id);
-    assert.deepEqual(ids, ['qris', 'transaksi', 'notifikasi'], 'topik diurutkan dari keluhan terbanyak');
+    const ids = model.listingTopics.map(topic => topic.id);
+    assert.deepEqual(ids, ['qris', 'transaksi', 'notifikasi'], 'istilah toko diurutkan dari keluhan terbanyak');
     for (const banned of ['contoh', 'app', 'dan', 'bisa', 'juga', 'akun', 'selesai', 'aplikasinya', 'sekarang']) {
       assert.equal(ids.includes(banned), false, `${banned} bukan topik: nama proyek, kata tugas pendek, atau bentuk berjulukan`);
     }
     assert.equal(ids.includes('verifikasi'), false, 'verifikasi lebih sering dipuji daripada dikeluhkan di korpus ini');
-    const qris = model.topics[0];
-    assert.equal(qris.name, 'QRIS', 'label memakai bentuk tulisan di teks toko, bukan hasil penormalan');
-    assert.equal(qris.nameLike, true, 'akronim kapital menjadi topik walau panjangnya empat huruf');
+    const qris = model.listingTopics[0];
+    assert.equal(qris.name, 'QRIS', 'bukti toko memakai bentuk tulisan di teks toko, bukan hasil penormalan');
+    assert.equal(qris.nameLike, true, 'akronim kapital menjadi bukti walau panjangnya empat huruf');
     assert.equal(qris.low, 30);
     assert.equal(qris.high, 0);
-    assert.equal(model.topics.find(topic => topic.id === 'notifikasi').low, 18);
     assert.ok(qris.listingMentions >= 1);
+    // Nama yang dibaca manajer tetap milik kamus, termasuk ketika ulasan cuma menyebut
+    // "transaksi qris gagal" — label datang dari domain, bukan dari kata yang dipilih reviewer.
+    assert.deepEqual(model.topics.map(topic => topic.name), ['[App Crash & Errors]', '[QRIS Payments]']);
+    assert.equal(model.topics.find(topic => topic.id === 'qris_payment').low, 30);
+    assert.equal(model.topics.find(topic => topic.id === 'app_crash').low, 30);
   });
 
-  test('tanpa teks daftar aplikasi tidak ada topik yang dikarang', () => {
+  test('tanpa teks daftar aplikasi, bukti toko kosong tapi topik domain tetap terukur', async () => {
+    const { TOPIC_BY_ID } = await import('../lib/domain-taxonomy.mjs');
     const rows = buildCorpus();
     const { rows: enriched, model } = analyzeCorpus(rows);
-    assert.deepEqual(model.topics, []);
-    assert.equal(model.coverage.topicReviews, 0);
-    assert.equal(model.topicSource, null);
-    assert.ok(enriched.every(row => row.analysis.topics.length === 0), 'baris tidak boleh punya topik tanpa sumber');
+    assert.deepEqual(model.listingTopics, [], 'tidak ada istilah toko yang bisa dikarang tanpa teks daftar');
+    assert.equal(model.listingTopicSource, null);
+    // Topik domain tidak meminjam kata dari ulasan, jadi keberadaannya tidak bergantung pada
+    // teks daftar — dan namanya tetap milik kamus.
+    assert.equal(model.topicSource, 'domain-taxonomy');
+    assert.deepEqual(model.topics.map(topic => topic.id), ['app_crash'], 'korpus ini memuat "eror" di ulasan bintang 1');
+    assert.ok(model.topics.every(topic => TOPIC_BY_ID.get(topic.id)?.label === topic.name));
+    assert.equal(model.coverage.topicReviews, 20);
+    assert.equal(model.taxonomy.unmatchedReviews, model.coverage.withText - 20);
+    assert.equal(enriched.filter(row => row.analysis.topics.length === 0).length >= 160, true, 'baris tanpa istilah domain memang tidak berpura-pura punya topik');
   });
 
   test('agregat harian dan kanal menutup seluruh baris', () => {

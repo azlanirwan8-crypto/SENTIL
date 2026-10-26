@@ -144,7 +144,9 @@ describe('penarikan dan analisis', () => {
     for (const channel of result.channels) {
       assert.equal(channel.reviews, undefined, 'daftar ulasan kanal tidak dikirim dua kali');
     }
-    assert.equal(result.engine.dictionary, 'none');
+    assert.equal(result.engine.dictionary, result.model.taxonomy.version, 'kamus topik dinyatakan versinya, tidak disangkal sebagai "tidak ada"');
+    assert.match(result.engine.dictionaryScope, /topic names only/);
+    assert.equal(result.engine.languages, result.model.languages.version);
     assert.equal(result.engine.supervision, 'weak-rating');
   });
 
@@ -208,7 +210,7 @@ describe('penarikan dan analisis', () => {
     assert.equal(row.analysis.sentiment, 'negative');
   });
 
-  test('teks daftar dari kanal toko dipakai mesin sebagai kosakata topik', async () => {
+  test('teks daftar aplikasi jadi bukti, nama topik datang dari kamus domain', async () => {
     const { deps } = fakeDeps({
       fetchGooglePlayReviews: async () => ({
         id: 'play',
@@ -231,14 +233,19 @@ describe('penarikan dan analisis', () => {
     });
     const service = createSyncService({ deps });
     const result = await service.sync({ entity: 'Aplikasi Tes', playAppId: 'com.tes' });
-    const ids = result.model.topics.map(topic => topic.id);
-    assert.ok(ids.includes('verifikasi'), 'istilah dari teks daftar aplikasi harus menjadi topik');
-    const verifikasi = result.model.topics.find(topic => topic.id === 'verifikasi');
+    // Teks daftar masih diukur dan masih dipakai menguji kepadatan, tapi tidak lagi menjadi
+    // nama yang tampil di chart.
+    const verifikasi = result.model.listingTopics.find(topic => topic.id === 'verifikasi');
+    assert.ok(verifikasi, 'istilah dari teks daftar aplikasi tetap terukur');
     assert.equal(verifikasi.low, 4, 'empat ulasan 1-2 bintang menyebut verifikasi');
     assert.equal(verifikasi.high, 1);
     assert.equal(verifikasi.listingMentions, 1);
-    assert.equal(result.model.topicSource, 'store-listing');
-    assert.deepEqual(result.reviews.find(review => review.id === 'play-1').analysis.topics, ['verifikasi']);
+    assert.equal(result.model.topicSource, 'domain-taxonomy');
+    assert.equal(result.model.listingTopicSource, 'store-listing');
+    assert.deepEqual(result.model.topics.map(topic => topic.id), ['slow_performance'], 'hanya kamus domain yang boleh menamai');
+    assert.deepEqual(result.reviews.find(review => review.id === 'play-3').analysis.topics, ['slow_performance']);
+    assert.deepEqual(result.reviews.find(review => review.id === 'play-1').analysis.listingTerms, ['verifikasi']);
+    assert.equal(result.reviews.find(review => review.id === 'play-1').analysis.topics.length, 0, 'istilah toko tidak menempel sebagai label yang dibaca manajer');
   });
 
   test('ringkasan sesuai dengan model korpus yang dikembalikan', async () => {
@@ -252,5 +259,106 @@ describe('penarikan dan analisis', () => {
     assert.equal(summary.nss, model.nss);
     assert.equal(summary.rated, 4);
     assert.equal(summary.avgRating, Number(((5 + 1 + 5 + 2) / 4).toFixed(3)));
+  });
+});
+
+describe('penarikan inkremental', () => {
+  test('penanda tanggal diteruskan ke kanal toko dan baris lama ikut dianalisis ulang', async () => {
+    const seen = { playOptions: null };
+    const { deps } = fakeDeps({
+      fetchGooglePlayReviews: async (appId, candidate, options) => {
+        seen.playOptions = options;
+        return {
+          id: 'play',
+          status: 'success',
+          appId,
+          fetched: 1,
+          reviews: [playReview('3', 1, 'tidak bisa login pakai sidik jari', '2026-03-05')],
+          app: { title: 'Aplikasi Tes', developer: 'PT Tes', url: 'https://play.example/com.tes', score: 4.2, ratingCount: 30, reviewCountReported: 3, installs: null, ratingHistogram: null, ratingHistogramTotal: null, listing: 'Transaksi QRIS cepat.' },
+          coverage: { pages: 1, rows: 1, duplicates: 0, olderSkipped: 2, incremental: true, reportedReviewCount: 3, reportedRatingCount: 30, sampleLimit: null },
+          message: '1 ulasan baru terbaca',
+          truncated: false,
+          error: null,
+        };
+      },
+    });
+    const service = createSyncService({ deps });
+    const result = await service.sync({
+      entity: 'Aplikasi Tes',
+      playAppId: 'com.tes',
+      since: { play: '2026-03-02T00:00:00.000Z' },
+      carry: [
+        { id: 'play-1', platform: 'play', rating: 5, text: 'mulus cepat stabil', publishedAt: '2026-03-02T00:00:00.000Z', analysis: { sentiment: 'positive', topics: ['harus'] } },
+        { id: 'play-2', platform: 'play', rating: 1, text: 'eror gagal masuk', publishedAt: '2026-03-01T00:00:00.000Z', analysis: { sentiment: 'negative', topics: ['pake'] } },
+      ],
+    });
+    assert.equal(seen.playOptions.since, '2026-03-02T00:00:00.000Z', 'kanal Play menerima penanda tanggal');
+    assert.equal(result.reviews.length, 3, 'baris lama tidak dibuang dari analisis');
+    assert.deepEqual(result.incremental, { carried: 2, fresh: 1, since: { play: '2026-03-02T00:00:00.000Z' } });
+    assert.equal(result.model.coverage.reviews, 3);
+    // Analisis baru menimpa label lama yang tercemar kata tugas.
+    const old = result.reviews.find(row => row.id === 'play-1');
+    assert.deepEqual(old.analysis.topics, [], 'ulasan lama tidak lagi membawa label dari kata tugas');
+    const fresh = result.reviews.find(row => row.id === 'play-3');
+    assert.deepEqual(fresh.analysis.topics, ['biometric_login', 'login_access']);
+  });
+
+  test('tidak ada baris baru dan tidak dipaksa: analisis tidak diulang, snapshot tidak ditulis ulang', async () => {
+    const { deps } = fakeDeps({
+      fetchGooglePlayReviews: async () => ({
+        id: 'play',
+        status: 'success',
+        appId: 'com.tes',
+        fetched: 2,
+        reviews: [
+          playReview('1', 5, 'mulus cepat stabil', '2026-03-02'),
+          playReview('2', 1, 'eror gagal masuk', '2026-03-01'),
+        ],
+        app: { title: 'Aplikasi Tes', listing: null },
+        coverage: { pages: 1, rows: 2, duplicates: 0, olderSkipped: 0, incremental: true },
+        message: '0 ulasan baru',
+        truncated: false,
+        error: null,
+      }),
+    });
+    const service = createSyncService({ deps });
+    const carry = [
+      { id: 'play-1', platform: 'play', rating: 5, text: 'mulus cepat stabil', publishedAt: '2026-03-02T00:00:00.000Z' },
+      { id: 'play-2', platform: 'play', rating: 1, text: 'eror gagal masuk', publishedAt: '2026-03-01T00:00:00.000Z' },
+    ];
+    const result = await service.sync({ entity: 'Aplikasi Tes', playAppId: 'com.tes', since: { play: '2026-03-02T00:00:00.000Z' }, carry });
+    assert.equal(result.unchanged, true);
+    assert.equal(result.reviews, null, 'tidak ada array ulasan yang dikirim dua kali lewat jaringan');
+    assert.equal(result.model, null);
+    assert.deepEqual(result.incremental, { carried: 2, fresh: 0, since: { play: '2026-03-02T00:00:00.000Z' } });
+    assert.match(result.message, /left exactly as they were/);
+    assert.equal(result.channels.length, 1, 'kanal tetap dilaporkan supaya monitor batas sumber tidak buta');
+  });
+
+  test('force tetap menganalisis ulang walaupun tidak ada baris baru', async () => {
+    const { deps } = fakeDeps({
+      fetchGooglePlayReviews: async () => ({
+        id: 'play',
+        status: 'success',
+        appId: 'com.tes',
+        fetched: 1,
+        reviews: [playReview('1', 5, 'mulus cepat stabil', '2026-03-02')],
+        app: { title: 'Aplikasi Tes', listing: null },
+        coverage: { pages: 1, rows: 1, duplicates: 0 },
+        message: '1 ulasan terbaca',
+        truncated: false,
+        error: null,
+      }),
+    });
+    const service = createSyncService({ deps });
+    const result = await service.sync({
+      entity: 'Aplikasi Tes',
+      playAppId: 'com.tes',
+      force: true,
+      carry: [{ id: 'play-1', platform: 'play', rating: 5, text: 'mulus cepat stabil', publishedAt: '2026-03-02T00:00:00.000Z' }],
+    });
+    assert.equal(result.unchanged, undefined, 'penarikan paksa membangun analisis dari awal lagi');
+    assert.equal(result.reviews.length, 1);
+    assert.equal(result.model.version, 'corpus-rating-v3');
   });
 });

@@ -77,6 +77,7 @@ function fakeDb(workspaces, overrides = {}) {
     calls,
     async status() { calls.push('status'); return { enabled: true, reachable: true, reason: null }; },
     async listWorkspaces() { calls.push('list'); return workspaces; },
+    async saveWorkspace(workspace) { calls.push(`ws:${workspace.id}`); return workspace; },
     async saveSnapshot({ workspace, dataset }) {
       calls.push(`snap:${workspace.id}:${dataset.reviews.length}`);
       return { revision: 4, stored: dataset.reviews.length, elapsedMs: 5 };
@@ -122,8 +123,43 @@ describe('penarik terjadwal memilih workspace yang benar', () => {
     assert.equal(result.considered, 2);
     assert.equal(result.workspaces, 3);
     assert.equal(result.counts.pulled, 2);
-    assert.equal(service.seen[0].force, true, 'penarikan terjadwal tidak boleh dibendung cache satu jam');
+    assert.equal(service.seen[0].force, false, 'cron tidak boleh memaksa tulis ulang snapshot yang isinya sama');
+    assert.equal(service.seen[0].bypassCache, true, 'penarikan terjadwal tidak boleh dibendung cache satu jam');
     assert.deepEqual(db.calls, ['status', 'list', 'snap:ws-old:3', 'run:ws-old:ok:3', 'snap:ws-mid:3', 'run:ws-mid:ok:3']);
+  });
+
+  test('penanda inkremental dibaca dan baris tersimpan ikut dikirim kembali', async () => {
+    const time = timer();
+    const db = fakeDb([oldest], {
+      async reviewCursor(workspaceId) { return { workspaceId, head: 4, platforms: { play: '2026-10-20T00:00:00.000Z' } }; },
+      async loadDataset(workspaceId) { return { reviews: [{ id: `${workspaceId}-0`, platform: 'play' }, { id: `${workspaceId}-1`, platform: 'play' }] }; },
+    });
+    const service = serviceWith();
+    const result = await createRefreshService({ service, db, env: {}, now: time.now }).run();
+    assert.deepEqual(service.seen[0].since, { play: '2026-10-20T00:00:00.000Z' });
+    assert.equal(service.seen[0].carry.length, 2, 'baris yang sudah tersimpan tetap dianalisis, tidak dibuang');
+    assert.equal(result.results[0].status, 'pulled');
+  });
+
+  test('sumber menjawab tanpa ulasan baru berarti snapshot tidak disentuh', async () => {
+    const time = timer();
+    const db = fakeDb([oldest]);
+    const service = serviceWith(async () => ({
+      action: 'sync',
+      ok: true,
+      unchanged: true,
+      entity: 'old',
+      fetchedAt: new Date(T0).toISOString(),
+      incremental: { carried: 60_000, fresh: 0, since: { play: '2026-10-20T00:00:00.000Z' } },
+      channels: [{ id: 'play', status: 'success', fetched: 0 }],
+      reviews: null,
+      model: null,
+    }));
+    const result = await createRefreshService({ service, db, env: {}, now: time.now }).run();
+    assert.equal(result.results[0].status, 'unchanged');
+    assert.equal(result.results[0].rows, 60_000);
+    assert.equal(result.ok, true, 'tidak ada perubahan bukan kegagalan cron');
+    assert.deepEqual(db.calls, ['status', 'list', 'ws:ws-old', 'run:ws-old:unchanged:60000'], 'hanya cap waktu dan riwayat runs yang ditulis, snapshot tidak');
   });
 
   test('workspace tanpa kanal aktif dilewati, bukan dicoba lalu nol', async () => {

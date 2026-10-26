@@ -145,6 +145,9 @@ describe('/api/sync', () => {
       appleAppId: '12345',
       social: { news: { enabled: true }, youtube: { enabled: true, videoIds: ['abc'] } },
       force: true,
+      // Force tidak boleh memakai penanda inkremental: permintaan pemilik adalah permintaan penuh.
+      since: null,
+      carry: null,
     });
   });
 
@@ -282,6 +285,11 @@ function fakeDb(overrides = {}) {
       return { revision: 3, stored: dataset.reviews.length, elapsedMs: 12 };
     },
     async logRun(run) { seen.push(`run:${run.status}:${run.reviews}`); },
+    async reviewCursor(id) { seen.push(`cursor:${id}`); return null; },
+    async latestRun(id) {
+      seen.push(`job:${id}`);
+      return { id: 9, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null, createdAt: '2026-10-24T00:00:00.000Z' };
+    },
     ...overrides,
   };
 }
@@ -335,7 +343,7 @@ describe('aksi penyimpanan database', () => {
     assert.equal(body.stored.ok, true);
     assert.equal(body.stored.rows, 2);
     assert.equal(body.reviews.length, 2, 'hasil penarikan tetap dikembalikan utuh ke klien');
-    assert.deepEqual(db.seen, ['snap:ws-1:2', 'run:ok:2']);
+    assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'snap:ws-1:2', 'run:ok:2'], 'penanda dibaca, pekerjaan ditandai berjalan, lalu hasil disimpan dan diriwayatkan');
   });
 
   test('sync tanpa identitas workspace tetap mengembalikan data tetapi melaporkan tidak disimpan', async () => {

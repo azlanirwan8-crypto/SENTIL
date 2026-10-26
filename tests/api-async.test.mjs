@@ -1,0 +1,212 @@
+import assert from 'node:assert/strict';
+import test, { describe } from 'node:test';
+
+import { createSyncHandler } from '../api/sync.js';
+
+function fakeRequest(body) {
+  const chunks = [Buffer.from(JSON.stringify(body))];
+  return {
+    method: 'POST',
+    headers: { host: 'analisa.example', 'sec-fetch-site': 'same-origin' },
+    async *[Symbol.asyncIterator]() {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
+
+function fakeResponse() {
+  return {
+    statusCode: null,
+    headers: null,
+    body: '',
+    writeHead(status, headers) { this.statusCode = status; this.headers = headers || {}; },
+    end(chunk) { if (chunk) this.body += chunk; },
+    json() { return this.body ? JSON.parse(this.body) : null; },
+  };
+}
+
+async function run(handler, body) {
+  const response = fakeResponse();
+  await handler(fakeRequest(body), response);
+  return response;
+}
+
+const WORKSPACE = {
+  id: 'ws-1',
+  label: 'Audit',
+  entity: 'aud',
+  stores: { play: { appId: 'com.aud', title: 'Aud', url: 'https://play.google.com/x' } },
+  channels: {},
+};
+
+function stubService(syncResult) {
+  const calls = [];
+  return {
+    calls,
+    sync: async payload => {
+      calls.push(payload);
+      return syncResult || { action: 'sync', ok: true, entity: 'aud', fetchedAt: '2026-10-02T00:00:00.000Z', reviews: [], channels: [], summary: {} };
+    },
+  };
+}
+
+function fakeDb(overrides = {}) {
+  const seen = [];
+  return {
+    enabled: true,
+    reason: null,
+    seen,
+    async status() { return { enabled: true, reachable: true, reason: null }; },
+    async listWorkspaces() { seen.push('list'); return [{ ...WORKSPACE, snapshot: null, lastSyncedAt: '2026-10-01T00:00:00.000Z' }]; },
+    async loadDataset(id) { seen.push(`load:${id}`); return { entity: 'aud', reviews: [], channels: [], model: {}, summary: {} }; },
+    async saveWorkspace(workspace) { seen.push(`save:${workspace.id}`); },
+    async saveSnapshot({ workspace, dataset }) { seen.push(`snap:${workspace.id}:${dataset.reviews.length}`); return { revision: 3, stored: dataset.reviews.length, elapsedMs: 12 }; },
+    async logRun(run) { seen.push(`run:${run.status}:${run.reviews}`); },
+    async reviewCursor(id) { seen.push(`cursor:${id}`); return null; },
+    async latestRun(id) { seen.push(`job:${id}`); return { id: 9, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null, createdAt: '2026-10-24T00:00:00.000Z' }; },
+    ...overrides,
+  };
+}
+
+describe('penarikan asinkron dan cache inkremental', () => {
+  test('aksi job membaca status pekerjaan terakhir', async () => {
+    const db = fakeDb();
+    const handler = createSyncHandler(stubService(), { db });
+    const body = (await run(handler, { action: 'job', workspaceId: 'ws-1' })).json();
+    assert.equal(body.action, 'job');
+    assert.equal(body.pending, true);
+    assert.equal(body.finished, false);
+    assert.equal(body.run.status, 'running');
+    assert.deepEqual(db.seen, ['job:ws-1']);
+  });
+
+  test('job tidak mengirim id project yang bentuknya tidak sah ke database', async () => {
+    const db = fakeDb();
+    const handler = createSyncHandler(stubService(), { db });
+    const body = (await run(handler, { action: 'job', workspaceId: 'x' })).json();
+    assert.equal(body.run, null);
+    assert.deepEqual(db.seen, []);
+  });
+
+  test('penarikan diserahkan ke latar belakang dan menjawab 202 tanpa menunggu', async () => {
+    let held = null;
+    const db = fakeDb();
+    const service = stubService({
+      action: 'sync',
+      ok: true,
+      entity: 'aud',
+      fetchedAt: '2026-10-02T00:00:00.000Z',
+      reviews: [{ id: 'r-1', platform: 'play' }],
+      channels: [{ id: 'play', status: 'success', fetched: 1 }],
+      summary: { reviews: 1, analyzed: 1 },
+    });
+    const handler = createSyncHandler(service, { db, waitUntil: promise => { held = promise; } });
+    const response = await run(handler, { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE });
+    assert.equal(response.statusCode, 202, 'peramban tidak lagi menahan satu permintaan sampai penarikan selesai');
+    const body = response.json();
+    assert.equal(body.accepted, true);
+    assert.equal(body.pollingMs, 4000);
+    assert.match(body.jobId, /^ws-1:/);
+    assert.equal(body.reviews, undefined, 'isi penarikan tidak dikirim pada jawaban pertama');
+    assert.ok(held, 'pekerjaan diserahkan ke waitUntil');
+    await held;
+    assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'snap:ws-1:1', 'run:ok:1'], 'penanda dibaca, pekerjaan ditandai berjalan, lalu hasil disimpan dan diriwayatkan');
+  });
+
+  test('penanda inkremental dan baris tersimpan diteruskan ke penarikan', async () => {
+    const db = fakeDb({
+      async reviewCursor() { return { revision: 4, fetchedAt: '2026-10-01T00:00:00.000Z', platforms: { play: '2026-09-30T10:00:00.000Z' } }; },
+    });
+    db.loadDataset = async id => {
+      db.seen.push(`load:${id}`);
+      return { entity: 'aud', reviews: [{ id: 'r-old', platform: 'play', rating: 1, text: 'aplikasi eror terus', publishedAt: '2026-09-30T10:00:00.000Z' }], channels: [] };
+    };
+    const service = stubService();
+    const handler = createSyncHandler(service, { db });
+    await run(handler, { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE });
+    const call = service.calls[0];
+    assert.deepEqual(call.since, { play: '2026-09-30T10:00:00.000Z' }, 'kanal toko diberi penanda tanggal dari snapshot');
+    assert.equal(call.carry.length, 1, 'baris yang sudah tersimpan ikut dianalisis lagi');
+    assert.equal(call.carry[0].id, 'r-old');
+    assert.equal(db.seen.includes('load:ws-1'), true);
+  });
+
+  test('force menolak penanda inkremental', async () => {
+    const db = fakeDb({
+      async reviewCursor() { return { revision: 4, platforms: { play: '2026-09-30T10:00:00.000Z' } }; },
+      async loadDataset() { return { reviews: [{ id: 'r-old', platform: 'play' }] }; },
+    });
+    const service = stubService();
+    const handler = createSyncHandler(service, { db });
+    await run(handler, { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE, force: true });
+    assert.equal(service.calls[0].since, null);
+    assert.equal(service.calls[0].carry, null);
+    assert.equal(db.seen.some(entry => entry.startsWith('load:')), false, 'penarikan paksa tidak membaca snapshot lama');
+  });
+
+  test('database tanpa metode penanda tetap menarik penuh, bukan gagal', async () => {
+    const db = fakeDb();
+    delete db.reviewCursor;
+    const service = stubService();
+    const handler = createSyncHandler(service, { db });
+    const response = await run(handler, { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE });
+    assert.equal(response.statusCode, 200);
+    assert.equal(service.calls[0].since, null);
+    assert.match(response.json().incremental.note, /incremental cache unavailable/);
+  });
+});
+
+describe('hitung ulang dari baris tersimpan', () => {
+  const storedReviews = [
+    { id: 'a', platform: 'play', rating: 1, text: 'tidak bisa login pakai sidik jari setelah update', publishedAt: '2026-05-01T00:00:00.000Z', analysis: { sentiment: 'negative', topics: ['harus', 'pake'] } },
+    { id: 'b', platform: 'play', rating: 1, text: 'eror terus waktu transfer qris', publishedAt: '2026-05-02T00:00:00.000Z', analysis: { sentiment: 'negative', topics: ['dan', 'yang'] } },
+    { id: 'c', platform: 'appstore', rating: 5, text: 'mantap banget aplikasinya mulus', publishedAt: '2026-05-03T00:00:00.000Z', analysis: { sentiment: 'positive', topics: ['sekali'] } },
+    { id: 'd', platform: 'appstore', rating: 5, text: 'pembayaran qris cepat dan aman', publishedAt: '2026-05-04T00:00:00.000Z', analysis: { sentiment: 'positive', topics: ['untuk'] } },
+  ];
+
+  test('menganalisis ulang tanpa menghubungi sumber dan membuang label lama', async () => {
+    const db = fakeDb({
+      async loadDataset() {
+        return {
+          entity: 'aud',
+          fetchedAt: '2026-05-05T00:00:00.000Z',
+          engine: { version: 'corpus-rating-v2' },
+          channels: [{ id: 'play', status: 'success', app: { listing: 'Aplikasi aud mempercepat transaksi QRIS.' } }],
+          reviews: storedReviews,
+          model: { version: 'corpus-rating-v2' },
+          summary: {},
+        };
+      },
+    });
+    const service = stubService();
+    const handler = createSyncHandler(service, { db });
+    const body = (await run(handler, { action: 'recompute', workspaceId: 'ws-1' })).json();
+    assert.equal(body.ok, true);
+    assert.equal(body.recomputed, true);
+    assert.equal(body.rows, storedReviews.length);
+    assert.equal(body.engine.version, 'corpus-rating-v3');
+    assert.equal(service.calls.length, 0, 'hitung ulang tidak menarik apa pun dari internet');
+    assert.ok(body.topics.length > 0, 'korpus ini punya istilah domain');
+    assert.ok(body.topics.every(topic => topic.name.startsWith('[')), 'nama topik hasil hitung ulang adalah label kamus');
+    assert.equal(db.seen.includes('snap:ws-1:4'), true);
+    assert.equal(db.seen.includes('run:recomputed:4'), true);
+    assert.equal(body.message.includes('No source was contacted'), true);
+  });
+
+  test('project tanpa baris tersimpan ditolak dengan jujur', async () => {
+    const db = fakeDb({ async loadDataset() { return null; } });
+    const handler = createSyncHandler(stubService(), { db });
+    const response = await run(handler, { action: 'recompute', workspaceId: 'ws-1' });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error, 'dataset_missing');
+  });
+
+  test('id project yang tidak sah bentuknya tidak dikirim ke database', async () => {
+    const db = fakeDb();
+    const handler = createSyncHandler(stubService(), { db });
+    const response = await run(handler, { action: 'recompute', workspaceId: 'not-valid!' });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error, 'workspace_invalid');
+    assert.deepEqual(db.seen, []);
+  });
+});

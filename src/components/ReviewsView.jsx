@@ -57,13 +57,29 @@ function ReviewRow({ review, topicLabels }) {
   const long = text.length > 320;
   const terms = Array.isArray(review.analysis?.matchedTerms) ? review.analysis.matchedTerms : [];
   const sourceUrl = safeHttpUrl(review.sourceUrl);
+  const language = typeof review.analysis?.language === 'string' ? review.analysis.language : null;
+  const primary = topicLabels[0] || null;
 
   return (
     <li className="card relative overflow-hidden p-3 pl-3.5">
       <span className="absolute inset-y-0 left-0 w-[2px]" style={{ backgroundColor: SENTIMENT_COLOR[sentiment] }} aria-hidden="true" />
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <StoreMark store={review.platform} size={18} tone="quiet" />
-        <span className="max-w-[26ch] truncate text-[11px] font-bold text-slate-200">{review.author || 'N/A'}</span>
+        <span className="max-w-[22ch] truncate text-[11px] font-bold text-slate-200">{review.author || 'N/A'}</span>
+        {primary
+          ? (
+            <span className="truncate rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent" title="Primary topic measured on this review">
+              {primary}
+            </span>
+          )
+          : (
+            <span className="shrink-0 rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400" title="No dictionary term appears in this review">
+              no topic
+            </span>
+          )}
+        {language && language !== 'unknown' && (
+          <span className="font-mono text-[10px] uppercase text-slate-400" title="Language detected from this review alone">{language}</span>
+        )}
         <span className="num text-[10px] text-slate-400">{formatDate(review.publishedAt || review.date)}</span>
         {review.meta?.appVersion && <span className="font-mono text-[10px] text-slate-400">v{review.meta.appVersion}</span>}
         <span className="ml-auto flex items-center gap-2">
@@ -85,11 +101,14 @@ function ReviewRow({ review, topicLabels }) {
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-slate-800/70 pt-2">
-        {topicLabels.map(label => (
+        {topicLabels.length > 1 && (
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">also</span>
+        )}
+        {topicLabels.slice(1).map(label => (
           <span
             key={label}
-            className="mr-1 inline-flex items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-accent"
-            title="Topic from feature terms in the store listing text"
+            className="mr-1 inline-flex items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-accent"
+            title="Topic named by the domain dictionary (English and Indonesian terms are recognised)"
           >
             <span className="h-1.5 w-1.5 rounded-[1px] bg-accent" aria-hidden="true" />
             {label}
@@ -314,7 +333,7 @@ export function ReviewsView({ dataset }) {
             <ReviewRow
               key={`${review.platform}:${review.id}:${index}`}
               review={review}
-              topicLabels={(review.analysis?.topics || []).slice(0, 3).map(id => topicNames.get(id) || id)}
+              topicLabels={(review.analysis?.topicNames?.length ? review.analysis.topicNames : (review.analysis?.topics || []).slice(0, 4).map(id => topicNames.get(id) || id))}
             />
           ))}
         </ol>
