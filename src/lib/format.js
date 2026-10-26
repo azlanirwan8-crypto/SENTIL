@@ -154,6 +154,21 @@ export function channelStatusLabel(status) {
   return 'N/A';
 }
 
+// Alamat yang dibagikan ke peramban datang dari luar (halaman toko, suaka RSS, JSON yang
+// sudah tersimpan sejak penarikan lama), jadi skemanya diuji pada saat dirender sebagai
+// tautan, bukan hanya pada saat ditarik — dataset lama bisa masih membawa nilai yang
+// ketika itu diterima.
+export function safeHttpUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function sanitizeFilename(value) {
   const base = String(value || 'analysis')
     .normalize('NFKD')

@@ -5,6 +5,7 @@ import {
   formatNumber,
   formatWeight,
   platformLabel,
+  safeHttpUrl,
   sentimentLabel,
 } from '../lib/format.js';
 import { EmptyState } from './EmptyState.jsx';
@@ -55,6 +56,7 @@ function ReviewRow({ review, topicLabels }) {
   const text = typeof review.text === 'string' ? review.text : '';
   const long = text.length > 320;
   const terms = Array.isArray(review.analysis?.matchedTerms) ? review.analysis.matchedTerms : [];
+  const sourceUrl = safeHttpUrl(review.sourceUrl);
 
   return (
     <li className="card relative overflow-hidden p-3 pl-3.5">
@@ -109,8 +111,8 @@ function ReviewRow({ review, topicLabels }) {
           {review.analysis?.score != null && (
             <span className="num text-[10px] text-slate-400">score {formatDecimal(review.analysis.score, 2)}</span>
           )}
-          {review.sourceUrl && (
-            <a href={review.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-accent">
+          {sourceUrl && (
+            <a href={sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-accent">
               source <IconExternal size={10} />
             </a>
           )}

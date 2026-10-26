@@ -51,7 +51,13 @@ describe('normalisasi target kanal sosial', () => {
   test('status kredensial hanya melaporkan ada atau tidaknya', () => {
     const status = channelCredentials({ YOUTUBE_API_KEY: 'RAHASIA-123', APIFY_TOKEN: 'APIFY-RAHASIA' });
     assert.equal(status.youtube.ready, true);
-    assert.equal(status.facebook.ready, true, 'token Apify dipakai bersama oleh kanal sosial berbayar');
+    assert.equal(status.facebook.ready, false, 'token Apify saja belum cukup: run berbayar butuh izin tertulis pemilik');
+    assert.equal(status.facebook.status, 'consent_required', 'kunci ada tetapi izin belum — bukan "kunci belum dipasang"');
+    assert.match(status.facebook.message, /APIFY_ALLOWED=true/);
+    const consented = channelCredentials({ APIFY_TOKEN: 'APIFY-RAHASIA', APIFY_ALLOWED: 'true' });
+    assert.equal(consented.facebook.ready, true, 'token Apify dipakai bersama oleh kanal sosial berbayar');
+    assert.equal(consented.x.ready, true, 'kanal X ikut izin yang sama');
+    assert.equal(channelCredentials({ APIFY_ALLOWED: 'true' }).tiktok.status, 'needs_setup', 'izin tanpa token tidak membuat kanal jadi siap');
     assert.equal(status.news.ready, true, 'berita RSS tidak butuh kredensial');
     assert.equal(status.reddit.ready, false, 'client id saja tanpa secret belum cukup');
     const serialised = JSON.stringify(status);
@@ -117,7 +123,7 @@ describe('registry kanal di layanan sinkron', () => {
           return { ...slow };
         },
       },
-      env: { APIFY_TOKEN: 'secret-token' },
+      env: { APIFY_TOKEN: 'secret-token', APIFY_ALLOWED: 'true' },
     });
     const first = await service.sync({ entity: 'Aplikasi Tes', playAppId: 'com.tes', social: { tiktok: { enabled: true } } });
     assert.equal(seen[0], null);

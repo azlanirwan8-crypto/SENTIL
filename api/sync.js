@@ -1,21 +1,28 @@
 // Satu pintu API: penemuan identitas, penarikan data, status batas sumber, dan
 // penyimpanan workspace di database. Tanpa login dan tanpa API key di peramban:
 // gerbangnya adalah penolakan permintaan lintas situs agar kuota sumber tidak dipicu
-// dari halaman lain, ditambah validasi masukan di server. Kunci database hanya hidup
-// di environment fungsi ini.
+// dari halaman lain, kuota per-pengunjung agar satu halaman pun tidak bisa menghabisinya
+// sendirian, ditambah validasi masukan di server. Kunci database hanya hidup di
+// environment fungsi ini.
 export const config = { maxDuration: 300 };
 
 import { SyncError, normalizeSocialTargets, syncService } from '../lib/sync-core.mjs';
 import { database } from '../lib/db.mjs';
 import { buildComparison } from '../lib/compare-engine.mjs';
+import { createQuota } from '../lib/rate-limit.mjs';
 
 const BODY_LIMIT = 16384;
+// Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset,
+// compare, limits) tidak dikenai kuota: murah, dan memblokirnya justru membuat
+// dasbor tidak bisa dibaca.
+const QUOTA_ACTIONS = new Set(['sync', 'discover']);
 
-const json = (response, status, body) => {
+const json = (response, status, body, extra = {}) => {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    ...extra,
   });
   response.end(JSON.stringify(body));
 };
@@ -149,7 +156,7 @@ async function storeResult(db, workspace, result) {
   }
 }
 
-export function createSyncHandler(service = syncService, { db = database } = {}) {
+export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }) } = {}) {
   return async function handler(request, response) {
     if (request.method !== 'POST') {
       response.writeHead(405, { allow: 'POST', 'cache-control': 'no-store' });
@@ -172,6 +179,23 @@ export function createSyncHandler(service = syncService, { db = database } = {})
       // Target kanal sosial dinormalisasi ulang di sync-core; permintaan tidak pernah
       // bisa membawa token atau kunci, hanya flag aktif dan target yang sah bentuknya.
       const social = payload.social && typeof payload.social === 'object' && !Array.isArray(payload.social) ? payload.social : {};
+      if (QUOTA_ACTIONS.has(payload.action)) {
+        // Setelah isi permintaan sah, baru jatah diambil: permintaan yang cacat bentuk
+        // tidak boleh menghabiskan kuota pengunjung.
+        const verdict = await quota.take(payload.action, quota.key(request.headers));
+        if (!verdict.allowed) {
+          json(response, 429, {
+            error: 'quota_exceeded',
+            action: payload.action,
+            limit: verdict.limit,
+            window: verdict.window,
+            windowSeconds: verdict.windowSeconds,
+            resetAt: verdict.resetAt,
+            message: `This visitor has used all ${verdict.limit} "${payload.action}" runs allowed per ${verdict.window}. No pull was sent and stored data was not changed — try again after ${verdict.resetAt}.`,
+          }, { 'retry-after': String(verdict.retryAfterSeconds) });
+          return;
+        }
+      }
       if (payload.action === 'discover') {
         json(response, 200, await service.discover(payload.entity, { force }));
         return;

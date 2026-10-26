@@ -3,6 +3,7 @@ import test, { describe } from 'node:test';
 
 import { createSyncHandler, rejectsSameSiteCheck } from '../api/sync.js';
 import { SyncError } from '../lib/sync-core.mjs';
+import { createQuota } from '../lib/rate-limit.mjs';
 
 function fakeRequest({ method = 'POST', headers = {}, body, raw }) {
   const chunks = raw != null ? [Buffer.from(raw)] : body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
@@ -454,5 +455,78 @@ describe('matriks perbandingan lintas project', () => {
     assert.deepEqual(body.projects, []);
     assert.deepEqual(body.rows, []);
     assert.equal(body.db.reachable, false);
+  });
+});
+
+describe('gerbang kuota per pengunjung', () => {
+  // Jam dibekukan supaya seluruh permintaan dalam satu uji jatuh di jendela yang sama.
+  const frozen = () => { let t = Date.parse('2026-10-27T08:00:00.000Z'); return { now: () => t, advance: ms => { t += ms; } }; };
+  const quotaFor = env => { const time = frozen(); return { time, quota: createQuota({ env, now: time.now }) }; };
+  const from = ip => ({ headers: { 'x-forwarded-for': ip } });
+
+  test('penarikan yang melampaui jendela pendek dibalas 429 dengan retry-after', async () => {
+    const { quota } = quotaFor({ QUOTA_SYNC_BURST: '2', QUOTA_SYNC_DAY: '50' });
+    const service = stubService();
+    const handler = createSyncHandler(service, { db: fakeDb(), quota });
+    const body = { action: 'sync', entity: 'aud', playAppId: 'com.aud' };
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.1'), body }))).statusCode, 200);
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.1'), body }))).statusCode, 200);
+    const blocked = await run(handler, fakeRequest({ ...from('203.0.113.1'), body }));
+    assert.equal(blocked.statusCode, 429);
+    assert.equal(blocked.json().error, 'quota_exceeded');
+    assert.equal(blocked.json().limit, 2);
+    assert.equal(blocked.json().window, '10 minutes');
+    assert.equal(Number(blocked.headers['retry-after']) > 0, true);
+    assert.equal(Number(blocked.headers['retry-after']) <= 600, true);
+    assert.equal(blocked.headers['cache-control'], 'no-store');
+    assert.equal(service.calls.filter(call => call.action === 'sync').length, 2, 'penarikan ketiga tidak sampai ke sumber');
+    assert.match(blocked.json().message, /not changed/, 'penolakan harus menyatakan data tersimpan aman');
+  });
+
+  test('kunci dihitung per pengunjung, bukan per fungsi', async () => {
+    const { quota } = quotaFor({ QUOTA_SYNC_BURST: '1', QUOTA_SYNC_DAY: '50' });
+    const handler = createSyncHandler(stubService(), { db: fakeDb(), quota });
+    const body = { action: 'sync', entity: 'aud', playAppId: 'com.aud' };
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.1'), body }))).statusCode, 200);
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.2'), body }))).statusCode, 200);
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.1'), body }))).statusCode, 429);
+  });
+
+  test('permintaan yang cacat bentuk tidak menghabiskan jatah', async () => {
+    const { quota } = quotaFor({ QUOTA_SYNC_BURST: '1', QUOTA_SYNC_DAY: '50' });
+    const handler = createSyncHandler(stubService(), { db: fakeDb(), quota });
+    assert.equal((await run(handler, fakeRequest(from('203.0.113.9')))).statusCode, 400);
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.9'), raw: 'bukan json' }))).statusCode, 400);
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.9'), body: { action: 'sync', entity: 'aud', playAppId: 'com.aud' } }))).statusCode, 200,
+      'satu penarikan sah masih tersedia setelah dua permintaan rusak');
+  });
+
+  test('aksi mahal dikenai kuota dan aksi baca tidak', async () => {
+    const { quota } = quotaFor({ QUOTA_DISCOVER_BURST: '1', QUOTA_SYNC_BURST: '1' });
+    const handler = createSyncHandler(stubService(), { db: fakeDb(), quota });
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.4'), body: { action: 'discover', entity: 'Aud' } }))).statusCode, 200);
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.4'), body: { action: 'discover', entity: 'Aud' } }))).statusCode, 429);
+    for (let index = 0; index < 25; index += 1) {
+      const response = await run(handler, fakeRequest({ ...from('203.0.113.4'), body: { action: 'state' } }));
+      assert.equal(response.statusCode, 200, 'dasbor harus tetap terbaca walau jatah penarikan habis');
+    }
+    const limits = await run(handler, fakeRequest({ ...from('203.0.113.4'), body: { action: 'limits', entity: 'Aud', playAppId: 'com.aud' } }));
+    assert.equal(limits.statusCode, 200);
+  });
+
+  test('satu keran tidak memakan keran lain', async () => {
+    const { quota } = quotaFor({ QUOTA_SYNC_BURST: '1', QUOTA_DISCOVER_BURST: '1' });
+    const handler = createSyncHandler(stubService(), { db: fakeDb(), quota });
+    await run(handler, fakeRequest({ ...from('203.0.113.5'), body: { action: 'sync', entity: 'Aud', playAppId: 'com.aud' } }));
+    assert.equal((await run(handler, fakeRequest({ ...from('203.0.113.5'), body: { action: 'discover', entity: 'Aud' } }))).statusCode, 200);
+  });
+
+  test('tanpa alamat proxy semua permintaan berbagi kunci anonim', async () => {
+    const { quota } = quotaFor({ QUOTA_SYNC_BURST: '1', QUOTA_SYNC_DAY: '50' });
+    const handler = createSyncHandler(stubService(), { db: fakeDb(), quota });
+    const body = { action: 'sync', entity: 'aud', playAppId: 'com.aud' };
+    assert.equal((await run(handler, fakeRequest({ body }))).statusCode, 200);
+    assert.equal((await run(handler, fakeRequest({ body }))).statusCode, 429);
+    assert.equal(quota.enabled, true);
   });
 });
