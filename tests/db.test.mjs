@@ -56,7 +56,12 @@ describe('konfigurasi database', () => {
     assert.equal(dbConfiguration({}).enabled, false);
     assert.match(dbConfiguration({}).reason, /SUPABASE_URL/);
     assert.equal(dbConfiguration({ SUPABASE_URL: 'https://x.supabase.co' }).enabled, false);
-    assert.match(dbConfiguration({ SUPABASE_URL: 'https://x.supabase.co' }).reason, /SERVICE_ROLE/);
+    const missingKey = dbConfiguration({ SUPABASE_URL: 'https://x.supabase.co' }).reason;
+    assert.match(missingKey, /SERVICE_ROLE/);
+    // Pesan ini muncul di spanduk peramban, jadi harus menyebut tempat kunci itu diambil
+    // dan bahwa kunci publishable tidak diterima — pengguna pernah salah tempel kunci.
+    assert.match(missingKey, /Secret key/i);
+    assert.match(missingKey, /publishable/i);
   });
 
   test('url non-https atau memuat kredensial ditolak', () => {
