@@ -60,7 +60,8 @@ export function PainLabels({ pain, filtered = false }) {
     );
   }
 
-  const meta = `${labels.length} of ${formatNumber(metrics.clusters || labels.length)} clusters · ${formatNumber(pool)} 1–2★ reviews${filtered ? ' · whole corpus' : ''}`;
+  const clusters = metrics.clusters || labels.length;
+  const meta = `${labels.length === clusters ? `${formatNumber(clusters)} clusters` : `${labels.length} of ${formatNumber(clusters)} clusters`} · ${formatNumber(pool)} 1–2★ reviews${filtered ? ' · whole corpus' : ''}`;
   const singletons = metrics.singletons || 0;
 
   return (
@@ -83,7 +84,7 @@ export function PainLabels({ pain, filtered = false }) {
             </tr>
           </thead>
           <tbody>
-            {labels.map(entry => {
+            {labels.map((entry, index) => {
               const active = open === entry.id;
               const width = Math.max(2, (entry.reviewCount / ceiling) * 100);
               return (
@@ -93,7 +94,8 @@ export function PainLabels({ pain, filtered = false }) {
                       type="button"
                       onClick={() => setOpen(active ? null : entry.id)}
                       aria-expanded={active}
-                      aria-label={`${entry.label}: ${formatNumber(entry.reviewCount)} of ${formatNumber(pool)} 1–2 star reviews, ${entry.phraseCount} phrases.`}
+                      aria-controls={`label-detail-${index}`}
+                      aria-label={`${entry.label}: ${formatNumber(entry.reviewCount)} of ${formatNumber(pool)} 1–2 star reviews, ${formatNumber(entry.phraseCount)} phrase${entry.phraseCount === 1 ? '' : 's'}.`}
                       className="group flex w-full items-center gap-2 text-left"
                     >
                       <span className="relative h-3 w-full max-w-[120px] shrink-0 overflow-hidden rounded-[2px] bg-slate-800/50">
@@ -107,15 +109,15 @@ export function PainLabels({ pain, filtered = false }) {
                       )}
                     </button>
                     {active ? (
-                      <div className="mt-1 rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5">
-                        <p className="label-sm">Phrases in this cluster · {entry.phraseCount}</p>
+                      <div id={`label-detail-${index}`} role="group" aria-label={`Phrases inside the cluster named ${entry.label}`} className="mt-1 rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5">
+                        <p className="label-sm">Phrases in this cluster · {formatNumber(entry.phraseCount)}</p>
                         <ul className="mt-1 space-y-0.5">
                           {entry.phrases.map(phrase => (
                             <li key={phrase.text} className="flex items-baseline justify-between gap-2">
                               <span className="min-w-0 truncate font-mono text-[10px] text-slate-300">{phrase.text}</span>
                               <span className="num shrink-0 text-[10px] text-slate-500">
-                                {formatNumber(phrase.dfNegative)}★1-2
-                                {phrase.dfPositive ? ` · ${formatNumber(phrase.dfPositive)}★4-5` : ''}
+                                1–2★ {formatNumber(phrase.dfNegative)}
+                                {phrase.dfPositive ? ` · 4–5★ ${formatNumber(phrase.dfPositive)}` : ''}
                               </span>
                             </li>
                           ))}
@@ -142,8 +144,10 @@ export function PainLabels({ pain, filtered = false }) {
       </div>
       <p className="mt-2 shrink-0 text-[10px] leading-relaxed text-slate-400">
         A label is a phrase real reviewers wrote, not a category chosen by a model. Two phrases share one label only when the reviews carrying
-        both outnumber what chance explains (z&gt;1, Jeffreys-smoothed). {formatNumber(singletons)} label{singletons === 1 ? ' is' : 's are'} a cluster of one;
-        {' '}{formatNumber(metrics.trimmedLabels || 0)} clusters beyond the display budget {metrics.trimmedLabels ? 'are counted but not shown' : 'would have been hidden'}.
+        both outnumber what chance explains (z&gt;1, Jeffreys-smoothed). {formatNumber(singletons)} {singletons === 1 ? 'label is' : 'labels are'} a cluster of a single phrase;{' '}
+        {metrics.trimmedLabels
+          ? <>{formatNumber(metrics.trimmedLabels)} clusters fell outside the display budget and are counted in the metrics instead of being dropped silently.</>
+          : 'every cluster fits the display budget.'}
         {filtered ? ' Counts cover the whole corpus, not the active filter.' : ''}
       </p>
     </ChartFrame>
