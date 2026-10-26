@@ -1,12 +1,10 @@
 import { formatNumber, relativeTime } from '../lib/format.js';
-import { StoreMark } from './Brand.jsx';
 import { MobileNav } from './Sidebar.jsx';
-import { IconAlert, IconClock, IconExternal } from './icons.jsx';
+import { IconAlert, IconClock } from './icons.jsx';
 
 export function WorkspaceHeader({ workspace, dataset, view, onView, syncing }) {
   const snapshot = dataset?.summary || null;
   const fetchedAt = dataset?.fetchedAt || null;
-  const stores = ['play', 'appstore'].filter(store => workspace.stores?.[store]?.appId);
 
   return (
     <div className="mb-3">
@@ -14,21 +12,6 @@ export function WorkspaceHeader({ workspace, dataset, view, onView, syncing }) {
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h1 className="max-w-[34ch] truncate text-[15px] font-extrabold tracking-tight text-slate-100">{workspace.label}</h1>
           <span className="text-[11px] text-slate-400">/ {workspace.entity}</span>
-          {stores.map(store => {
-            const target = workspace.stores[store];
-            return target.url ? (
-              <a key={store} href={target.url} target="_blank" rel="noopener noreferrer" className="chip hover:border-slate-600 hover:text-slate-200" title={`${store === 'play' ? 'Google Play' : 'App Store'} ${target.appId}`}>
-                <StoreMark store={store} size={12} tone="quiet" />
-                <span className="font-mono">{target.appId}</span>
-                <IconExternal size={9} className="opacity-60" />
-              </a>
-            ) : (
-              <span key={store} className="chip">
-                <StoreMark store={store} size={12} tone="quiet" />
-                <span className="font-mono">{target.appId}</span>
-              </span>
-            );
-          })}
         </div>
 
         <div className="flex items-center gap-3 text-[10px] text-slate-400">
