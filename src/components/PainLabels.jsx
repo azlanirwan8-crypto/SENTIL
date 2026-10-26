@@ -222,7 +222,7 @@ export function PainLabels({ pain, filtered = false }) {
           : naming?.status === 'skipped'
             ? <>it did not run — {naming.reason || 'the naming layer was not configured'} — so any category below comes from the store listing or is empty.</>
             : naming?.status === 'failed'
-              ? <>it ran and failed — {naming.reason || 'no usable names came back'} — so any category below comes from the store listing or is empty.</>
+              ? <>it ran and failed — {naming.reason || 'no usable names came back'}{naming.detail ? <>, source said: {naming.detail}</> : null}{Array.isArray(naming.tried) && naming.tried.length > 1 ? <>, models tried: <span className="font-mono">{naming.tried.map(entry => `${entry.model} (${entry.status ?? 'no answer'})`).join(', ')}</span></> : null} — so any category below comes from the store listing or is empty.</>
               : 'this snapshot has no naming record at all; it was pulled before the naming layer existed, or nothing was clustered to name.'}
         {' '}No number in the table comes from naming — counts, shares and trend are measured.
       </p>

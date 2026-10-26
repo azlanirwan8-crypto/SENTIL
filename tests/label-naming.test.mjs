@@ -94,9 +94,18 @@ test('respons yang bukan JSON membuat penamaan gagal tanpa melempar', async () =
 });
 
 test('HTTP error dan abort dilaporkan sebagai kegagalan, bukan crash', async () => {
-  const quota = await nameClusters(clusters, { env: { GEMINI_API_KEY: 'k' }, fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({}) }) });
+  let calls = 0;
+  const quota = await nameClusters(clusters, {
+    env: { GEMINI_API_KEY: 'k' },
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: false, status: 429, json: async () => ({}), text: async () => 'RESOURCE_EXHAUSTED: quota per minute exceeded' };
+    },
+  });
   assert.equal(quota.status, 'failed');
   assert.match(quota.reason, /429/);
+  assert.match(quota.detail, /RESOURCE_EXHAUSTED/, 'alasan sumber dipakai apa adanya supaya pemilik tahu apa yang diganti');
+  assert.equal(calls, 1, '429 bukan salah id model — mencoba model lain hanya membakar kuota');
 
   const aborted = await nameClusters(clusters, {
     env: { GEMINI_API_KEY: 'k' },
@@ -108,6 +117,51 @@ test('HTTP error dan abort dilaporkan sebagai kegagalan, bukan crash', async () 
   });
   assert.equal(aborted.status, 'failed');
   assert.match(aborted.reason, /timed out/);
+});
+
+test('model yang tidak dikenal dicobakan ke kandidat berikutnya, bukan dibiarkan mati', async () => {
+  const seen = [];
+  const reply = await nameClusters(clusters, {
+    env: { GEMINI_API_KEY: 'k' },
+    fetchImpl: async (url) => {
+      const model = decodeURIComponent(String(url)).split('/models/')[1].split(':')[0];
+      seen.push(model);
+      if (model === 'gemini-2.0-flash') return { ok: false, status: 404, json: async () => ({}), text: async () => '404 FOUND: models/gemini-2.0-flash is not found for API version v1beta' };
+      return geminiReply([{ ref: 'c1', category: 'Autentikasi', subLabel: 'login dan verifikasi' }]);
+    },
+  });
+  assert.equal(reply.status, 'named');
+  assert.equal(reply.model, seen[1], 'model yang menjawab itulah yang dilaporkan, bukan yang pertama dicoba');
+  assert.equal(seen.length, 2, 'hanya dua panggilan: yang pertama 404, yang kedua menjawab');
+  assert.equal(reply.tried[0].status, 404);
+  assert.match(reply.tried[0].reason, /is not found/);
+  assert.equal(Object.keys(reply.names).length, 1);
+});
+
+test('kalau semua kandidat menjawab 404, kegagalan dilaporkan lengkap dengan jejaknya', async () => {
+  const result = await nameClusters(clusters, {
+    env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'model-karangan' },
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '404 NOT_FOUND' }),
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.tried.length, 3, 'model konfigurasi plus dua cadangan, tidak lebih');
+  assert.equal(result.tried[0].model, 'model-karangan', 'yang diminta pemilik tetap dicoba lebih dulu');
+  assert.deepEqual(result.names, {});
+});
+
+test('waktu habis menghentikan percobaan model tambahan', async () => {
+  let calls = 0;
+  const result = await nameClusters(clusters, {
+    env: { GEMINI_API_KEY: 'k' },
+    timeoutMs: 1,
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: false, status: 404, json: async () => ({}), text: async () => '404' };
+    },
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(calls, 0, 'anggaran yang sudah habis tidak dibayar dengan permintaan yang pasti dipotong');
+  assert.match(result.tried[result.tried.length - 1].reason, /no time left/);
 });
 
 test('korpus tanpa gerombol tidak memicu panggilan jaringan', async () => {
