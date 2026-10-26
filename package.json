@@ -9,8 +9,8 @@
   "scripts": {
     "build": "node build.mjs && npm run build:css",
     "build:js": "node build.mjs",
-    "build:css": "tailwindcss -i ./src/index.css -o ./styles.css --minify",
-    "start": "node --import=./load-env.mjs server.mjs",
+    "build:css": "tailwindcss -i ./src/index.css -o ./public/styles.css --minify",
+    "start": "npm run build && node --import=./load-env.mjs server.mjs",
     "dev": "npm run build && node --import=./load-env.mjs server.mjs",
     "test": "node --test tests"
   },

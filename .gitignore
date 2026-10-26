@@ -2,6 +2,10 @@ node_modules/
 online-data.json
 *.tmp
 
+# Hasil build; dibuat ulang oleh `npm run build`, tidak di-commit.
+public/
+
 # Kredensial environment server lokal; jangan pernah di-commit.
 .env
 .env.local
+.vercel

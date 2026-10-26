@@ -9,6 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSyncHandler } from './api/sync.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+// Yang disajikan publik hanya hasil build; sumber server tidak berada di dalam folder ini.
+const STATIC_ROOT = path.join(ROOT, 'public');
 
 const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
@@ -39,7 +41,7 @@ const CONTENT_TYPES = {
 
 const EXACT_FILES = new Set(['/index.html', '/app.js', '/styles.css']);
 
-export function resolveStaticPath(pathname, root = ROOT) {
+export function resolveStaticPath(pathname, root = STATIC_ROOT) {
   let decoded;
   try {
     decoded = decodeURIComponent(pathname);
@@ -100,7 +102,7 @@ async function sendFile(response, filePath, request) {
   createReadStream(filePath).pipe(response);
 }
 
-export function createAppServer({ syncHandler = createSyncHandler(), root = ROOT } = {}) {
+export function createAppServer({ syncHandler = createSyncHandler(), root = STATIC_ROOT } = {}) {
   return createServer(async (request, response) => {
     const url = new URL(request.url || '/', 'http://localhost');
     const pathname = url.pathname;

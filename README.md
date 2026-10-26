@@ -52,17 +52,17 @@ APIFY_API_TOKEN=...            # menagih biaya actor
 ```bash
 npm install
 cp .env.example .env   # opsional: isi SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY agar data tersimpan di database
-npm run build          # bundel React (esbuild) + Tailwind -> app.js, styles.css
-npm start              # pratinjau lokal di http://localhost:5173
+npm run build          # bundel React (esbuild) + Tailwind -> public/app.js, public/styles.css
+npm start              # build lalu pratinjau lokal di http://localhost:5173
 ```
 
 Tanpa `.env` aplikasi tetap jalan, hanya saja melaporkan bahwa database belum dipasang dan tidak ada yang tersimpan antar kunjungan. `npm run dev` menjalankan build lalu server.
 
 | Skrip | Fungsi |
 | --- | --- |
-| `npm run build` | Membangun `app.js` (esbuild) dan `styles.css` (Tailwind). |
+| `npm run build` | Membangun ke `public/`: `app.js` (esbuild), `styles.css` (Tailwind), salinan `index.html`, dan `assets/`. Hanya isi folder ini yang boleh disajikan publik. |
 | `npm run build:js` / `build:css` | Salah satu tahap build saja. |
-| `npm start` | Server statis lokal + meneruskan `/api/sync`; memuat `.env` bila ada. |
+| `npm start` | Build lebih dulu, lalu server statis dari `public/` + meneruskan `/api/sync`; memuat `.env.local` bila ada. |
 | `npm test` | `node --test tests` — 174 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, matriks perbandingan, hitung ulang filter dasbor, database, API, dan server. |
 
 ## API
@@ -216,7 +216,7 @@ lib/db.mjs               akses PostgREST: tulis bertahap, penanda revisi, baca b
 lib/sync-core.mjs        registry kanal, cache 1 jam, anggaran waktu, ringkasan
 db/supabase.sql          skema tabel sentil_* + RLS + pencabutan hak anon
 server.mjs               server statis lokal + penerusan /api/sync
-build.mjs                bundel esbuild -> app.js
+build.mjs                bundel esbuild + salinan index.html/assets -> public/
 src/                     React (workspace, dialog, 4 grafik, tabel ulasan, panel metode)
 tests/                   node:test untuk mesin, kolektor, kanal, sinkronisasi, database, API, dan server
 ```
@@ -230,6 +230,10 @@ Penyimpanan memakai dua variabel saja: `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE
 Run actor Apify bersifat asinkron dan bisa melewati anggaran 40 detik. Dalam keadaan itu kolektor mengembalikan status `partial` beserta ID run-nya; ID itu ditahan di memori instance hangat dan penarikan berikutnya **menyambungkan** run yang sama, bukan memulai run baru yang menagih biaya lagi. Reset kanal juga melepas run yang tertahan.
 
 Cache satu jam bersifat *per instance* function: setelah instance baru, penarikan pertama kembali penuh. Ini disengaja — tidak ada penyimpanan bersama yang perlu kredensial.
+
+**`outputDirectory: "public"` bukan hiasan.** Deployment pernah gagal dengan `No Output Directory named "public" found after the Build completed` karena project Vercel ini menyetel output ke `public` sementara hasil build dulu ditulis di root repo. Setelah build diarahkan ke `public/`, muncul konsekuensi yang lebih penting: Vercel menyajikan **seluruh isi output directory apa adanya**, jadi kalau output-nya root, `lib/db.mjs`, `server.mjs`, dan `api/sync.js` ikut terunduh sebagai berkas statis. Karena itu sumber server berada di luar `public/` dan hanya hasil build yang masuk ke sana — diverifikasi dengan `GET /lib/db.mjs`, `/server.mjs`, `/src/App.jsx`, `/.env.local` yang semuanya 404 di URL produksi.
+
+Terukur di function yang sudah ter-deploy (bukan localhost): `discover` 1,4 detik; satu penarikan nyata 21.205 ulasan Google Play selesai **48,8 detik** dan mengembalikan `engine: corpus-rating-v2` dengan 40 frasa keluhan dan 7 topik. Itu dekat ke langit-langit `maxDuration: 60`, dan `summary.reviews` di atas ~40.000 sudah terbukti memakan 38 detik di antaranya — korpus yang lebih besar perlu anggaran kolektor diturunkan, bukan plafon function dinaikkan.
 
 ## Keterbatasan
 

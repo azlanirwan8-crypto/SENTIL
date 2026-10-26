@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import tmpdir from 'node:os';
 import path from 'node:path';
 import test, { after, before, describe } from 'node:test';
 
 import { createAppServer, resolveStaticPath } from '../server.mjs';
 
-const ROOT = process.cwd();
+const ROOT = path.join(process.cwd(), 'public');
+
+// Uji jalur statis tidak boleh bergantung pada apakah `npm run build` sudah dijalankan,
+// jadi berkasnya dibuat di direktori sementara sendiri.
+function fixtureRoot() {
+  const dir = mkdtempSync(path.join(tmpdir.tmpdir(), 'sentil-static-'));
+  writeFileSync(path.join(dir, 'index.html'), '<!doctype html><title>Sentil</title><div id="root"></div>');
+  writeFileSync(path.join(dir, 'app.js'), 'console.log(1);');
+  writeFileSync(path.join(dir, 'styles.css'), 'body{color:red}');
+  mkdirSync(path.join(dir, 'assets/fonts'), { recursive: true });
+  writeFileSync(path.join(dir, 'assets/fonts/fraunces-latin-var.woff2'), 'font');
+  return dir;
+}
 
 describe('penyelesaian berkas statis', () => {
   test('hanya mengizinkan berkas aplikasi dan aset', () => {
@@ -30,6 +44,7 @@ describe('penyelesaian berkas statis', () => {
 describe('server pratinjau lokal', () => {
   let server;
   let base;
+  let dir;
   const seen = [];
 
   before(async () => {
@@ -38,12 +53,16 @@ describe('server pratinjau lokal', () => {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ ok: true, action: 'discover' }));
     };
-    server = createAppServer({ syncHandler, root: ROOT });
+    dir = fixtureRoot();
+    server = createAppServer({ syncHandler, root: dir });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => new Promise(resolve => server.close(resolve)));
+  after(async () => {
+    await new Promise(resolve => server.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   test('menyajikan cangkang aplikasi dengan header keamanan', async () => {
     const response = await fetch(`${base}/`);
