@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconCheck, IconRefresh } from './icons.jsx';
 import { Notice } from './Notices.jsx';
@@ -221,11 +221,16 @@ export function CompareView({ workspaces, onToast }) {
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Kunci pilihan yang sudah dicoba. Tanpa penjaga ini, jalur yang mengembalikan hasil kosong
+  // (database belum terpasang) membuat effect memicu permintaan berikutnya terus-menerus:
+  // 33 permintaan bandingkan dalam 15 detik terukur di URL produksi.
+  const attempted = useRef(null);
 
   const toggle = id => setSelected(current => (current.includes(id) ? current.filter(entry => entry !== id) : [...current, id].slice(0, MAX_COLUMNS)));
   const toggleAll = () => setSelected(current => (current.length ? [] : workspaces.slice(0, MAX_COLUMNS).map(workspace => workspace.id)));
 
   const run = useCallback(async () => {
+    attempted.current = selected.join(',');
     if (selected.length < 2) {
       setError('Select at least two projects.');
       return;
@@ -250,7 +255,7 @@ export function CompareView({ workspaces, onToast }) {
   }, [selected]);
 
   useEffect(() => {
-    if (selected.length >= 2 && !result && !busy) run();
+    if (selected.length >= 2 && !result && !busy && attempted.current !== selected.join(',')) run();
   }, [selected, result, busy, run]);
 
   const ordered = useMemo(() => (result ? selected.map(id => result.projects.find(project => project.id === id)).filter(Boolean) : []), [result, selected]);

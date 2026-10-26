@@ -172,6 +172,7 @@ Menu **Compare** membandingkan hingga 12 project sekaligus, head-to-head dalam s
 - **Dua populasi 1★ tidak pernah digabung:** pangsa 1★ dari ulasan yang terbaca dan pangsa 1★ dari histogram toko dilaporkan sebagai baris terpisah.
 - **Heatmap pain point** adalah gabungan frasa yang mesin korpus laporkan per project. Sel kosong berarti *tidak terdeteksi*, bukan nol.
 - **Leaderboard NSS** memberi jarak ke pemuncak; **Widest gaps** hanya menyebut pasangan kolom yang benar-benar berbeda — kalau dua kolom identik, insight-nya kosong, tidak dikarang.
+- **Tanpa database, matriks tidak dikarang.** Server menjawab `compare` dengan `db.reachable: false` dan array kosong; peramban menunjukan "Comparison unavailable" dan berhenti. Penjaga `attempted` di `CompareView` mencatat kunci pilihan yang sudah dicoba supaya effect otomatis tidak memicu permintaan berikutnya — tanpa penjaga itu jalur kosong ini mengulang permintaan tanpa batas (terukur **33 permintaan `/api/sync` dalam 15 detik** di URL produksi sebelum diperbaiki).
 
 Catat batasnya: kecepatan ulasan diukur dari ulasan yang benar-benar terbaca aplikasi ini, dan paginasi toko mengambil yang terbaru lebih dulu, jadi periode lama bisa kurang terwakili. Batas 12 kolom dan 24 baris heatmap adalah anggaran tampilan, dan jumlah yang dipangkas dilaporkan (`painPointTrimmed`).
 
