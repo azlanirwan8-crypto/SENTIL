@@ -8,7 +8,7 @@ Platform analisis sentimen untuk ulasan publik Google Play dan App Store. Satu p
 - **Tidak ada kamus manual.** Tidak ada daftar kata sentimen, daftar kata alay, atau kategori keluhan yang ditulis tangan.
 - **Tidak ada pelabelan manual.** Semua label dihasilkan mesin dari data yang ditarik.
 - **Tidak ada impor berkas.** Tidak ada unggah CSV/Excel; sumbernya hanya halaman publik toko aplikasi.
-- **Tidak ada login atau akun.** Workspace disimpan di `localStorage` peramban, bukan di server multi-tenant.
+- **Tidak ada login atau akun.** Workspace disimpan di database server (Supabase) tanpa ruang pribadi per pengguna; `localStorage` peramban hanya menahan workspace mana yang sedang dibuka.
 - **Tidak ada bypass proteksi situs.** Yang dibaca adalah halaman ulasan publik, suaka RSS resmi, dan API resmi (YouTube Data API v3, Reddit OAuth, actor Apify untuk kanal yang tidak punya API publik). Permintaan membawa user-agent tanpa menyamar sebagai peramban, dan tembok login atau batas anti-bot tidak ditembus — bila sebuah jalur tidak mengizinkan, kanal itu melaporkan kegagalannya.
 - **Kanal berbayar hanya aktif atas keputusan pemilik akun.** Facebook, Instagram, TikTok, dan X mengambil data lewat actor Apify yang **memungut biaya**. Tidak ada kolom di aplikasi untuk memasukkan token: kanal-kanal itu baru berjalan bila `APIFY_API_TOKEN` dipasang sendiri di environment server. Tanpa token, statusnya `needs_setup` dan nol permintaan yang dikirim.
 
@@ -63,7 +63,7 @@ Tanpa `.env` aplikasi tetap jalan, hanya saja melaporkan bahwa database belum di
 | `npm run build` | Membangun ke `public/`: `app.js` (esbuild), `styles.css` (Tailwind), salinan `index.html`, dan `assets/`. Hanya isi folder ini yang boleh disajikan publik. |
 | `npm run build:js` / `build:css` | Salah satu tahap build saja. |
 | `npm start` | Build lebih dulu, lalu server statis dari `public/` + meneruskan `/api/sync`; memuat `.env.local` bila ada. |
-| `npm test` | `node --test tests` — 174 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, matriks perbandingan, hitung ulang filter dasbor, database, API, dan server. |
+| `npm test` | `node --test tests` — 182 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, database, API, dan server. |
 
 ## API
 
@@ -157,7 +157,7 @@ Empat grafik dibuat sendiri dengan SVG (tanpa pustaka grafik eksternal):
 3. **Peta keluhan** — batang per topik fitur dari teks daftar aplikasi, dihitung pada ulasan 1–2★; segmen hijau di belakang batang menunjukkan ulasan 4–5★ yang menyebut istilah sama. Baris dapat dipilih untuk melihat rincian.
 4. **Kanal × sentimen** — batang berkelompok per kanal beserta NSS kanal.
 
-Kontrak tooltip (`ChartTooltip`): panelnya **solid** (`bg-slate-950`, tanpa `backdrop-blur`) supaya warna bar tidak menembus teksnya; tingginya diukur sendiri, bukan diduga; dan posisinya dijepit ke **jendela gulir yang sedang terlihat** — bukan ke lebar konten — sehingga tooltip tidak pernah menutupi kepala kartu, tidak pernah keluar dari kartu di bar paling kiri/kanan, dan tidak menambah lebar gulir palsu. Semua itu diverifikasi pada 43.110 ulasan nyata dengan mengukur bounding box tooltip di enam posisi (kiri/tengah/kanan × dua chart).
+Kontrak tooltip (`ChartTooltip`): panelnya **solid** (`bg-slate-950`, tanpa `backdrop-blur`) supaya warna bar tidak menembus teksnya; tingginya diukur sendiri, bukan diduga; dan posisinya dijepit ke **jendela gulir yang sedang terlihat** — bukan ke lebar konten — sehingga tooltip tidak pernah menutupi kepala kartu, tidak pernah keluar dari kartu di bar paling kiri/kanan, dan tidak menambah lebar gulir palsu. Jepitannya ada di `tooltipAnchor` (`chart-utils.js`) dan diuji per posisi; `DailyTrend` dan `PlatformBars` membacanya dari `scrollLeft` DOM saat render, bukan dari state hasil event `scroll` — event yang tertunda membuat tooltip menjepit ke offset lama, dan itu terukur di URL live pada korpus 29.707 ulasan: hari yang sedang difokus ada di dalam jendela, tapi tooltipnya keluar 1.029 px ke kiri.
 
 Setiap keadaan kosong ditampilkan sebagai keadaan kosong yang menjelaskan alasannya (kanal tidak dipilih, sumber mengembalikan nol ulasan, kanal gagal, ambang statistik belum terpenuhi, atau kombinasi filter yang memang tidak punya baris) — bukan angka nol yang menyamar sebagai hasil.
 

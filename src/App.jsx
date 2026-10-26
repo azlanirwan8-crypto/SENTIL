@@ -355,7 +355,7 @@ export default function App() {
   } else if (view === 'reviews') {
     content = <ReviewsView dataset={dataset} />;
   } else if (view === 'method') {
-    content = <ModelView dataset={dataset} workspace={activeWorkspace} onExport={handleExport} />;
+    content = <ModelView dataset={dataset} workspace={activeWorkspace} db={dbStatus} onExport={handleExport} />;
   } else {
     content = <Overview dataset={dataset} workspace={activeWorkspace} />;
   }

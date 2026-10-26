@@ -217,7 +217,7 @@ function AuditPanel({ channel, store, workspaceStore }) {
   );
 }
 
-export function ModelView({ dataset, workspace, onExport }) {
+export function ModelView({ dataset, workspace, db, onExport }) {
   const model = dataset.model || {};
   const metrics = model.metrics || {};
   const labels = model.labels || { positive: 0, neutral: 0, negative: 0, unclassified: 0 };
@@ -389,7 +389,7 @@ export function ModelView({ dataset, workspace, onExport }) {
         </div>
       </section>
 
-      <Panel title="Ruang kerja" meta="localStorage peramban" action={exportButton}>
+      <Panel title="Ruang kerja" meta={db?.enabled ? 'database server · id aktif di peramban' : 'sesi ini · tanpa database'} action={exportButton}>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-4">
           {[
             ['Nama', workspace.label],
