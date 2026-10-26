@@ -144,7 +144,7 @@ export function PainLabels({ pain, filtered = false }) {
       </div>
       <p className="mt-2 shrink-0 text-[10px] leading-relaxed text-slate-400">
         A label is a phrase real reviewers wrote, not a category chosen by a model. Two phrases share one label only when the reviews carrying
-        both outnumber what chance explains (z&gt;1, Jeffreys-smoothed). {formatNumber(singletons)} {singletons === 1 ? 'label is' : 'labels are'} a cluster of a single phrase;{' '}
+        both outnumber what chance explains (z&gt;1, Jeffreys-smoothed). {formatNumber(singletons)} {singletons === 1 ? 'label is' : 'labels are'} {singletons === 1 ? 'a cluster' : 'clusters'} of a single phrase;{' '}
         {metrics.trimmedLabels
           ? <>{formatNumber(metrics.trimmedLabels)} clusters fell outside the display budget and are counted in the metrics instead of being dropped silently.</>
           : 'every cluster fits the display budget.'}
