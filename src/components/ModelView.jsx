@@ -336,7 +336,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
             </dl>
             <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
               Teks sinyal memakai bahasa Inggris karena ia bagian dari data yang dihitung di server, sama seperti
-              nama kanal dan frasa reviewers. {signals.metrics.trimmed
+              nama kanal dan frasa reviewers. {signals.metrics?.trimmed
                 ? `${formatNumber(signals.metrics.trimmed)} kandidat di luar anggaran tampil tetap dihitung di angka kandidat.`
                 : 'Tidak ada kandidat yang dipangkas.'}{' '}
               Basis hitungan: {formatNumber(signals.basis?.reviews || 0)} ulasan, pool keluhan {formatNumber(signals.basis?.negativePool || 0)}, pool pujian {formatNumber(signals.basis?.positivePool || 0)}
@@ -486,10 +486,10 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                     </td>
                     <td className="py-1.5 pr-2 align-top text-[10px]">
                       {aiNames?.[entry.id]?.category
-                        ? <span title={`Kategori diberi nama oleh ${pain.naming.model} berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span>{aiNames[entry.id].subLabel ? <span className="block truncate text-slate-500">{aiNames[entry.id].subLabel}</span> : null}</span>
+                        ? <span title={`Kategori diberi nama oleh ${pain.naming.model} berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span><span className="block truncate text-slate-500">{aiNames[entry.id].subLabel || 'nama model'}</span></span>
                         : entry.category
                           ? <span title={`Istilah halaman toko yang lebih padat di gerombol ini daripada di keluhan lain (${formatNumber(entry.category.inside)} dari ${formatNumber(entry.reviewCount)} ulasan gerombol)`}><span className="font-semibold text-slate-300">{entry.category.name}</span><span className="block text-slate-500">dari teks toko</span></span>
-                          : <span className="text-slate-600" title="Belum ada penamaan yang lolos uji bukti untuk gerombol ini">N/A</span>}
+                          : <span className="text-slate-500" title="Belum ada penamaan yang lolos uji bukti untuk gerombol ini">N/A</span>}
                     </td>
                     <td className="num py-1.5 pr-2 text-right text-[11px] text-slate-200">{formatNumber(entry.phraseCount)}</td>
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))}</td>
@@ -526,9 +526,10 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               {pain.labelRules?.closure || 'Gabungan diterima hanya kalau seluruh silangan anggotanya lolos uji, jadi gerombol tidak menyatu karena rantai.'}{' '}
               Arah dihitung dari {pain.labelMetrics?.trend ? `rentang ${pain.labelMetrics.trend.firstDay} sampai ${pain.labelMetrics.trend.lastDay}` : 'rentang tanggal yang tidak tersedia'}.{' '}
               Kolom <span className="font-semibold text-slate-300">Kanal</span> adalah kanal yang paling banyak memuat label itu, dibaca sebagai porsi keluhan kanal tersebut.{' '}
-              {pain.labelRules?.category || 'Kategori sebuah gerombol hanya boleh berupa istilah halaman toko yang lebih padat di gerombol itu daripada di keluhan lain.'}{' '}
-              Kolom <span className="font-semibold text-slate-300">Kategori</span> adalah satu-satunya bagian yang boleh berupa interpretasi: kalau terisi, sumbernya ditulis di tooltip baris itu
-              (model bahasa atau teks halaman toko), dan tidak ada angka yang datang dari penamaan itu.
+              Kolom <span className="font-semibold text-slate-300">Kategori</span> punya dua sumber dan keduanya ditulis di barisnya: istilah halaman toko yang lolos uji kepadatan
+              ({pain.labelRules?.category || 'lebih dari satu ulasan gerombol memuatnya, dan porsinya beda nyata dari keluhan lain'}), atau nama yang diberi model bahasa
+              ({pain.naming?.status === 'named' ? `${pain.naming.model} atas ${formatNumber(pain.naming.clusters || 0)} gerombol, ${formatNumber(painLabels.filter(entry => pain.naming.names?.[entry.id]?.category).length)} baris tampil bernama model` : `lapisan penamaan berstatus ${pain.naming?.status || 'belum ada di snapshot ini'}${pain.naming?.reason ? ` — ${pain.naming.reason}` : ''}`}).
+              {' '}Yang tidak pernah terjadi: angka ikut menamai atau ikut dinamai — seluruh kolom jumlah, porsi, pujian, arah, dan kanal tetap pengukuran mesin.
             </p>
           </div>
         ) : (

@@ -5,10 +5,11 @@ import { EmptyState } from './EmptyState.jsx';
 import { ChartFrame } from './charts/ChartFrame.jsx';
 import { IconLayers } from './icons.jsx';
 
-// Panel ini hanya membaca lapisan label yang sudah dihitung mesin. Tidak ada satu pun nama di
-// sini yang ditulis di berkas klien atau dipilihkan model bahasa: nama label adalah kata yang
-// benar-benar ditulis reviewers, dan jumlah ulasannya adalah union ulasan berbeda, bukan
-// penjumlahan frasa.
+// Panel ini hanya membaca lapisan label yang sudah dihitung mesin. Kolom Label, Phrases, 1–2★,
+// Share, 4–5★, Trend dan Severity seluruhnya pengukuran: namanya kata yang benar-benar ditulis
+// reviewers dan jumlah ulasannya adalah union ulasan berbeda, bukan penjumlahan frasa. Hanya
+// kolom Category yang boleh berisi interpretasi, dan panel ini wajib menyebut sumbernya di
+// setiap baris (lihat `namingStatus` dan catatan kaki di bawah tabel).
 
 function Header({ children, className = '' }) {
   return <th scope="col" className={`label py-1 pr-3 text-left font-semibold ${className}`}>{children}</th>;
@@ -87,12 +88,18 @@ export function PainLabels({ pain, filtered = false }) {
   const meta = `${labels.length === clusters ? `${formatNumber(clusters)} clusters` : `${labels.length} of ${formatNumber(clusters)} clusters`} · ${formatNumber(pool)} 1–2★ reviews${filtered ? ' · whole corpus' : ''}`;
   const singletons = metrics.singletons || 0;
   const named = metrics.namedFromTerm || 0;
-  // Kategori punya dua sumber yang keduanya ditandai di kolomnya: nama dari model bahasa
+  // Kategori punya dua sumber yang keduanya ditandai di barisnya: nama dari model bahasa
   // (interpretasi atas frasa yang sudah diukur) dan istilah halaman toko yang lolos uji
-  // kepadatan. Angka baris tidak pernah datang dari keduanya.
-  const aiNames = pain.naming?.status === 'named' ? pain.naming.names || {} : null;
-  const aiCount = aiNames ? labels.filter(entry => aiNames[entry.id]?.category).length : 0;
-  const storeCount = labels.filter(entry => entry.category).length;
+  // kepadatan. Satu baris dihitung satu kali — istilah toko yang namanya tertutup nama model
+  // dilaporkan terpisah, tidak dijumlahkan ke baris yang sama.
+  const naming = pain.naming || null;
+  const aiNames = naming?.status === 'named' ? naming.names || {} : null;
+  const aiRows = labels.filter(entry => aiNames?.[entry.id]?.category);
+  const aiCount = aiRows.length;
+  const storeRows = labels.filter(entry => entry.category && !aiNames?.[entry.id]?.category);
+  const storeCount = storeRows.length;
+  const maskedStoreCount = labels.filter(entry => entry.category && aiNames?.[entry.id]?.category).length;
+  const orphanNames = aiNames ? Object.keys(aiNames).length - aiCount : 0;
 
   return (
     <ChartFrame
@@ -171,17 +178,17 @@ export function PainLabels({ pain, filtered = false }) {
                   </th>
                   <td className="py-1 pr-3 align-top text-[11px]">
                     {ai ? (
-                      <span title={`Category named by ${pain.naming.model} from the phrases in this row; every number here is measured`}>
+                      <span title={`Category named by ${naming.model} from the phrases in this row; every number here is measured`}>
                         <span className="font-semibold text-slate-200">{ai.category}</span>
-                        {ai.subLabel ? <span className="block truncate text-[10px] text-slate-500">{ai.subLabel}</span> : null}
+                        <span className="block truncate text-[10px] text-slate-500">{ai.subLabel || 'AI-named'}</span>
                       </span>
                     ) : store ? (
                       <span title={`Store term carried by ${formatNumber(store.inside)} of ${formatNumber(entry.reviewCount)} reviews in this cluster, denser than among other complaints`}>
                         <span className="font-semibold text-slate-300">{store.name}</span>
-                        <span className="block text-[10px] text-slate-500">from store listing</span>
+                        <span className="block text-[10px] text-slate-500">store term</span>
                       </span>
                     ) : (
-                      <span className="text-slate-600" title="No naming cleared the evidence test for this cluster">—</span>
+                      <span className="text-slate-500" title="No naming cleared the evidence test for this cluster">—</span>
                     )}
                   </td>
                   <td className="num py-1 pr-3 text-right text-[11px] text-slate-400">{formatNumber(entry.phraseCount)}</td>
@@ -209,10 +216,14 @@ export function PainLabels({ pain, filtered = false }) {
         {filtered ? ' Counts cover the whole corpus, not the active filter.' : ''}
       </p>
       <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-        The Category column is the one interpreted part, and it says where each name came from:
-        {' '}{aiCount ? <span className="num">{formatNumber(aiCount)} by {pain.naming.model}</span> : 'none by a model'}
-        {storeCount ? <>, {formatNumber(storeCount)} from a store-listing term that is denser inside the cluster than among other complaints</> : null}
-        {aiCount || storeCount ? '.' : '; no naming cleared the evidence test on this corpus, so the column is empty rather than guessed.'}
+        The Category column is the one interpreted part, and its state is reported as it is:
+        {' '}{naming?.status === 'named'
+          ? <>it ran with <span className="font-semibold text-slate-400">{naming.model}</span> over {formatNumber(naming.clusters || 0)} clusters and {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : 'no'} of the rows shown {aiCount === 1 ? 'carries' : 'carry'} its name{storeCount ? <>, {formatNumber(storeCount)} carry a store-listing term that is denser inside the cluster than among other complaints</> : null}{maskedStoreCount ? <>, {formatNumber(maskedStoreCount)} further store term{maskedStoreCount === 1 ? '' : 's'} measured here but hidden behind a model name</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} returned name{orphanNames === 1 ? '' : 's'} matched no row on this table and {orphanNames === 1 ? 'was' : 'were'} ignored</> : null}.</>
+          : naming?.status === 'skipped'
+            ? <>it did not run — {naming.reason || 'the naming layer was not configured'} — so any category below comes from the store listing or is empty.</>
+            : naming?.status === 'failed'
+              ? <>it ran and failed — {naming.reason || 'no usable names came back'} — so any category below comes from the store listing or is empty.</>
+              : 'this snapshot has no naming record at all; it was pulled before the naming layer existed, or nothing was clustered to name.'}
         {' '}No number in the table comes from naming — counts, shares and trend are measured.
       </p>
     </ChartFrame>

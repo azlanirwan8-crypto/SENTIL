@@ -45,18 +45,21 @@ export function KpiRow({ dataset }) {
             <span className="metric">{formatNumber(total)}</span>
             <span className="text-[10px] font-semibold text-slate-400">reviews</span>
           </div>
-          <div className="mt-2 flex h-1 rounded-full bg-slate-800" role="img" aria-label={channelTotals.map(channel => `${platformLabel(channel.id)} ${channel.count}`).join(', ')}>
+          <div className="mt-2 flex h-1 rounded-full bg-slate-800" role="group" aria-label="Reviews per channel">
             {channelTotals.map((channel, index) => {
               const color = storeColor(channel.id);
               const tipAlign = index === 0 ? 'left-0' : index === channelTotals.length - 1 ? 'right-0' : 'left-1/2 -translate-x-1/2';
               return (
                 <span
                   key={channel.id}
-                  className={`group/seg relative ${channelTotals.length === 1 ? 'rounded-full' : index === 0 ? 'rounded-l-full' : index === channelTotals.length - 1 ? 'rounded-r-full' : ''}`}
+                  tabIndex={0}
+                  role="img"
+                  aria-label={`${platformLabel(channel.id)}: ${formatNumber(channel.count)} reviews, ${formatPercent(channel.count, channelSum)} of the reviews read`}
+                  className={`group/seg relative outline-none focus-visible:z-10 ${channelTotals.length === 1 ? 'rounded-full' : index === 0 ? 'rounded-l-full' : index === channelTotals.length - 1 ? 'rounded-r-full' : ''}`}
                   style={{ width: `${(channel.count / channelSum) * 100}%`, backgroundColor: color }}
                 >
                   <span className="absolute inset-x-0 -inset-y-1.5 cursor-default" aria-hidden="true" />
-                  <span className={`pointer-events-none absolute bottom-full z-10 mb-1.5 whitespace-nowrap rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] font-semibold text-slate-200 opacity-0 shadow-lg shadow-black/50 transition-opacity duration-100 group-hover/seg:opacity-100 ${tipAlign}`}>
+                  <span className={`pointer-events-none absolute bottom-full z-10 mb-1.5 whitespace-nowrap rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] font-semibold text-slate-200 opacity-0 shadow-lg shadow-black/50 transition-opacity duration-100 group-hover/seg:opacity-100 group-focus/seg:opacity-100 ${tipAlign}`}>
                     <span className="inline-flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-[1px]" style={{ backgroundColor: color }} />
                       {platformLabel(channel.id)} <span className="num font-bold" style={{ color }}>{formatNumber(channel.count)}</span>

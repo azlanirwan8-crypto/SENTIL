@@ -75,7 +75,8 @@ export function Signals({ signals, filtered = false }) {
   }
 
   const basis = signals.basis || {};
-  const meta = `${formatNumber(signals.metrics.reported)} of ${formatNumber(signals.metrics.candidates)} measured`
+  const metrics = signals.metrics || {};
+  const meta = `${formatNumber(metrics.reported)} of ${formatNumber(metrics.candidates)} measured`
     + `${basis.reviews ? ` · ${formatNumber(basis.reviews)} reviews` : ''}`
     + `${filtered ? ' · whole corpus' : ''}`;
 
@@ -95,8 +96,8 @@ export function Signals({ signals, filtered = false }) {
         compares the second half of <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : 'the observed period'}</span> against the
         first{basis.trend && basis.trend.earlyNegative != null
           ? <> on <span className="num">{formatNumber(basis.trend.earlyNegative)}</span> vs <span className="num">{formatNumber(basis.trend.lateNegative)}</span> complaints</>
-          : null}. {signals.metrics.trimmed
-            ? <><span className="num">{formatNumber(signals.metrics.trimmed)}</span> candidates sat outside the display budget and are counted above.</>
+          : null}. {metrics.trimmed
+            ? <><span className="num">{formatNumber(metrics.trimmed)}</span> candidates sat outside the display budget and are counted above.</>
             : 'Nothing was trimmed.'}
         {filtered ? ' Signals are computed on the whole corpus, not the active filter.' : ''}
       </p>
