@@ -63,7 +63,7 @@ export function KpiRow({ dataset }) {
                     <span className="inline-flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-[1px]" style={{ backgroundColor: color }} />
                       {platformLabel(channel.id)} <span className="num font-bold" style={{ color }}>{formatNumber(channel.count)}</span>
-                      <span className="num font-normal text-slate-500">{formatPercent(channel.count, channelSum)}</span>
+                      <span className="num font-normal text-slate-400">{formatPercent(channel.count, channelSum)}</span>
                     </span>
                   </span>
                 </span>

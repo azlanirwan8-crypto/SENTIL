@@ -22,7 +22,7 @@ function Trend({ entry }) {
     const reason = entry.undated === null
       ? 'No usable review dates in this corpus'
       : 'No review of this label in the first half of the period, so there is no baseline to compare against';
-    return <span className="num text-[11px] text-slate-600" title={reason} aria-label={reason}>—</span>;
+    return <span className="num text-[11px] text-slate-400" title={reason} aria-label={reason}>—</span>;
   }
   const rising = entry.momentum > 1;
   const falling = entry.momentum < 1;
@@ -151,7 +151,7 @@ export function PainLabels({ pain, filtered = false }) {
                       {entry.phraseCount > 1 ? (
                         <span className="shrink-0 rounded border border-slate-700/70 px-1 text-[9px] uppercase tracking-wider text-slate-400">cluster</span>
                       ) : (
-                        <span className="shrink-0 rounded border border-slate-700/70 px-1 text-[9px] uppercase tracking-wider text-slate-500">single</span>
+                        <span className="shrink-0 rounded border border-slate-700/70 px-1 text-[9px] uppercase tracking-wider text-slate-400">single</span>
                       )}
                     </button>
                     {active ? (
@@ -161,7 +161,7 @@ export function PainLabels({ pain, filtered = false }) {
                           {entry.phrases.map(phrase => (
                             <li key={phrase.text} className="flex items-baseline justify-between gap-2">
                               <span className="min-w-0 truncate font-mono text-[10px] text-slate-300">{phrase.text}</span>
-                              <span className="num shrink-0 text-[10px] text-slate-500">
+                              <span className="num shrink-0 text-[10px] text-slate-400">
                                 1–2★ {formatNumber(phrase.dfNegative)}
                                 {phrase.dfPositive ? ` · 4–5★ ${formatNumber(phrase.dfPositive)}` : ''}
                               </span>
@@ -180,15 +180,15 @@ export function PainLabels({ pain, filtered = false }) {
                     {ai ? (
                       <span title={`Category named by ${naming.model} from the phrases in this row; every number here is measured`}>
                         <span className="font-semibold text-slate-200">{ai.category}</span>
-                        <span className="block truncate text-[10px] text-slate-500">{ai.subLabel || 'AI-named'}</span>
+                        <span className="block truncate text-[10px] text-slate-400">{ai.subLabel || 'AI-named'}</span>
                       </span>
                     ) : store ? (
                       <span title={`Store term carried by ${formatNumber(store.inside)} of ${formatNumber(entry.reviewCount)} reviews in this cluster, denser than among other complaints`}>
                         <span className="font-semibold text-slate-300">{store.name}</span>
-                        <span className="block text-[10px] text-slate-500">store term</span>
+                        <span className="block text-[10px] text-slate-400">store term</span>
                       </span>
                     ) : (
-                      <span className="text-slate-500" title="No naming cleared the evidence test for this cluster">—</span>
+                      <span className="text-slate-400" title="No naming cleared the evidence test for this cluster">—</span>
                     )}
                   </td>
                   <td className="num py-1 pr-3 text-right text-[11px] text-slate-400">{formatNumber(entry.phraseCount)}</td>
@@ -215,7 +215,7 @@ export function PainLabels({ pain, filtered = false }) {
           : 'every cluster fits the display budget.'}
         {filtered ? ' Counts cover the whole corpus, not the active filter.' : ''}
       </p>
-      <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+      <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
         The Category column is the one interpreted part, and its state is reported as it is:
         {' '}{naming?.status === 'named'
           ? <>it ran with <span className="font-semibold text-slate-400">{naming.model}</span> over {formatNumber(naming.clusters || 0)} clusters and {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : 'no'} of the rows shown {aiCount === 1 ? 'carries' : 'carry'} its name{storeCount ? <>, {formatNumber(storeCount)} carry a store-listing term that is denser inside the cluster than among other complaints</> : null}{maskedStoreCount ? <>, {formatNumber(maskedStoreCount)} further store term{maskedStoreCount === 1 ? '' : 's'} measured here but hidden behind a model name</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} returned name{orphanNames === 1 ? '' : 's'} matched no row on this table and {orphanNames === 1 ? 'was' : 'were'} ignored</> : null}.</>

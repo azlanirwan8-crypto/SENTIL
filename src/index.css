@@ -96,10 +96,6 @@
     @apply rounded-lg border border-slate-800/80 bg-slate-900;
   }
 
-  .card-flush {
-    @apply rounded-lg border border-slate-800/80 bg-slate-900;
-  }
-
   .btn {
     @apply inline-flex shrink-0 select-none items-center justify-center gap-1.5 rounded-md border text-xs font-semibold transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40;
     height: 32px;
@@ -205,24 +201,11 @@
     stroke: #22d3ee;
     stroke-width: 1.5;
   }
-
-  .chart-node:focus-visible {
-    outline: none;
-  }
-
-  .chart-node:focus-visible > rect:first-of-type {
-    stroke: #22d3ee;
-    stroke-width: 2;
-  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
-  }
-
-  .grid-lines-y > * + * {
-    border-top: 1px solid rgb(30 41 59 / 0.7);
   }
 }
 
@@ -248,4 +231,21 @@
   width: 42%;
   background: linear-gradient(90deg, transparent, #22d3ee);
   animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+/* Gerakan dikurangi bukan berarti kerja selesai. Aturan global di atas meredam animasi
+   sampai hilang, dan bilah yang diam-total membaca "macet" — jadi yang bergerak digantikan
+   oleh yang tetap terlihat: isian penuh, tanpa geseran. */
+@media (prefers-reduced-motion: reduce) {
+  .progress-indeterminate::after {
+    width: 100%;
+    animation: none;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.25), #22d3ee);
+  }
+
+  .skeleton::after {
+    animation: none;
+    transform: none;
+    background: rgba(148, 163, 184, 0.1);
+  }
 }

@@ -63,7 +63,7 @@ Tanpa `.env` aplikasi tetap jalan, hanya saja melaporkan bahwa database belum di
 | `npm run build` | Membangun ke `public/`: `app.js` (esbuild), `styles.css` (Tailwind), salinan `index.html`, dan `assets/`. Hanya isi folder ini yang boleh disajikan publik. |
 | `npm run build:js` / `build:css` | Salah satu tahap build saja. |
 | `npm start` | Build lebih dulu, lalu server statis dari `public/` + meneruskan `/api/sync`; memuat `.env.local` bila ada. |
-| `npm test` | `node --test tests` — 276 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, gerombol label, penamaan kategori, lapisan sinyal, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, kuota per pengunjung, penarikan terjadwal, kontrak skema SQL, database, API, dan server. |
+| `npm test` | `node --test tests` — 285 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, gerombol label, penamaan kategori, lapisan sinyal, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, kuota per pengunjung, penarikan terjadwal, kontrak skema SQL, kontras/motion/aset tampilan, database, API, dan server. |
 
 ## API
 
@@ -203,6 +203,17 @@ Di atas keempat chart, panel **Analyst signals** (`src/components/Signals.jsx`) 
 Kontrak tooltip (`ChartTooltip`): panelnya **solid** (`bg-slate-950`, tanpa `backdrop-blur`) supaya warna bar tidak menembus teksnya; tingginya diukur sendiri, bukan diduga; dan posisinya dijepit ke **jendela gulir yang sedang terlihat** — bukan ke lebar konten — sehingga tooltip tidak pernah menutupi kepala kartu, tidak pernah keluar dari kartu di bar paling kiri/kanan, dan tidak menambah lebar gulir palsu. Jepitannya ada di `tooltipAnchor` (`chart-utils.js`) dan diuji per posisi; `DailyTrend` dan `PlatformBars` membacanya dari `scrollLeft` DOM saat render, bukan dari state hasil event `scroll` — event yang tertunda membuat tooltip menjepit ke offset lama, dan itu terukur di URL live pada korpus 29.707 ulasan: hari yang sedang difokus ada di dalam jendela, tapi tooltipnya keluar 1.029 px ke kiri.
 
 Setiap keadaan kosong ditampilkan sebagai keadaan kosong yang menjelaskan alasannya (kanal tidak dipilih, sumber mengembalikan nol ulasan, kanal gagal, ambang statistik belum terpenuhi, atau kombinasi filter yang memang tidak punya baris) — bukan angka nol yang menyamar sebagai hasil.
+
+### Rasa produk (dan mengapa kontraknya diuji)
+
+Kepadatan laporan analis adalah pilihan desain, tetapi ia punya konsekuensi yang bisa diukur: teks 10–12px di atas kartu gelap. Kontraknya dijaga `tests/style-contract.test.mjs`, bukan oleh ingatan:
+
+- **Kontras.** `bg-slate-900` (#0f172a, luminansi 0,0089) membuat `text-slate-500` hanya mencapai **3,7:1** dan `text-slate-600` **2,4:1** — keduanya di bawah AA 4,5:1 untuk teks kecil. Seluruhnya dinaikkan ke `text-slate-400` (**6,9:1**), dan hierarki tetap dijaga lewat ukuran/bobot, bukan lewat warna yang tidak terbaca. Teks gelap (`slate-900/950`) hanya boleh muncul di atas permukaan terang (chip accent/play/appstore, tombol primer) — itu juga diuji baris per baris.
+- **Gerakan.** `prefers-reduced-motion` meredam semua animasi, tetapi bilah tak-tentu yang diam total membaca "macet". Jadi di bawah preferensi itu `.progress-indeterminate::after` diganti menjadi isian penuh tanpa geseran, dan skeleton menjadi blok tenang — statusnya tetap terlihat, hanya gerakannya yang hilang.
+- **Satu primitive, bukan tiga salinan.** `src/components/Progress.jsx` dipakai bilah kepala, layar boot, dan layar sinkron. Ia membawa `role="progressbar"` + `aria-busy` + nama, dan **tanpa** `aria-valuenow`: penarikan adalah satu permintaan HTTP tanpa aliran, jadi memalsukan persentase lebih buruk daripada tidak menyatakannya.
+- **Tabel bersjudul.** Setiap `<table>` punya `caption` (atau `aria-label`), sehingga pembaca layar tahu apa yang dibaca sebelum entered ke kolom pertama.
+- **Angka yang berjalan.** Cap waktu "as of" di kepala project dan detik penarikan yang sedang berjalan dihitung dari `useNow()` yang berdenyut, jadi label tidak membeku sampai ada render lain yang kebetulan lewat.
+- **Yang tidak dikirim.** Hanya Manrope yang dimuat (24 KB, di-preload di `index.html`). Fraunces dan Poppins pernah ikut ter-bundle — 101 KB yang tidak pernah dirender — dan sudah dihapus; test menuntut setiap berkas `.woff2` di `assets/fonts/` punya deklarasi `@font-face` *dan* preload, dan setiap kelas yang didefinisikan di `index.css` benar-benar dipakai.
 
 
 ## Compare (matriks lintas project)

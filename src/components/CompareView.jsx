@@ -33,7 +33,7 @@ const displayValue = (row, value) => {
 
 function Delta({ delta, direction, unit }) {
   if (!Number.isFinite(delta) || delta === 0) {
-    return <span className="num text-[10px] text-slate-500">±0</span>;
+    return <span className="num text-[10px] text-slate-400">±0</span>;
   }
   const good = direction === 'down' ? delta < 0 : delta > 0;
   const shown = unit === 'ratio' ? `${(Math.abs(delta) * 100).toFixed(1)}%` : Math.abs(delta) >= 1000 ? formatNumber(Math.abs(delta)) : Math.abs(delta).toFixed(2);
@@ -75,11 +75,11 @@ function SelectionBar({ workspaces, selected, onToggle, onAll, onRun, busy }) {
             >
               <span className={`h-1.5 w-1.5 rounded-full ${on ? 'bg-accent' : 'bg-slate-600'}`} aria-hidden="true" />
               <span className="max-w-[140px] truncate font-semibold">{workspace.label}</span>
-              {workspace.snapshot?.reviews ? <span className="num text-[10px] text-slate-500">{formatNumber(workspace.snapshot.reviews)}</span> : null}
+              {workspace.snapshot?.reviews ? <span className="num text-[10px] text-slate-400">{formatNumber(workspace.snapshot.reviews)}</span> : null}
             </button>
           );
         })}
-        {!workspaces.length ? <p className="text-[11px] text-slate-500">No stored projects yet.</p> : null}
+        {!workspaces.length ? <p className="text-[11px] text-slate-400">No stored projects yet.</p> : null}
       </div>
     </div>
   );
@@ -92,13 +92,18 @@ function MatrixTable({ result }) {
     <Panel title="Metric matrix" meta={`reference = median of ${result.reference.projects} columns`} className="xl:col-span-12">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
+          <caption className="sr-only">
+            Metric matrix: one row per measured metric, one column per stored project. Every cell
+            is read from that project&apos;s own snapshot; a project without a snapshot shows no
+            value rather than a zero.
+          </caption>
           <thead>
             <tr className="border-b border-slate-800">
               <th scope="col" className="label sticky left-0 bg-slate-900/95 py-1.5 pr-3 font-semibold">Metric</th>
               {columns.map(column => (
                 <th key={column.id} scope="col" className="py-1.5 pl-3 align-bottom">
                   <p className="truncate text-[11px] font-bold text-slate-200">{column.label}</p>
-                  <p className="num text-[10px] text-slate-500">{column.hasData ? `${formatNumber(column.metrics.volume)} · as of ${relativeTime(column.fetchedAt, now)}` : 'no snapshot'}</p>
+                  <p className="num text-[10px] text-slate-400">{column.hasData ? `${formatNumber(column.metrics.volume)} · as of ${relativeTime(column.fetchedAt, now)}` : 'no snapshot'}</p>
                 </th>
               ))}
             </tr>
@@ -114,11 +119,11 @@ function MatrixTable({ result }) {
                   return (
                     <td key={value.id} className="py-1.5 pl-3 align-top">
                       <div className="flex items-baseline gap-1.5">
-                        <span className={`num text-[12px] font-semibold ${cell?.hasData ? 'text-slate-100' : 'text-slate-600'}`}>{displayValue(row, value.value)}</span>
+                        <span className={`num text-[12px] font-semibold ${cell?.hasData ? 'text-slate-100' : 'text-slate-400'}`}>{displayValue(row, value.value)}</span>
                         {row.direction !== 'neutral' && Number.isFinite(value.value) ? <Delta delta={value.delta} direction={row.direction} unit={row.unit} /> : null}
                       </div>
                       {Number.isFinite(value.value) && row.direction !== 'neutral' && row.values.filter(entry => Number.isFinite(entry.value)).length > 1 ? (
-                        <p className="num text-[10px] text-slate-500">#{value.rank}</p>
+                        <p className="num text-[10px] text-slate-400">#{value.rank}</p>
                       ) : null}
                     </td>
                   );
@@ -139,10 +144,10 @@ function Leaderboard({ result }) {
       <ol className="space-y-1">
         {result.leaderboard.map(entry => (
           <li key={entry.id} className="flex items-center gap-2 rounded border border-slate-800/70 bg-slate-900/40 px-2 py-1.5">
-            <span className="num w-4 shrink-0 text-[10px] font-bold text-slate-500">{entry.rank}</span>
+            <span className="num w-4 shrink-0 text-[10px] font-bold text-slate-400">{entry.rank}</span>
             <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-200">{entry.label}</span>
             <span className={`num text-[12px] font-bold ${entry.nss >= 0 ? 'text-pos' : 'text-neg'}`}>{formatNss(entry.nss)}</span>
-            {entry.rank > 1 ? <span className="num text-[10px] text-slate-500">{entry.gapToLeader.toFixed(1)}</span> : null}
+            {entry.rank > 1 ? <span className="num text-[10px] text-slate-400">{entry.gapToLeader.toFixed(1)}</span> : null}
           </li>
         ))}
       </ol>
@@ -161,7 +166,7 @@ function Insights({ result }) {
             <span className="min-w-0 truncate text-[11px] text-slate-300">{insight.label}</span>
             <span className="shrink-0 text-right">
               <span className="text-[11px] font-semibold text-pos">{labels.get(insight.winnerId) || insight.winnerId}</span>
-              <span className="num text-[10px] text-slate-500"> vs </span>
+              <span className="num text-[10px] text-slate-400"> vs </span>
               <span className="text-[11px] font-semibold text-neg">{labels.get(insight.loserId) || insight.loserId}</span>
             </span>
           </li>
@@ -179,6 +184,11 @@ function PainHeatmap({ result }) {
     <Panel title="Cross-project pain points" meta={`${result.painPointTotal} phrases · showing ${result.painPoints.length}`} className="xl:col-span-12">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
+          <caption className="sr-only">
+            Cross-project pain points: each row is one complaint phrase measured inside every
+            selected project. A cell shows that project&apos;s own count; a dash means the phrase
+            did not clear the evidence test there, not that it was zero.
+          </caption>
           <thead>
             <tr className="border-b border-slate-800">
               <th scope="col" className="label py-1.5 pr-3">Phrase</th>
@@ -190,7 +200,7 @@ function PainHeatmap({ result }) {
               <tr key={row.text} className="border-b border-slate-800/50 last:border-0">
                 <th scope="row" className="py-1 pr-3 text-left">
                   <span className="text-[11px] font-medium text-slate-200">{row.text}</span>
-                  <span className="num ml-1.5 text-[10px] text-slate-500">{row.projectCount}/{columns.length}</span>
+                  <span className="num ml-1.5 text-[10px] text-slate-400">{row.projectCount}/{columns.length}</span>
                 </th>
                 {columns.map(column => {
                   const cell = row.cells[column.id];
@@ -205,7 +215,7 @@ function PainHeatmap({ result }) {
                         >
                           {(cell.share * 100).toFixed(1)}%
                         </span>
-                      ) : <span className="num text-[11px] text-slate-700">·</span>}
+                      ) : <span className="num text-[11px] text-slate-400">·</span>}
                     </td>
                   );
                 })}

@@ -38,7 +38,7 @@ export function Signal({ item }) {
       <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1" aria-label={`Measurements behind: ${item.title}`}>
         {item.facts.map(entry => (
           <li key={entry.key} className="flex items-baseline gap-1">
-            <span className="text-[9px] uppercase tracking-wider text-slate-500">{entry.label}</span>
+            <span className="text-[9px] uppercase tracking-wider text-slate-400">{entry.label}</span>
             <span className="num text-[11px] font-semibold text-slate-200">{factValue(entry)}</span>
           </li>
         ))}

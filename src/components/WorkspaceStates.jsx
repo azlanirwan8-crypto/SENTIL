@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { channelStatusLabel, formatDateTime, formatNumber } from '../lib/format.js';
 import { StoreMark } from './Brand.jsx';
+import { Progress } from './Progress.jsx';
 import { Notice } from './Notices.jsx';
 import { IconArrowRight, IconExternal, IconRefresh } from './icons.jsx';
 
@@ -40,7 +41,7 @@ export function BootScreen({ label = 'Loading' }) {
             </div>
           ))}
         </div>
-        <div className="progress-indeterminate h-[2px] w-full bg-slate-900" />
+        <Progress label="Reading sources" />
       </section>
     </div>
   );
@@ -103,7 +104,7 @@ export function SyncScreen({ workspace }) {
             ))}
           </div>
         </div>
-        <div className="progress-indeterminate h-[2px] w-full bg-slate-900" />
+        <Progress label="Reading sources" />
       </section>
     </div>
   );

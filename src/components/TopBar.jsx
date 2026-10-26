@@ -1,4 +1,5 @@
 import { LogoMark } from './Brand.jsx';
+import { Progress } from './Progress.jsx';
 import { IconChevronDown, IconPlus, IconRefresh, IconTrash } from './icons.jsx';
 import { formatNumber } from '../lib/format.js';
 
@@ -87,7 +88,7 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, onSwitc
           </button>
         </div>
       </div>
-      {syncing && <div className="progress-indeterminate h-[2px] w-full bg-slate-900" />}
+      {syncing && <Progress label="Reading sources" />}
     </header>
   );
 }

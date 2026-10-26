@@ -13,7 +13,9 @@ export default {
         accent: '#22D3EE',
       },
       fontFamily: {
-        sans: ['Manrope', 'Poppins', 'system-ui', 'sans-serif'],
+        // Hanya satu wajah yang benar-benar dimuat dan di-preload (index.html). Nama lain
+        // di tumpukan ini adalah janji yang tidak bisa ditepati bundel tanpa asetnya.
+        sans: ['Manrope', 'system-ui', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
       fontSize: {

@@ -486,10 +486,10 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                     </td>
                     <td className="py-1.5 pr-2 align-top text-[10px]">
                       {aiNames?.[entry.id]?.category
-                        ? <span title={`Kategori diberi nama oleh ${pain.naming.model} berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span><span className="block truncate text-slate-500">{aiNames[entry.id].subLabel || 'nama model'}</span></span>
+                        ? <span title={`Kategori diberi nama oleh ${pain.naming.model} berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span><span className="block truncate text-slate-400">{aiNames[entry.id].subLabel || 'nama model'}</span></span>
                         : entry.category
-                          ? <span title={`Istilah halaman toko yang lebih padat di gerombol ini daripada di keluhan lain (${formatNumber(entry.category.inside)} dari ${formatNumber(entry.reviewCount)} ulasan gerombol)`}><span className="font-semibold text-slate-300">{entry.category.name}</span><span className="block text-slate-500">dari teks toko</span></span>
-                          : <span className="text-slate-500" title="Belum ada penamaan yang lolos uji bukti untuk gerombol ini">N/A</span>}
+                          ? <span title={`Istilah halaman toko yang lebih padat di gerombol ini daripada di keluhan lain (${formatNumber(entry.category.inside)} dari ${formatNumber(entry.reviewCount)} ulasan gerombol)`}><span className="font-semibold text-slate-300">{entry.category.name}</span><span className="block text-slate-400">dari teks toko</span></span>
+                          : <span className="text-slate-400" title="Belum ada penamaan yang lolos uji bukti untuk gerombol ini">N/A</span>}
                     </td>
                     <td className="num py-1.5 pr-2 text-right text-[11px] text-slate-200">{formatNumber(entry.phraseCount)}</td>
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))}</td>

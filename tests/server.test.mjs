@@ -16,7 +16,7 @@ function fixtureRoot() {
   writeFileSync(path.join(dir, 'app.js'), 'console.log(1);');
   writeFileSync(path.join(dir, 'styles.css'), 'body{color:red}');
   mkdirSync(path.join(dir, 'assets/fonts'), { recursive: true });
-  writeFileSync(path.join(dir, 'assets/fonts/fraunces-latin-var.woff2'), 'font');
+  writeFileSync(path.join(dir, 'assets/fonts/manrope-latin-var.woff2'), 'font');
   return dir;
 }
 
@@ -76,7 +76,7 @@ describe('server pratinjau lokal', () => {
   });
 
   test('menyajikan hasil build dan aset font', async () => {
-    for (const route of ['/app.js', '/styles.css', '/assets/fonts/fraunces-latin-var.woff2']) {
+    for (const route of ['/app.js', '/styles.css', '/assets/fonts/manrope-latin-var.woff2']) {
       const response = await fetch(`${base}${route}`);
       assert.equal(response.status, 200, route);
     }
