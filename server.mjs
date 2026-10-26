@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createSyncHandler } from './api/sync.js';
+import { createRefreshHandler } from './api/refresh.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 // Yang disajikan publik hanya hasil build; sumber server tidak berada di dalam folder ini.
@@ -16,6 +17,10 @@ const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
   'x-frame-options': 'DENY',
+  'cross-origin-opener-policy': 'same-origin',
+  // Sama dengan vercel.json: kalau keduanya berbeda, yang teruji di localhost bukan yang
+  // terjadi di produksi.
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=(), display-capture=(), document-domain=(), encrypted-media=(), accelerometer=(), gyroscope=(), magnetometer=(), autoplay=(), picture-in-picture=(), sync-xhr=(self)',
   'content-security-policy': [
     "default-src 'self'",
     "script-src 'self'",
@@ -102,7 +107,7 @@ async function sendFile(response, filePath, request) {
   createReadStream(filePath).pipe(response);
 }
 
-export function createAppServer({ syncHandler = createSyncHandler(), root = STATIC_ROOT } = {}) {
+export function createAppServer({ syncHandler = createSyncHandler(), refreshHandler = createRefreshHandler(), root = STATIC_ROOT } = {}) {
   return createServer(async (request, response) => {
     const url = new URL(request.url || '/', 'http://localhost');
     const pathname = url.pathname;
@@ -114,6 +119,13 @@ export function createAppServer({ syncHandler = createSyncHandler(), root = STAT
         return;
       }
       await syncHandler(request, response);
+      return;
+    }
+
+    // Jalur cron yang sama bisa dicoba lokal; tanpa CRON_SECRET di .env fungsi ini memang
+    // menjawab 501, dan itu keadaan yang sebenarnya, bukan bug server lokal.
+    if (pathname === '/api/refresh') {
+      await refreshHandler(request, response);
       return;
     }
 

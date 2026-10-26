@@ -78,11 +78,15 @@ describe('konfigurasi database', () => {
     assert.equal(config.baseUrl, 'https://example.supabase.co');
   });
 
-  test('setiap metode yang dipanggil api/sync benar-benar ada di objek database', () => {
+  test('setiap metode yang dipanggil pemakai database benar-benar ada di objeknya', () => {
     // db.test selama ini memakai stub yang punya semua metode, jadi metode yang lupa
     // diekspor dari createDatabase lolos pengujian dan baru meledak di produksi sebagai 500.
-    const source = readFileSync(new URL('../api/sync.js', import.meta.url), 'utf8');
-    const used = [...new Set([...source.matchAll(/\bdb\.([a-zA-Z]+)\(/g)].map(m => m[1]))];
+    // Yang dipindai karena itu semua pemakai, bukan hanya satu pintu API.
+    const consumers = ['../api/sync.js', '../lib/persist.mjs', '../lib/refresh-core.mjs'];
+    const used = [...new Set(consumers.flatMap(file => {
+      const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+      return [...source.matchAll(/\bdb\.([a-zA-Z]+)\(/g)].map(match => match[1]);
+    }))];
     assert.ok(used.length >= 8, `daftar metode terlalu pendek: ${used.join(',')}`);
     const db = createDatabase({ env: ENV });
     for (const name of used) {
@@ -210,5 +214,38 @@ describe('baca snapshot', () => {
   test('permintaan yang gagal di jaringan dilaporkan sebagai db_unreachable', async () => {
     const db = createDatabase({ env: ENV, fetchImpl: async () => { throw Object.assign(new Error('boom'), { name: 'TimeoutError' }); } });
     await assert.rejects(() => db.listWorkspaces(), error => error.code === 'db_unreachable' && /TimeoutError/.test(error.message));
+  });
+});
+
+
+describe('kontrak skema db/supabase.sql', () => {
+  const sql = readFileSync(new URL('../db/supabase.sql', import.meta.url), 'utf8');
+  const tables = [...sql.matchAll(/create table if not exists public\.(\w+)/g)].map(match => match[1]);
+  // Yang diuji hanyalah bagian yang benar-benar jalan: skema menyimpan contoh kebijakan
+  // baca untuk peramban sebagai komentar, dan itu belum boleh dihitung sebagai hak.
+  const active = sql.split(/\r?\n/).filter(line => !line.trim().startsWith('--')).join('\n');
+
+  test('setiap tabel yang dibuat dikunci RLS dan dicabut dari anon', () => {
+    assert.ok(tables.length >= 5, `tabel yang dikenal terlalu sedikit: ${tables.join(',')}`);
+    for (const table of tables) {
+      assert.match(sql, new RegExp(`alter table public\.${table} +enable row level security`), `${table} tanpa RLS`);
+      assert.match(sql, new RegExp(`revoke all on public\.${table} +from anon, authenticated`), `${table} masih bisa dibaca publishable key`);
+    }
+  });
+
+  test('tabel kuota dan fungsi pengambil jatah ada serta atomik', () => {
+    assert.ok(tables.includes('sentil_quota'), 'kuota tidak akan tersimpan lintas instance function');
+    assert.match(sql, /primary key \(scope, bucket\)/);
+    assert.match(sql, /create or replace function public\.sentil_take_slot\(/);
+    assert.match(sql, /on conflict \(scope, bucket\) do update/i);
+    assert.match(sql, /where q\.hits < p_limit/i, 'naik hanya selama belum melewati batas');
+    assert.match(sql, /language sql/i, 'satu statement supaya ambil jatah dan baca hasilnya tidak terpisah');
+  });
+
+  test('hanya service_role yang boleh menyentuh skema ini', () => {
+    assert.match(sql, /grant execute on function public\.sentil_take_slot\(text, bigint, integer, integer\) to service_role/);
+    assert.equal(/to anon/.test(active), false, 'tidak ada hak yang diberikan ke peran publik');
+    assert.equal(/to authenticated/.test(active), false);
+    assert.equal(/create policy/.test(active), false, 'jalur baca langsung ke peramban belum waktunya dibuka');
   });
 });

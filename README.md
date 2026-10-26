@@ -63,13 +63,17 @@ Tanpa `.env` aplikasi tetap jalan, hanya saja melaporkan bahwa database belum di
 | `npm run build` | Membangun ke `public/`: `app.js` (esbuild), `styles.css` (Tailwind), salinan `index.html`, dan `assets/`. Hanya isi folder ini yang boleh disajikan publik. |
 | `npm run build:js` / `build:css` | Salah satu tahap build saja. |
 | `npm start` | Build lebih dulu, lalu server statis dari `public/` + meneruskan `/api/sync`; memuat `.env.local` bila ada. |
-| `npm test` | `node --test tests` — 230 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, gerombol label, penamaan kategori, lapisan sinyal, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, database, API, dan server. |
+| `npm test` | `node --test tests` — 276 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, gerombol label, penamaan kategori, lapisan sinyal, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, kuota per pengunjung, penarikan terjadwal, kontrak skema SQL, database, API, dan server. |
 
 ## API
 
-Satu-satunya endpoint adalah `POST /api/sync`. Gerbangnya bukan akun, melainkan penolakan permintaan lintas situs (`sec-fetch-site`, `Origin`, `Host`) — perlindungan CSRF untuk titik tulis yang tidak punya sesi, bukan penjatah kuota. Isi permintaan dibatasi 16 KB dan setiap bidang divalidasi di server.
+Dua endpoint. `POST /api/sync` adalah pintu interaktif; `GET|POST /api/refresh` adalah penarik terjadwal yang bicara dengan sumber publik tanpa ada manusia di balik tab.
 
-Aksi yang dikenal: `discover`, `sync`, `limits`, `limits-reset`, `state`, `dataset`, `workspace-save`, `workspace-delete`. Empat aksi terakhir hanya menyentuh database di sisi server; kunci Supabase tidak pernah dikirim ke peramban dan tidak muncul di respons. Kegagalan tulis dilaporkan apa adanya lewat bidang `stored` pada respons `sync` — hasil penarikan tetap dikembalikan utuh.
+`/api/sync` tidak berakun, jadi gerbangnya berlapis: penolakan permintaan lintas situs (`sec-fetch-site`, `Origin`, `Host`) — perlindungan CSRF untuk titik tulis yang tidak punya sesi — lalu **kuota per pengunjung** untuk dua aksi mahal (`sync`, `discover`): 6 penarikan per 10 menit dan 40 per hari, plus 20 penemuan per menit dan 400 per hari. Hitungannya diambil di Postgres (`sentil_take_slot`, satu statement `insert … on conflict … where hits < batas`) supaya lintas instance serverless tetap satu penghitung; kalau migrasi belum dipasang, hitungan hidup di memori instance dan gerbangnya tidak pernah menolak hanya karena kuotanya gagal dibaca. Kunci pengunjung adalah hash SHA-256 dari alamat IP (bisa digarami dengan `QUOTA_KEY_SALT`), jadi tabel kuota bukan log alamat. Pelanggaran dibalas **429 + `Retry-After`**, dan karena kuota baru diambil setelah isi permintaan sah, permintaan cacat tidak menghabiskan jatah. Aksi baca (`state`, `dataset`, `compare`, `limits`) tidak dikenai kuota: murah, dan memblokirnya justru membuat dasbor tidak bisa dibaca.
+
+`/api/refresh` ditarik oleh Vercel Cron (lihat **Deploy**). Tanpa `CRON_SECRET` di environment, fungsi menjawab **501** dan tidak ada sumber yang disentuh — ia gagal tertutup, bukan terbuka. Dengan kunci, Vercel mengirim `Authorization: Bearer` dan fungsi menyegarkan workspace yang umurnya lewat `REFRESH_STALE_HOURS` (bawaan 6 jam), paling tua lebih dulu, selama sisa anggaran fungsi masih muat; yang tidak muat dilaporkan `deferred`, bukan dipotong di tengah jalan. Project tanpa satu pun kanal aktif `skipped`, penarikan yang gagal tetap memakai snapshot sebelumnya (`failed`), dan tulis yang ditolak database dilaporkan `not_stored` beserta alasannya.
+
+Isi permintaan `/api/sync` dibatasi 16 KB dan setiap bidang divalidasi di server. Aksi yang dikenal: `discover`, `sync`, `limits`, `limits-reset`, `state`, `dataset`, `compare`, `workspace-save`, `workspace-delete`. Aksi yang menyentuh database hanya melakukannya di sisi server; kunci Supabase tidak pernah dikirim ke peramban dan tidak muncul di respons. Kegagalan tulis dilaporkan apa adanya lewat bidang `stored` pada respons `sync` — hasil penarikan tetap dikembalikan utuh.
 
 ```jsonc
 // penemuan identitas
@@ -241,7 +245,8 @@ Menu **Platform** (dan satu badge di kepala workspace bila ada jalur yang terpot
 ## Struktur
 
 ```
-api/sync.js              function Vercel, satu pintu API
+api/sync.js              function Vercel, satu pintu interaktif (CSRF + kuota per pengunjung)
+api/refresh.js           function Vercel Cron, penarikan terjadwal dengan kunci bearer
 lib/channels.mjs         katalog kanal (label + kelompok), aman dibundel ke klien
 lib/corpus-engine.mjs    normalisasi, stopword, bobot, topik dari teks toko, agregat
 lib/pain-points.mjs      frasa keluhan 2–4 token dari klaster negatif + pengelompokan jangkar
@@ -255,7 +260,10 @@ lib/reddit.mjs           utas lewat OAuth2 aplikasi Reddit
 lib/apify.mjs            Facebook/Instagram/TikTok/X lewat actor Apify + sambung run
 lib/name-match.mjs       tokenisasi + penyaring kandidat berdasar kecocokan nama
 lib/limit-monitor.mjs    klasifikasi sinyal batas sumber + status kanal untuk panel
-lib/db.mjs               akses PostgREST: tulis bertahap, penanda revisi, baca berhalaman
+lib/db.mjs               akses PostgREST: tulis bertahap, penanda revisi, baca berhalaman, pemanggilan fungsi simpanan
+lib/persist.mjs          jalur simpan hasil penarikan, dipakai pintu API dan penarik terjadwal
+lib/rate-limit.mjs       kuota per pengunjung dua jendela (pendek + harian), memori sebagai cadangan
+lib/refresh-core.mjs     pemilihan workspace tua, urutan, dan sisa anggaran penarikan terjadwal
 lib/sync-core.mjs        registry kanal, cache 1 jam, anggaran waktu, ringkasan
 db/supabase.sql          skema tabel sentil_* + RLS + pencabutan hak anon
 server.mjs               server statis lokal + penerusan /api/sync
@@ -266,11 +274,15 @@ tests/                   node:test untuk mesin, kolektor, kanal, sinkronisasi, d
 
 ## Deploy ke Vercel
 
-Mode tanpa kredensial berjalan apa adanya: `play`, `appstore`, dan `news` tidak memerlukan environment variable apa pun. Kanal lainnya aktif sendiri begitu variabelnya dipasang di Project Settings → Environment Variables (lihat tabel **Kanal**); tanpa itu kanal melaporkan `needs_setup`, bukan data kosong. `vercel.json` memasang header keamanan dan CSP `self` (font dilayani dari `assets/fonts/`, tanpa aset eksternal). Function `api/sync.js` memakai `maxDuration: 300` dengan anggaran internal Play 30 detik, App Store 24 detik, YouTube 26 detik, Reddit 20 detik, berita 18 detik, dan Apify 40 detik.
+Mode tanpa kredensial berjalan apa adanya: `play`, `appstore`, dan `news` tidak memerlukan environment variable apa pun. Kanal lainnya aktif sendiri begitu variabelnya dipasang di Project Settings → Environment Variables (lihat tabel **Kanal**); tanpa itu kanal melaporkan `needs_setup`, bukan data kosong. `vercel.json` memasang header keamanan (`X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`, `Permissions-Policy`, CSP `self`) dan satu cron. Function `api/sync.js` dan `api/refresh.js` memakai `maxDuration: 300` dengan anggaran internal per kanal: Play 180 detik, App Store 150, Apify 150, YouTube 90, Reddit 60, berita 45. Kanal berjalan paralel (`Promise.allSettled`), jadi angka itu batas tiap kanal, bukan jumlah waktu penarikan.
 
-Penyimpanan memakai dua variabel saja: `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY`. Keduanya hanya dibaca fungsi server — tidak ada kunci yang masuk ke bundel, dan CSP tetap `connect-src 'self'` karena peramban tidak pernah terhubung langsung ke Supabase. Langkah pasang: (1) jalankan `db/supabase.sql` di Supabase Studio → SQL Editor; (2) `vercel env add SUPABASE_URL` lalu `vercel env add SUPABASE_SERVICE_ROLE_KEY`; (3) deploy ulang. Tanpa keduanya, aplikasi menampilkan peringatan bahwa database belum terpasang alih-alih berpura-pura menyimpan.
+Penarikan terjadwal perlu dua hal: `crons` di `vercel.json` (saat ini `0 3,9,15,21 * * *`) dan **`CRON_SECRET`** di environment. Tanpa kunci itu `/api/refresh` menjawab 501 dan cron tidak menyentuh sumber mana pun. Setelah dipasang, setiap 6 jam server menyegarkan workspace yang datanya lebih tua dari `REFRESH_STALE_HOURS` (bawaan 6) — paling tua lebih dulu, selama `REFRESH_BUDGET_MS` (bawaan 270.000) masih menyisakan `REFRESH_MIN_ROOM_MS` (bawaan 150.000) untuk satu penarikan penuh. Uji manual: `curl -H "authorization: Bearer <CRON_SECRET>" https://<domain>/api/refresh`, atau per project dengan `?workspace=<id>`. Sisi peramban ikut menyesuaikan: daftar project dibaca ulang tiap 75 detik dan setiap kali tab kembali terlihat, dan dataset hanya dimuat ulang kalau cap waktu snapshot di server benar-benar bergeser — jadi "realtime" di sini berarti *snapshot server + halaman yang bertanya ulang*, bukan saluran yang push.
 
-Run actor Apify bersifat asinkron dan bisa melewati anggaran 40 detik. Dalam keadaan itu kolektor mengembalikan status `partial` beserta ID run-nya; ID itu ditahan di memori instance hangat dan penarikan berikutnya **menyambungkan** run yang sama, bukan memulai run baru yang menagih biaya lagi. Reset kanal juga melepas run yang tertahan.
+Kanal berbayar (Apify: Facebook, Instagram, TikTok, X) butuh **dua** variabel: `APIFY_API_TOKEN` dan `APIFY_ALLOWED=true`. Token saja tidak pernah memicu run actor; kanalnya melaporkan `consent_required`, keadaan yang sengaja dibedakan dari `needs_setup` karena pesannya berbeda bagi yang memasang. Setiap input actor membawa batas hasil eksplisit.
+
+Penyimpanan memakai dua variabel saja: `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY`. Keduanya hanya dibaca fungsi server — tidak ada kunci yang masuk ke bundel, dan CSP tetap `connect-src 'self'` karena peramban tidak pernah terhubung langsung ke Supabase. Langkah pasang: (1) jalankan `db/supabase.sql` di Supabase Studio → SQL Editor; (2) `vercel env add SUPABASE_URL` lalu `vercel env add SUPABASE_SERVICE_ROLE_KEY`; (3) deploy ulang. Tanpa keduanya, aplikasi menampilkan peringatan bahwa database belum terpasang alih-alih berpura-pura menyimpan. Berkas skema yang sama juga membuat `sentil_quota` dan fungsi `sentil_take_slot`; menjalankan ulang skema yang sudah diperbarui dibutuhkan agar kuota dihitung lintas instance — tanpa itu kuota tetap jalan, hanya di memori satu instance.
+
+Run actor Apify bersifat asinkron dan bisa melewati anggaran per kanal. Dalam keadaan itu kolektor mengembalikan status `partial` beserta ID run-nya; ID itu ditahan di memori instance hangat dan penarikan berikutnya **menyambungkan** run yang sama, bukan memulai run baru yang menagih biaya lagi. Reset kanal juga melepas run yang tertahan.
 
 Cache satu jam bersifat *per instance* function: setelah instance baru, penarikan pertama kembali penuh. Ini disengaja — tidak ada penyimpanan bersama yang perlu kredensial.
 

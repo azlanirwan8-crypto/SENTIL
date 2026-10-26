@@ -26,6 +26,11 @@ import {
   saveWorkspace,
 } from './lib/storage.js';
 
+// Seberapa sering halaman menanyakan daftar project ke server. Aksi state murah (satu
+// query daftar), dan di bawah ini yang dibayar per project hanyalah pembacaan dataset
+// ketika capnya benar-benar bergeser.
+const STATE_POLL_MS = 75_000;
+
 function snapshotOf(data) {
   const summary = data.summary || {};
   return {
@@ -136,6 +141,40 @@ export default function App() {
     };
   }, [applyActive, applyDataset, applyWorkspaces]);
 
+  // Penarikan terjadwal di server (cron /api/refresh) bisa menghasilkan snapshot baru tanpa
+  // ada yang menekan tombol, jadi halaman ini bertanya ulang: berkala, dan segera ketika tab
+  // kembali terlihat. Yang dibandingkan hanyalah cap waktu snapshot — selama server belum
+  // punya snapshot yang lebih baru, tidak ada permintaan besar yang dikirim.
+  useEffect(() => {
+    let cancelled = false;
+    async function checkServer() {
+      if (cancelled || syncingRef.current || (typeof document !== 'undefined' && document.hidden)) return;
+      const state = await loadState();
+      if (cancelled || state.unreachable) return;
+      setDbStatus(state.db);
+      applyWorkspaces(state.workspaces);
+      const id = activeIdRef.current;
+      if (!id) return;
+      const remote = state.workspaces.find(workspace => workspace.id === id)?.snapshot?.fetchedAt || null;
+      const local = datasetRef.current?.fetchedAt || null;
+      if (!remote || remote === local) return;
+      const loaded = await loadDataset(id);
+      if (cancelled || activeIdRef.current !== id) return;
+      if (loaded.db) setDbStatus(loaded.db);
+      applyDataset(loaded.dataset);
+      setDatasetError(loaded.error);
+      pushToast('A newer snapshot was pulled on the server and is now on screen.', 'info', 'Data refreshed');
+    }
+    const timer = setInterval(checkServer, STATE_POLL_MS);
+    const onVisible = () => { if (!document.hidden) checkServer(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [applyDataset, applyWorkspaces, pushToast]);
+
   const runSync = useCallback(async (workspace, { force = false } = {}) => {
     if (!workspace || syncingRef.current) return;
     const playAppId = workspace.stores?.play?.appId || null;
@@ -147,7 +186,7 @@ export default function App() {
       return;
     }
     syncingRef.current = true;
-    setSyncing({ workspaceId: workspace.id, force });
+    setSyncing({ workspaceId: workspace.id, force, startedAt: Date.now() });
     setSyncError(null);
     try {
       const data = await syncWorkspace({ workspace, entity: workspace.entity, playAppId, appleAppId, social, force });
@@ -396,7 +435,7 @@ export default function App() {
               />
             </div>
           )}
-          {activeWorkspace && <WorkspaceHeader workspace={activeWorkspace} dataset={dataset} view={view} onView={setView} syncing={activeSyncing} />}
+          {activeWorkspace && <WorkspaceHeader workspace={activeWorkspace} dataset={dataset} view={view} onView={setView} syncing={activeSyncing} syncStartedAt={syncing?.startedAt || null} />}
           {notices.length > 0 && <div className="pb-3">{notices}</div>}
           {activeWorkspace && (
             <div id={`panel-${view}`} tabIndex={-1} className="min-w-0 outline-none">

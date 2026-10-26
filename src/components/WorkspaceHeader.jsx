@@ -1,10 +1,16 @@
 import { formatNumber, relativeTime } from '../lib/format.js';
+import { useNow } from '../lib/useNow.js';
 import { MobileNav } from './Sidebar.jsx';
 import { IconAlert, IconClock } from './icons.jsx';
 
-export function WorkspaceHeader({ workspace, dataset, view, onView, syncing }) {
+export function WorkspaceHeader({ workspace, dataset, view, onView, syncing, syncStartedAt = null }) {
   const snapshot = dataset?.summary || null;
   const fetchedAt = dataset?.fetchedAt || null;
+  // Jam berdenyut: "5 minutes ago" harus benar-benar menjadi "6 minutes ago" walaupun
+  // tidak ada render lain yang lewat, dan penarikan yang sedang berjalan perlu menunjukkan
+  // bahwa ia hidup, bukan sekadar label berkedip.
+  const now = useNow(20000);
+  const elapsed = syncing && syncStartedAt ? Math.max(0, Math.round((now - syncStartedAt) / 1000)) : null;
 
   return (
     <div className="mb-3">
@@ -29,18 +35,22 @@ export function WorkspaceHeader({ workspace, dataset, view, onView, syncing }) {
             </button>
           )}
           {syncing && (
-            <span className="inline-flex items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-1.5 py-0.5 font-semibold text-accent">
-              <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-accent" />
-              refreshing
+            <span
+              className="inline-flex items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-1.5 py-0.5 font-semibold text-accent"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-accent" aria-hidden="true" />
+              {elapsed === null ? 'refreshing' : `refreshing · ${elapsed}s`}
             </span>
           )}
           <span className="num">
             {snapshot ? `${formatNumber(snapshot.reviews)} reviews · ${formatNumber(snapshot.analyzed)} classified` : 'no snapshot yet'}
           </span>
           {fetchedAt && (
-            <span className="inline-flex items-center gap-1 text-slate-400">
+            <span className="inline-flex items-center gap-1 text-slate-400" title={`Snapshot pulled at ${new Date(fetchedAt).toISOString()}`}>
               <IconClock size={11} />
-              {relativeTime(fetchedAt)}
+              as of {relativeTime(fetchedAt, now)}
             </span>
           )}
         </div>

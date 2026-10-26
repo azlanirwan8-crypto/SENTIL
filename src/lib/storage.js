@@ -71,11 +71,12 @@ export async function loadState() {
       return {
         workspaces: [],
         db: null,
+        unreachable: true,
         errorTitle: 'This page and the server behind it are different versions',
         error: 'The page asked the server for the workspace list and the server did not recognise that request. Reload this page first — an open tab keeps the version it was loaded with. If it still appears after reloading, restart the local server (npm start) or redeploy. Nothing was changed and nothing was deleted.',
       };
     }
-    return { workspaces: [], db: null, error: cause?.message || 'The analysis server could not be reached.' };
+    return { workspaces: [], db: null, error: cause?.message || 'The analysis server could not be reached.', unreachable: true };
   }
 }
 

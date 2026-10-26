@@ -4,6 +4,7 @@ import { IconCheck, IconRefresh } from './icons.jsx';
 import { Notice } from './Notices.jsx';
 import { fetchComparison } from '../lib/api.js';
 import { formatNumber, formatNss, relativeTime } from '../lib/format.js';
+import { useNow } from '../lib/useNow.js';
 
 const MAX_COLUMNS = 12;
 
@@ -86,6 +87,7 @@ function SelectionBar({ workspaces, selected, onToggle, onAll, onRun, busy }) {
 
 function MatrixTable({ result }) {
   const columns = result.projects;
+  const now = useNow(60000);
   return (
     <Panel title="Metric matrix" meta={`reference = median of ${result.reference.projects} columns`} className="xl:col-span-12">
       <div className="overflow-x-auto">
@@ -96,7 +98,7 @@ function MatrixTable({ result }) {
               {columns.map(column => (
                 <th key={column.id} scope="col" className="py-1.5 pl-3 align-bottom">
                   <p className="truncate text-[11px] font-bold text-slate-200">{column.label}</p>
-                  <p className="num text-[10px] text-slate-500">{column.hasData ? `${formatNumber(column.metrics.volume)} · ${relativeTime(column.fetchedAt)}` : 'no snapshot'}</p>
+                  <p className="num text-[10px] text-slate-500">{column.hasData ? `${formatNumber(column.metrics.volume)} · as of ${relativeTime(column.fetchedAt, now)}` : 'no snapshot'}</p>
                 </th>
               ))}
             </tr>
