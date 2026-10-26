@@ -10,6 +10,7 @@ import {
   toNumber,
 } from '../lib/format.js';
 import { EmptyState } from './EmptyState.jsx';
+import { Signal } from './Signals.jsx';
 import { Notice } from './Notices.jsx';
 import { StoreMark } from './Brand.jsx';
 import { IconDownload, IconExternal, IconInfo } from './icons.jsx';
@@ -22,6 +23,15 @@ const SERIES_LABELS_ID = {
   neutral: 'Netral',
   negative: 'Negatif',
   unclassified: 'Tak terklas.',
+};
+
+// Aturan penerbitan sinyal dikirim model sebagai teks; peta ini hanya memberi judul Indonesianya.
+const RULE_LABELS = {
+  emission: 'Penerbitan',
+  numbers: 'Angka',
+  ranking: 'Urutan',
+  silence: 'Bagian yang kosong',
+  maxSignals: 'Anggaran tampil',
 };
 
 function formatBytes(bytes) {
@@ -225,6 +235,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const pain = model.painPoints || {};
   const painLabels = Array.isArray(pain.labels) && pain.labelRules ? pain.labels : [];
   const labelMetrics = pain.labelMetrics || {};
+  const signals = model.signals || null;
+  const signalItems = Array.isArray(signals?.items) ? signals.items : [];
   const terms = model.terms || {};
   const coverage = model.coverage || {};
   const channels = Array.isArray(dataset.channels) ? dataset.channels : [];
@@ -259,7 +271,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           </div>
           {exportButton}
         </header>
-        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-5 xl:divide-x divide-slate-800/70">
+        <div className="grid gap-0 sm:grid-cols-2 xl:grid-cols-6 xl:divide-x divide-slate-800/70">
           <Step
             index="01"
             title="Normalisasi regex"
@@ -290,8 +302,57 @@ export function ModelView({ dataset, workspace, db, onExport }) {
             detail="Frasa 2–4 token yang benar-benar ditulis reviewers digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan. Namanya diambil dari kata jangkar yang dijagokan lebih dari satu anggota, dan arah dihitung dari rentang tanggal yang teramati."
             metric={`${formatNumber(labelMetrics.clusters || 0)} gerombol · ${formatNumber(labelMetrics.namedFromTerm || 0)} nama dari jangkar · ${formatNumber(labelMetrics.trimmedLabels || 0)} terpangkas`}
           />
+          <Step
+            index="06"
+            title="Tulis sinyal dari hasil ukur"
+            detail="Tiap baris analisis ditulis mesin dari dua proporsi yang dibandingkan: kalau selisihnya tidak lebih besar daripada simpangan baku selisih itu, barisnya tidak ada. Tidak ada kalimat yang dirangkai manusia atau model bahasa."
+            metric={signals
+              ? `${formatNumber(signals.metrics?.reported || 0)} dari ${formatNumber(signals.metrics?.candidates || 0)} kandidat lolos uji`
+              : 'lapisan sinyal belum ada di snapshot ini'}
+          />
         </div>
       </section>
+
+      <Panel
+        title="Sinyal analis"
+        meta={signals
+          ? `${formatNumber(signals.metrics?.reported || 0)} tampil · ${formatNumber(signals.metrics?.candidates || 0)} kandidat · ${signals.status === 'ready' ? 'label tersedia' : 'belum ada label'}`
+          : 'belum ada di snapshot ini'}
+        action={<span className="hidden text-[10px] text-slate-400 sm:inline">kalimatnya data: ditulis mesin, angka-angkanya ikut terkirim</span>}
+      >
+        {signalItems.length ? (
+          <>
+            <ul className="grid items-start gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {signalItems.map(item => <Signal key={item.id} item={item} />)}
+            </ul>
+            <dl className="mt-3 grid gap-x-4 gap-y-2 border-t border-slate-800/70 pt-2.5 sm:grid-cols-2">
+              {Object.entries(signals.rules || {}).map(([key, value]) => (
+                <div key={key}>
+                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{RULE_LABELS[key] || key}</dt>
+                  <dd className="mt-0.5 text-[10px] leading-relaxed text-slate-400">{typeof value === 'number' ? formatNumber(value) : String(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+              Teks sinyal memakai bahasa Inggris karena ia bagian dari data yang dihitung di server, sama seperti
+              nama kanal dan frasa reviewers. {signals.metrics.trimmed
+                ? `${formatNumber(signals.metrics.trimmed)} kandidat di luar anggaran tampil tetap dihitung di angka kandidat.`
+                : 'Tidak ada kandidat yang dipangkas.'}{' '}
+              Basis hitungan: {formatNumber(signals.basis?.reviews || 0)} ulasan, pool keluhan {formatNumber(signals.basis?.negativePool || 0)}, pool pujian {formatNumber(signals.basis?.positivePool || 0)}
+              {signals.basis?.trend ? `, rentang arah ${signals.basis.trend.firstDay} sampai ${signals.basis.trend.lastDay}` : ''}.
+            </p>
+          </>
+        ) : (
+          <EmptyState
+            compact
+            icon={IconInfo}
+            title={signals ? 'Belum ada pembacaan yang lolos uji' : 'Snapshot ini dibuat sebelum lapisan sinyal'}
+            body={signals
+              ? `Korpus menghasilkan ${formatNumber(signals.basis?.labels || 0)} label, tetapi tidak satu pun selisih proporsi yang bisa dibedakan dari kebetulan. Panel kosong di sini adalah hasilnya, bukan kegagalannya.`
+              : `Model tersimpan oleh ${model.version || 'versi lama'}, yang belum menulis lapisan sinyal. Tarik ulang project ini untuk membuatnya dari angka yang sama.`}
+          />
+        )}
+      </Panel>
 
       <div className="grid gap-3 xl:grid-cols-12">
         <Panel title="Batas label" meta={`${formatNumber(coverage.analyzed)} dianalisis`} className="xl:col-span-7">
@@ -395,8 +456,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
       >
         {painLabels.length ? (
           <div className="scroll-x">
-            <table className="w-full min-w-[760px] border-collapse text-left">
-              <caption className="sr-only">Gerombol label keluhan: nama yang dipilih mesin dari kata jangkar anggota, frasa bukti, jumlah frasa anggota, jumlah mention, jumlah ulasan berbeda, porsi dari pool 1–2 bintang, pujian 4–5 bintang yang menyebut frasa yang sama, dan arah laju harian paruh kedua terhadap paruh pertama</caption>
+            <table className="w-full min-w-[820px] border-collapse text-left">
+              <caption className="sr-only">Gerombol label keluhan: nama yang dipilih mesin dari kata jangkar anggota, frasa bukti, jumlah frasa anggota, jumlah mention, jumlah ulasan berbeda, porsi dari pool 1–2 bintang, pujian 4–5 bintang yang menyebut frasa yang sama, arah laju harian paruh kedua terhadap paruh pertama, dan kanal yang paling banyak memuat label itu</caption>
               <thead>
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <th scope="col" className="pb-1.5 pr-2 font-bold">#</th>
@@ -406,7 +467,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Ulasan beda</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Porsi</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Pujian</th>
-                  <th scope="col" className="pb-1.5 text-right font-bold">Arah</th>
+                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Arah</th>
+                  <th scope="col" className="pb-1.5 text-right font-bold">Kanal</th>
                 </tr>
               </thead>
               <tbody>
@@ -425,9 +487,18 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                     <td className="num py-1.5 pr-2 text-right text-[11px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatPercent(entry.reviewCount, pain.pools?.negative || 0)}</td>
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{entry.praiseCount == null ? 'N/A' : formatNumber(entry.praiseCount)}</td>
-                    <td className="num py-1.5 text-right text-[10px] text-slate-300">
+                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-300">
                       {Number.isFinite(entry.momentum)
                         ? <span title={`${formatNumber(entry.late)} ulasan di paruh kedua vs ${formatNumber(entry.early)} di paruh pertama`}>{entry.momentum.toFixed(2)}×/hari</span>
+                        : 'N/A'}
+                    </td>
+                    <td className="num py-1.5 text-right text-[10px] text-slate-300">
+                      {entry.channels?.length
+                        ? (
+                          <span title={`${formatNumber(entry.channels[0].count)} dari ${formatNumber(entry.channels[0].pool)} keluhan ${platformLabel(entry.channels[0].id)}`}>
+                            {platformLabel(entry.channels[0].id)} {formatPercent(entry.channels[0].count, entry.channels[0].pool)}
+                          </span>
+                        )
                         : 'N/A'}
                     </td>
                   </tr>
@@ -443,7 +514,9 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                 : 'Seluruh gerombol muat di anggaran tampil. '}
               {formatNumber(labelMetrics.namedFromTerm || 0)} dari {formatNumber(painLabels.length)} nama label adalah kata jangkar yang dijagokan lebih dari satu anggotanya; sisanya memakai frasa utuh apa adanya.{' '}
               {pain.labelRules?.link || 'Dua frasa digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan.'}{' '}
-              Arah dihitung dari {pain.labelMetrics?.trend ? `rentang ${pain.labelMetrics.trend.firstDay} sampai ${pain.labelMetrics.trend.lastDay}` : 'rentang tanggal yang tidak tersedia'}.
+              {pain.labelRules?.closure || 'Gabungan diterima hanya kalau seluruh silangan anggotanya lolos uji, jadi gerombol tidak menyatu karena rantai.'}{' '}
+              Arah dihitung dari {pain.labelMetrics?.trend ? `rentang ${pain.labelMetrics.trend.firstDay} sampai ${pain.labelMetrics.trend.lastDay}` : 'rentang tanggal yang tidak tersedia'}.{' '}
+              Kolom <span className="font-semibold text-slate-300">Kanal</span> adalah kanal yang paling banyak memuat label itu, dibaca sebagai porsi keluhan kanal tersebut.
             </p>
           </div>
         ) : (

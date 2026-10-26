@@ -318,7 +318,7 @@ describe('lapisan frasa di dalam model korpus', () => {
     assert.equal(pain.labelMetrics.clusters >= pain.labelMetrics.reportedLabels, true);
     assert.equal(pain.labelMetrics.reportedLabels, pain.labels.length, 'pemangkasan harus dilaporkan, bukan diam-diam');
     assert.ok(pain.labelMetrics.namedFromTerm <= pain.labels.length);
-    assert.deepEqual(Object.keys(pain.labelRules).sort(), ['link', 'maxLabels', 'naming', 'sharedReviews', 'support', 'trend']);
+    assert.deepEqual(Object.keys(pain.labelRules).sort(), ['closure', 'link', 'maxLabels', 'naming', 'sharedReviews', 'support', 'trend']);
     assert.equal(pain.labelMetrics.trend.firstDay, '2026-01-05');
   });
 

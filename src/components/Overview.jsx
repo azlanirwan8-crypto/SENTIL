@@ -4,6 +4,7 @@ import { scopeDataset } from '../lib/scope.js';
 import { KpiRow } from './KpiRow.jsx';
 import { ChannelStrip } from './ChannelStrip.jsx';
 import { PainLabels } from './PainLabels.jsx';
+import { Signals } from './Signals.jsx';
 import { DailyTrend } from './charts/DailyTrend.jsx';
 import { ChannelDonut } from './charts/ChannelDonut.jsx';
 import { TopicMap } from './charts/TopicMap.jsx';
@@ -97,6 +98,9 @@ export function Overview({ dataset, workspace }) {
           <KpiRow dataset={view} />
 
           <div className="grid gap-3 xl:grid-cols-12">
+            <div className="min-w-0 xl:col-span-12">
+              <Signals signals={dataset.model?.signals} filtered={scoped.filtered} />
+            </div>
             <div className="min-w-0 xl:col-span-8">
               <DailyTrend daily={scoped.model.daily} />
             </div>

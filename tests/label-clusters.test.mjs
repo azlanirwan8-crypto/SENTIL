@@ -19,7 +19,7 @@ function item(text, dfNegative, extra = {}) {
   };
 }
 
-function build(negativeHits, positiveHits = new Map(), items = null, total = TOTAL, days = new Map()) {
+function build(negativeHits, positiveHits = new Map(), items = null, total = TOTAL, days = new Map(), extra = {}) {
   const list = items || [...negativeHits.keys()].map(text => item(text, negativeHits.get(text).size));
   return clusterPainPhrases({
     items: list,
@@ -28,6 +28,7 @@ function build(negativeHits, positiveHits = new Map(), items = null, total = TOT
     negativeCount: total,
     positiveCount: 20,
     days,
+    ...extra,
   });
 }
 
@@ -72,10 +73,12 @@ describe('gerombol frasa menjadi label', () => {
     assert.equal(result.labels[0].phraseCount, 3);
   });
 
-  test('ikatan bersifat menular antar frasa', () => {
+  test('tiga frasa yang saling terhubung penuh jadi satu gerombol', () => {
     const hits = new Map([['a b', range(0, 19)], ['c d', range(0, 19)], ['e f', range(0, 19)]]);
     const result = build(hits);
     assert.equal(result.metrics.clusters, 1);
+    assert.equal(result.metrics.links, 3, 'tiga pasangan lolos uji');
+    assert.equal(result.metrics.merges, 2, 'dua gabungan membentuk satu gerombol');
     assert.equal(result.labels[0].phraseCount, 3);
   });
 
@@ -110,6 +113,28 @@ describe('gerombol frasa menjadi label', () => {
     assert.equal(result.labels[0].phraseCount, 8);
     assert.equal(result.labels[0].phrases.length, 8, 'union tidak bisa diverifikasi pembaca kalau anggotanya dipotong');
     assert.equal(result.labels[0].reviewCount, 4);
+  });
+
+  test('rantai ditolak: dua gerombol tidak menyatu lewat satu penghubung', () => {
+    // 'ads banyak' (ulasan 0-9) dan 'bank lain' (20-29) tidak pernah muncul bersama. Keduanya
+    // terhubung kuat ke 'tidak bisa' yang hidup di kedua kelompok — inilah bentuk rantai yang
+    // membuat satu label raksasa. Complete-linkage menolak gabungan keduanya.
+    const hits = new Map([
+      ['ads banyak', range(0, 9)],
+      ['tidak bisa', new Set([...range(0, 9), ...range(20, 29)])],
+      ['bank lain', range(20, 29)],
+    ]);
+    const items = [
+      item('ads banyak', 10, { anchor: 'ads' }),
+      item('tidak bisa', 20, { anchor: 'bisa' }),
+      item('bank lain', 10, { anchor: 'bank' }),
+    ];
+    const result = build(hits, new Map(), items);
+    assert.equal(result.metrics.links, 2, 'dua pasangan lolos uji ko-occurrence');
+    assert.equal(result.metrics.merges, 1, 'satu gabungan diterima');
+    assert.equal(result.metrics.rejectedMerges, 1, 'gabungan rantai ditolak');
+    assert.equal(result.metrics.clusters, 2);
+    assert.deepEqual(result.labels.map(label => label.reviewCount).sort((a, b) => b - a), [20, 10]);
   });
 
   test('pemangkasan dilaporkan, tidak hilang diam-diam', () => {
@@ -178,12 +203,53 @@ describe('gerombol frasa menjadi label', () => {
     assert.equal(new Set(result.labels.map(label => label.name)).size, 2);
   });
 
+  test('istilah yang dipakai banyak gerombol tidak dijadikan nama', () => {
+    // 'iklan' dan 'tidak' sama-sama dijagokan dua frasa di gerombol ini. 'tidak' juga jadi
+    // jangkar gerombol lain, jadi ia tidak membedakan apa pun — yang dipakai adalah 'iklan'.
+    const shared = range(0, 19);
+    const hits = new Map([
+      ['iklan maksa muncul', shared],
+      ['iklan muncul terus', shared],
+      ['tidak bisa tutup', shared],
+      ['tidak bisa masuk', shared],
+      ['tidak jelas sekali', range(20, 39)],
+      ['tidak ada bunyi', range(20, 39)],
+    ]);
+    const items = [
+      item('iklan maksa muncul', 20, { anchor: 'iklan', weight: 30 }),
+      item('iklan muncul terus', 20, { anchor: 'iklan', weight: 28 }),
+      item('tidak bisa tutup', 20, { anchor: 'tidak', weight: 40 }),
+      item('tidak bisa masuk', 20, { anchor: 'tidak', weight: 38 }),
+      item('tidak jelas sekali', 20, { anchor: 'tidak', weight: 20 }),
+      item('tidak ada bunyi', 20, { anchor: 'tidak', weight: 18 }),
+    ];
+    const result = build(hits, new Map(), items);
+    assert.equal(result.metrics.clusters, 2);
+    const ad = result.labels.find(label => label.phrases.some(entry => entry.text === 'iklan maksa muncul'));
+    assert.equal(ad.name, 'iklan', 'istilah yang hanya hidup di gerombol ini yang menang');
+    assert.equal(ad.nameSource, 'term');
+    const other = result.labels.find(label => label.id !== ad.id);
+    assert.ok(other.name !== 'iklan');
+
+    // Tanpa pesaing yang lebih identifying, 'tidak' tetap sah jadi nama gerombolnya sendiri.
+    const alone = build(new Map([['tidak jelas sekali', range(0, 19)], ['tidak ada bunyi', range(0, 19)]]), new Map(), [items[4], items[5]]);
+    assert.equal(alone.labels[0].name, 'tidak');
+    assert.equal(alone.labels[0].nameSource, 'term');
+  });
+
   test('arah label dihitung dari rentang tanggal yang teramati', () => {
     const hits = new Map([['a b', range(0, 3)], ['c d', range(0, 3)]]);
     const days = new Map([[0, '2026-01-01'], [1, '2026-01-01'], [2, '2026-01-03'], [3, '2026-01-03']]);
-    const result = build(hits, new Map(), null, TOTAL, days);
+    const result = build(hits, new Map(), null, TOTAL, days, { negativeIndexes: [...range(0, TOTAL - 1)] });
     const label = result.labels[0];
-    assert.deepEqual(result.metrics.trend, { firstDay: '2026-01-01', lastDay: '2026-01-03', datedReviews: 4 });
+    assert.deepEqual(result.metrics.trend, {
+      firstDay: '2026-01-01',
+      lastDay: '2026-01-03',
+      datedReviews: 4,
+      earlyNegative: 2,
+      lateNegative: 2,
+      undatedNegative: 36,
+    });
     assert.equal(label.early, 2, 'dua ulasan sebelum tengah rentang');
     assert.equal(label.late, 2, 'dua ulasan sesudahnya');
     assert.equal(label.undated, 0);
@@ -193,5 +259,34 @@ describe('gerombol frasa menjadi label', () => {
     const blind = build(hits);
     assert.equal(blind.labels[0].momentum, null, 'tanpa tanggal, arah tidak dikarang');
     assert.equal(blind.labels[0].undated, null);
+  });
+
+  test('setiap label membawa rincian kanal dan pool kanal aslinya', () => {
+    const hits = new Map([['a b', range(0, 24)], ['c d', range(0, 24)]]);
+    const items = [item('a b', 25, { anchor: 'a' }), item('c d', 25, { anchor: 'a' })];
+    // play menyumbang 20 dari 25 ulasan label ini dan memegang 20 dari 40 keluhan korpus.
+    const channelOf = new Map();
+    for (const index of range(0, TOTAL - 1)) channelOf.set(index, index < 20 ? 'play' : 'reddit');
+    const result = build(hits, new Map(), items, TOTAL, new Map(), {
+      negativeIndexes: [...range(0, TOTAL - 1)],
+      channelOf,
+    });
+    const label = result.labels[0];
+    assert.equal(label.reviewCount, 25);
+    assert.deepEqual(label.channels, [
+      { id: 'play', count: 20, pool: 20 },
+      { id: 'reddit', count: 5, pool: 20 },
+    ]);
+  });
+
+  test('kanal tanpa ulasan tidak dikirim sebagai nol', () => {
+    const hits = new Map([['a b', range(0, 4)]]);
+    const channelOf = new Map();
+    for (const index of range(0, TOTAL - 1)) channelOf.set(index, 'play');
+    const result = build(hits, new Map(), null, TOTAL, new Map(), {
+      negativeIndexes: [...range(0, TOTAL - 1)],
+      channelOf,
+    });
+    assert.deepEqual(result.labels[0].channels, [{ id: 'play', count: 5, pool: 40 }]);
   });
 });
