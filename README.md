@@ -63,7 +63,7 @@ Tanpa `.env` aplikasi tetap jalan, hanya saja melaporkan bahwa database belum di
 | `npm run build` | Membangun ke `public/`: `app.js` (esbuild), `styles.css` (Tailwind), salinan `index.html`, dan `assets/`. Hanya isi folder ini yang boleh disajikan publik. |
 | `npm run build:js` / `build:css` | Salah satu tahap build saja. |
 | `npm start` | Build lebih dulu, lalu server statis dari `public/` + meneruskan `/api/sync`; memuat `.env.local` bila ada. |
-| `npm test` | `node --test tests` — 182 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, database, API, dan server. |
+| `npm test` | `node --test tests` — 184 pengujian mesin, kolektor, kanal, sinkronisasi, monitor batas, frasa keluhan, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, database, API, dan server. |
 
 ## API
 
@@ -173,10 +173,11 @@ Menu **Compare** membandingkan hingga 12 project sekaligus, head-to-head dalam s
 - **Heatmap pain point** adalah gabungan frasa yang mesin korpus laporkan per project. Sel kosong berarti *tidak terdeteksi*, bukan nol.
 - **Leaderboard NSS** memberi jarak ke pemuncak; **Widest gaps** hanya menyebut pasangan kolom yang benar-benar berbeda — kalau dua kolom identik, insight-nya kosong, tidak dikarang.
 - **Tanpa database, matriks tidak dikarang.** Server menjawab `compare` dengan `db.reachable: false` dan array kosong; peramban menunjukan "Comparison unavailable" dan berhenti. Penjaga `attempted` di `CompareView` mencatat kunci pilihan yang sudah dicoba supaya effect otomatis tidak memicu permintaan berikutnya — tanpa penjaga itu jalur kosong ini mengulang permintaan tanpa batas (terukur **33 permintaan `/api/sync` dalam 15 detik** di URL produksi sebelum diperbaiki).
+- **Bentuk kawat matriks adalah objek biasa, bukan `Map`.** Sel heatmap (`cells`) dulunya `Map`: di dalam proses ia terbaca, tapi `JSON.stringify` mengubahnya menjadi `{}` tanpa peringatan, sehingga peramban kehilangan semua sel dan view-nya crash. Satu pengujian kini melakukan round-trip `JSON.parse(JSON.stringify(...))` dan menuntut `projectCount` tetap sama dengan jumlah sel.
 
 Catat batasnya: kecepatan ulasan diukur dari ulasan yang benar-benar terbaca aplikasi ini, dan paginasi toko mengambil yang terbaru lebih dulu, jadi periode lama bisa kurang terwakili. Batas 12 kolom dan 24 baris heatmap adalah anggaran tampilan, dan jumlah yang dipangkas dilaporkan (`painPointTrimmed`).
 
-Sudah dijalankan pada data nyata (tiga project toko yang ditarik langsung, tanpa database): 14 baris metrik, 115 frasa keluhan lintas project dengan 24 ditampilkan dan 91 dilaporkan terpangkas, 9 insight selisih, 3 catatan batas. Matriksnya memperlihatkan perbedaan yang seharusnya terlihat: pangsa 1★ dari ulasan yang terbaca (0,287) dan dari histogram toko (0,0877) untuk aplikasi yang sama berbeda jauh karena paginasi toko mengirim ulasan terbaru — keduanya memang populasi berbeda, dan tidak pernah disatukan.
+Dua kali dijalankan pada data nyata. **Lewat URL produksi, hasil tersimpan di Supabase** (dua project toko yang ditarik langsung): 14 baris metrik dan 24 baris heatmap per kolom, dan karena kedua kolom memang berisi data aplikasi yang sama, seluruh delta muncul sebagai ±0 — matriks tidak mengarang perbedaan. **Lewat penyimpanan berkas lokal** (tiga project): 115 frasa keluhan lintas project dengan 24 ditampilkan dan 91 dilaporkan terpangkas, 9 insight selisih, 3 catatan batas. Jalur yang terakhir ini juga memperlihatkan perbedaan yang seharusnya terlihat: pangsa 1★ dari ulasan yang terbaca (0,287) dan dari histogram toko (0,0877) untuk aplikasi yang sama berbeda jauh karena paginasi toko mengirim ulasan terbaru — keduanya memang populasi berbeda, dan tidak pernah disatukan.
 
 ## Platform (Source limits)
 
