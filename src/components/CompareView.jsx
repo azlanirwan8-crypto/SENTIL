@@ -171,7 +171,7 @@ function Insights({ result }) {
 
 function PainHeatmap({ result }) {
   const columns = result.projects;
-  const ceiling = Math.max(...result.painPoints.flatMap(row => [...row.cells.values()].map(cell => cell.share).filter(Number.isFinite)), 0) || 1;
+  const ceiling = Math.max(...result.painPoints.flatMap(row => Object.values(row.cells).map(cell => cell.share).filter(Number.isFinite)), 0) || 1;
   if (!result.painPoints.length) return null;
   return (
     <Panel title="Cross-project pain points" meta={`${result.painPointTotal} phrases · showing ${result.painPoints.length}`} className="xl:col-span-12">
@@ -191,7 +191,7 @@ function PainHeatmap({ result }) {
                   <span className="num ml-1.5 text-[10px] text-slate-500">{row.projectCount}/{columns.length}</span>
                 </th>
                 {columns.map(column => {
-                  const cell = row.cells.get(column.id);
+                  const cell = row.cells[column.id];
                   const strength = cell ? Math.min(1, cell.share / ceiling) : 0;
                   return (
                     <td key={column.id} className="py-1 pl-2 text-right">

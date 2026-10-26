@@ -110,12 +110,26 @@ describe('mesin perbandingan lintas project', () => {
     const result = build();
     const shared = result.painPoints.find(row => row.text === 'blokir rekening');
     assert.equal(shared.projectCount, 2);
-    assert.equal(shared.cells.get('p-alpha').share, 0.04);
-    assert.equal(shared.cells.get('p-gamma'), undefined, 'project yang tidak melaporkan frasa ini tidak diisi nol');
+    assert.equal(shared.cells['p-alpha'].share, 0.04);
+    assert.equal(shared.cells['p-gamma'], undefined, 'project yang tidak melaporkan frasa ini tidak diisi nol');
     assert.equal(result.painPoints[0].text, 'blokir rekening', 'baris lintas project didahulukan');
 
     const logout = result.painPoints.find(row => row.text === 'suka logout');
     assert.equal(logout.projectCount, 1);
+  });
+
+  test('hasil compare bertahan melewati JSON karena dikirim lewat HTTP', () => {
+    // Map terserialisasi menjadi {} tanpa peringatan, jadi pembaca di peramban kehilangan
+    // seluruh sel heatmap dan view-nya crash. Bentuknya harus objek biasa sejak awal.
+    const round = JSON.parse(JSON.stringify(build()));
+    const shared = round.painPoints.find(row => row.text === 'blokir rekening');
+    assert.equal(Object.keys(shared.cells).length, 2);
+    assert.equal(shared.cells['p-alpha'].share, 0.04);
+    assert.equal(shared.cells['p-gamma'], undefined);
+    for (const row of round.painPoints) {
+      assert.equal(typeof row.cells, 'object');
+      assert.equal(row.projectCount, Object.values(row.cells).length, 'projectCount harus sama dengan isi sel setelah round-trip');
+    }
   });
 
   test('leaderboard NSS memberi jarak ke pemuncak tanpa mengarang angka', () => {
