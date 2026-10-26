@@ -298,17 +298,28 @@ describe('lapisan frasa di dalam model korpus', () => {
     const known = new Set(pain.items.map(item => item.text));
     assert.ok(pain.labels.length, 'korpus cukup untuk membentuk label');
     for (const label of pain.labels) {
-      assert.ok(known.has(label.label), `nama label bukan frasa asli korpus: ${label.label}`);
+      assert.ok(known.has(label.evidence), `bukti label bukan frasa asli korpus: ${label.evidence}`);
+      // Nama boleh satu kata (jangkar) atau satu frasa, tetapi tidak boleh bukan teks korpus.
+      const tokens = new Set(label.phrases.flatMap(entry => entry.text.split(' ')));
+      assert.ok(
+        label.nameSource === 'phrase' ? known.has(label.name) : tokens.has(label.name),
+        `nama label bukan istilah/frasa korpus: ${label.name}`,
+      );
       assert.ok(label.phrases.every(entry => known.has(entry.text)), 'anggota gerombol harus frasa asli');
       const biggest = Math.max(...label.phrases.map(entry => entry.dfNegative));
       const sum = label.phrases.reduce((total, entry) => total + entry.dfNegative, 0);
       assert.equal(label.phrases.length, label.phraseCount, 'seluruh anggota gerombol dikirim ke klien');
-      assert.ok(label.reviewCount >= biggest, `union ulasan kurang dari frasa terbesarnya: ${label.label}`);
+      assert.ok(label.reviewCount >= biggest, `union ulasan kurang dari frasa terbesarnya: ${label.name}`);
       assert.ok(label.reviewCount <= sum, 'satu ulasan tidak boleh dihitung dua kali');
       assert.ok(label.reviewCount <= pain.pools.negative, 'dukungan label tidak boleh melebihi pool 1-2★');
+      assert.equal(label.early + label.late + label.undated, label.reviewCount, 'arah label harus menutup seluruh dukungannya');
     }
+    assert.equal(new Set(pain.labels.map(label => label.name)).size, pain.labels.length, 'nama label harus berbeda satu sama lain');
     assert.equal(pain.labelMetrics.clusters >= pain.labelMetrics.reportedLabels, true);
     assert.equal(pain.labelMetrics.reportedLabels, pain.labels.length, 'pemangkasan harus dilaporkan, bukan diam-diam');
+    assert.ok(pain.labelMetrics.namedFromTerm <= pain.labels.length);
+    assert.deepEqual(Object.keys(pain.labelRules).sort(), ['link', 'maxLabels', 'naming', 'sharedReviews', 'support', 'trend']);
+    assert.equal(pain.labelMetrics.trend.firstDay, '2026-01-05');
   });
 
   test('label selamat melewati JSON karena tidak memakai Map', () => {

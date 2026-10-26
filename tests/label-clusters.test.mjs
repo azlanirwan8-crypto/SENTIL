@@ -6,10 +6,20 @@ import { clusterPainPhrases } from '../lib/label-clusters.mjs';
 const TOTAL = 40;
 
 function item(text, dfNegative, extra = {}) {
-  return { text, tokens: text.split(' '), size: text.split(' ').length, dfNegative, dfPositive: 0, severity: 2, weight: 10, ...extra };
+  return {
+    text,
+    tokens: text.split(' '),
+    size: text.split(' ').length,
+    dfNegative,
+    dfPositive: 0,
+    severity: 2,
+    weight: 10,
+    anchor: null,
+    ...extra,
+  };
 }
 
-function build(negativeHits, positiveHits = new Map(), items = null, total = TOTAL) {
+function build(negativeHits, positiveHits = new Map(), items = null, total = TOTAL, days = new Map()) {
   const list = items || [...negativeHits.keys()].map(text => item(text, negativeHits.get(text).size));
   return clusterPainPhrases({
     items: list,
@@ -17,6 +27,7 @@ function build(negativeHits, positiveHits = new Map(), items = null, total = TOT
     positiveHits,
     negativeCount: total,
     positiveCount: 20,
+    days,
   });
 }
 
@@ -24,13 +35,17 @@ const range = (from, to) => new Set(Array.from({ length: to - from + 1 }, (_, i)
 
 describe('gerombol frasa menjadi label', () => {
   test('dua frasa yang selalu muncul bersama jadi satu label', () => {
-    const result = build(new Map([['sidik jari belum', range(0, 19)], ['belum ada sidik', range(0, 19)]]));
+    const hits = new Map([['sidik jari belum', range(0, 19)], ['belum ada sidik', range(0, 19)]]);
+    const items = [item('sidik jari belum', 20, { anchor: 'sidik' }), item('belum ada sidik', 20, { anchor: 'sidik' })];
+    const result = build(hits, new Map(), items);
     assert.equal(result.metrics.clusters, 1);
     assert.equal(result.metrics.links, 1);
     const label = result.labels[0];
     assert.equal(label.reviewCount, 20, 'union ulasan, bukan 20 + 20');
     assert.equal(label.phraseCount, 2);
-    assert.ok(label.label.includes('sidik'), 'nama label harus frasa asli dari ulasan');
+    assert.equal(label.name, 'sidik', 'nama = kata jangkar yang dijagokan dua anggota');
+    assert.equal(label.nameSource, 'term');
+    assert.ok(label.evidence.split(' ').includes('sidik'), 'bukti harus frasa asli dari ulasan');
   });
 
   test('dua frasa dari ulasan yang berbeda tidak digabung', () => {
@@ -117,13 +132,66 @@ describe('gerombol frasa menjadi label', () => {
     const empty = clusterPainPhrases({ items: [], negativeHits: new Map(), negativeCount: 0, positiveCount: 0 });
     assert.deepEqual(empty.labels, []);
     assert.equal(empty.metrics.clusters, 0);
+    assert.equal(empty.metrics.namedFromTerm, 0);
+    assert.equal(empty.metrics.trend, null, 'tanpa tanggal, arah tidak dikarang');
     assert.equal(JSON.parse(JSON.stringify(empty)).labels.length, 0);
   });
 
-  test('satu frasa saja tidak membentuk gerombol tapi tetap jadi label tunggal', () => {
+  test('satu frasa saja tetap jadi label, dengan nama = frasa itu sendiri', () => {
     const result = build(new Map([['sendiri', range(0, 15)]]));
     assert.equal(result.metrics.phrases, 1);
     assert.equal(result.labels.length, 1);
     assert.equal(result.metrics.singletons, 1);
+    assert.equal(result.labels[0].name, 'sendiri');
+    assert.equal(result.labels[0].nameSource, 'phrase', 'satu anggota tidak punya dasar untuk dipangkas jadi satu kata');
+    assert.equal(result.metrics.namedFromTerm, 0);
+  });
+
+  test('jangkar yang hanya dijagokan satu anggota tidak dijadikan nama', () => {
+    const hits = new Map([['iklan ganggu', range(0, 9)], ['iklan maksa', range(0, 9)]]);
+    const items = [item('iklan ganggu', 10, { anchor: 'ganggu' }), item('iklan maksa', 10, { anchor: 'maksa' })];
+    const result = build(hits, new Map(), items);
+    assert.equal(result.metrics.clusters, 1);
+    assert.equal(result.labels[0].nameSource, 'phrase');
+    assert.ok(result.labels[0].name.includes('iklan'), `nama jatuh ke frasa asli: ${result.labels[0].name}`);
+  });
+
+  test('satu istilah tidak dipakai dua label', () => {
+    // Dua gerombol terpisah yang sama-sama dijagokan 'iklan': yang lebih besar dapat namanya,
+    // yang kecil kembali ke frasa aslinya, bukan mengarang pembeda.
+    const hits = new Map([
+      ['iklan ganggu', range(0, 19)],
+      ['iklan maksa', range(0, 19)],
+      ['iklan baru', range(20, 39)],
+      ['iklan besok', range(20, 39)],
+    ]);
+    const items = [
+      item('iklan ganggu', 20, { anchor: 'iklan', weight: 30 }),
+      item('iklan maksa', 20, { anchor: 'iklan', weight: 20 }),
+      item('iklan baru', 20, { anchor: 'iklan', weight: 30 }),
+      item('iklan besok', 20, { anchor: 'iklan', weight: 20 }),
+    ];
+    const result = build(hits, new Map(), items);
+    assert.equal(result.metrics.clusters, 2);
+    assert.deepEqual(result.labels.map(label => label.name), ['iklan', 'iklan baru']);
+    assert.equal(result.labels[1].nameSource, 'phrase');
+    assert.equal(new Set(result.labels.map(label => label.name)).size, 2);
+  });
+
+  test('arah label dihitung dari rentang tanggal yang teramati', () => {
+    const hits = new Map([['a b', range(0, 3)], ['c d', range(0, 3)]]);
+    const days = new Map([[0, '2026-01-01'], [1, '2026-01-01'], [2, '2026-01-03'], [3, '2026-01-03']]);
+    const result = build(hits, new Map(), null, TOTAL, days);
+    const label = result.labels[0];
+    assert.deepEqual(result.metrics.trend, { firstDay: '2026-01-01', lastDay: '2026-01-03', datedReviews: 4 });
+    assert.equal(label.early, 2, 'dua ulasan sebelum tengah rentang');
+    assert.equal(label.late, 2, 'dua ulasan sesudahnya');
+    assert.equal(label.undated, 0);
+    // Paruh pertama 2 hari, paruh kedua 1 hari: laju harian duakali lipat, bukan jumlah kasarnya.
+    assert.equal(label.momentum, 2);
+
+    const blind = build(hits);
+    assert.equal(blind.labels[0].momentum, null, 'tanpa tanggal, arah tidak dikarang');
+    assert.equal(blind.labels[0].undated, null);
   });
 });

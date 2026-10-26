@@ -223,7 +223,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const labels = model.labels || { positive: 0, neutral: 0, negative: 0, unclassified: 0 };
   const topics = Array.isArray(model.topics) ? model.topics : [];
   const pain = model.painPoints || {};
-  const painLabels = Array.isArray(pain.labels) ? pain.labels : [];
+  const painLabels = Array.isArray(pain.labels) && pain.labelRules ? pain.labels : [];
   const labelMetrics = pain.labelMetrics || {};
   const terms = model.terms || {};
   const coverage = model.coverage || {};
@@ -287,8 +287,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           <Step
             index="05"
             title="Gerombol frasa jadi label"
-            detail="Frasa 2–4 token yang benar-benar ditulis reviewers digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan (z>1 dua arah). Dukungan label dihitung dari union ulasan, bukan penjumlahan frasa."
-            metric={`${formatNumber(labelMetrics.clusters || 0)} gerombol · ${formatNumber(labelMetrics.links || 0)} ikatan · ${formatNumber(labelMetrics.trimmedLabels || 0)} terpangkas`}
+            detail="Frasa 2–4 token yang benar-benar ditulis reviewers digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan. Namanya diambil dari kata jangkar yang dijagokan lebih dari satu anggota, dan arah dihitung dari rentang tanggal yang teramati."
+            metric={`${formatNumber(labelMetrics.clusters || 0)} gerombol · ${formatNumber(labelMetrics.namedFromTerm || 0)} nama dari jangkar · ${formatNumber(labelMetrics.trimmedLabels || 0)} terpangkas`}
           />
         </div>
       </section>
@@ -391,12 +391,12 @@ export function ModelView({ dataset, workspace, db, onExport }) {
         meta={painLabels.length
           ? `${formatNumber(labelMetrics.clusters || painLabels.length)} gerombol · ${formatNumber(labelMetrics.links)} ikatan · ${formatNumber(labelMetrics.singletons)} beranggota satu`
           : `${formatNumber(pain.metrics?.reportedPhrases || 0)} frasa dipelajari`}
-        action={<span className="hidden text-[10px] text-slate-400 sm:inline">nama label = frasa yang ditulis reviewers</span>}
+        action={<span className="hidden text-[10px] text-slate-400 sm:inline">nama label = kata jangkar dari frasa reviewers</span>}
       >
         {painLabels.length ? (
           <div className="scroll-x">
-            <table className="w-full min-w-[720px] border-collapse text-left">
-              <caption className="sr-only">Gerombol label keluhan: frasa pencetak nama, jumlah frasa anggota, jumlah mention, jumlah ulasan berbeda, porsi dari pool 1–2 bintang, dan pujian 4–5 bintang yang menyebut frasa yang sama</caption>
+            <table className="w-full min-w-[760px] border-collapse text-left">
+              <caption className="sr-only">Gerombol label keluhan: nama yang dipilih mesin dari kata jangkar anggota, frasa bukti, jumlah frasa anggota, jumlah mention, jumlah ulasan berbeda, porsi dari pool 1–2 bintang, pujian 4–5 bintang yang menyebut frasa yang sama, dan arah laju harian paruh kedua terhadap paruh pertama</caption>
               <thead>
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   <th scope="col" className="pb-1.5 pr-2 font-bold">#</th>
@@ -405,7 +405,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Mention</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Ulasan beda</th>
                   <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Porsi</th>
-                  <th scope="col" className="pb-1.5 text-right font-bold">Pujian</th>
+                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Pujian</th>
+                  <th scope="col" className="pb-1.5 text-right font-bold">Arah</th>
                 </tr>
               </thead>
               <tbody>
@@ -413,7 +414,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                   <tr key={entry.id} className="border-t border-slate-800/60">
                     <td className="num py-1.5 pr-2 text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</td>
                     <td className="py-1.5 pr-2">
-                      <span className="rounded bg-slate-800/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{entry.label}</span>
+                      <span className={`rounded bg-slate-800/70 px-1.5 py-0.5 text-[10px] text-slate-200 ${entry.nameSource === 'term' ? 'capitalize' : 'font-mono'}`}>{entry.name}</span>
                       <p className="mt-0.5 truncate text-[10px] text-slate-400" title={entry.phrases.map(phrase => phrase.text).join(' · ')}>
                         {entry.phrases.slice(0, 3).map(phrase => phrase.text).join(' · ')}
                         {entry.phrases.length > 3 ? ` · +${entry.phrases.length - 3} lagi` : ''}
@@ -423,7 +424,12 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))}</td>
                     <td className="num py-1.5 pr-2 text-right text-[11px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
                     <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatPercent(entry.reviewCount, pain.pools?.negative || 0)}</td>
-                    <td className="num py-1.5 text-right text-[10px] text-slate-400">{entry.praiseCount == null ? 'N/A' : formatNumber(entry.praiseCount)}</td>
+                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{entry.praiseCount == null ? 'N/A' : formatNumber(entry.praiseCount)}</td>
+                    <td className="num py-1.5 text-right text-[10px] text-slate-300">
+                      {Number.isFinite(entry.momentum)
+                        ? <span title={`${formatNumber(entry.late)} ulasan di paruh kedua vs ${formatNumber(entry.early)} di paruh pertama`}>{entry.momentum.toFixed(2)}×/hari</span>
+                        : 'N/A'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -431,17 +437,21 @@ export function ModelView({ dataset, workspace, db, onExport }) {
             <p className="mt-2.5 border-t border-slate-800/70 pt-2 text-[10px] leading-relaxed text-slate-400">
               Kolom <span className="font-semibold text-slate-300">Mention</span> adalah penjumlahan setiap frasa anggotanya; kolom{' '}
               <span className="font-semibold text-slate-300">Ulasan beda</span> adalah jumlah ulasan yang sebenarnya. Selisihnya adalah orang yang sama
-              yang dihitung berulang — tidak pernah ditampilkan sebagai temuan. {formatNumber(labelMetrics.trimmedLabels)} gerombol di luar anggaran
-              tampil tetap dihitung dan dilaporkan di angka ini. Aturan ikatan: {pain.labelParameters?.significance || 'N/A'}, minimal{' '}
-              {formatNumber(pain.labelParameters?.sharedReviews || 0)} ulasan bersama.
+              yang dihitung berulang — tidak pernah ditampilkan sebagai temuan.{' '}
+              {labelMetrics.trimmedLabels
+                ? `${formatNumber(labelMetrics.trimmedLabels)} gerombol di luar anggaran tampil tetap dihitung dan dilaporkan di angka ini. `
+                : 'Seluruh gerombol muat di anggaran tampil. '}
+              {formatNumber(labelMetrics.namedFromTerm || 0)} dari {formatNumber(painLabels.length)} nama label adalah kata jangkar yang dijagokan lebih dari satu anggotanya; sisanya memakai frasa utuh apa adanya.{' '}
+              {pain.labelRules?.link || 'Dua frasa digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan.'}{' '}
+              Arah dihitung dari {pain.labelMetrics?.trend ? `rentang ${pain.labelMetrics.trend.firstDay} sampai ${pain.labelMetrics.trend.lastDay}` : 'rentang tanggal yang tidak tersedia'}.
             </p>
           </div>
         ) : (
           <EmptyState
             compact
             icon={IconInfo}
-            title={Array.isArray(pain.labels) ? 'Belum ada ikatan antar frasa' : 'Snapshot ini dibuat sebelum lapisan label'}
-            body={Array.isArray(pain.labels)
+            title={pain.labelRules ? 'Belum ada ikatan antar frasa' : 'Snapshot ini dibuat sebelum lapisan label'}
+            body={pain.labelRules
               ? `${formatNumber(pain.metrics?.matchedReviews || 0)} ulasan 1–2★ memuat minimal satu frasa tersimpan, tetapi tidak ada pasangan frasa yang muncul bersama melampaui kebetulan. Tidak ada kategori yang dikarang untuk mengisi tabel ini.`
               : `Frasa tersimpan oleh ${pain.version || 'versi lama'}, yang belum punya langkah penggerombolan. Tarik ulang project ini untuk membentuk label dari frasa yang sama.`}
           />
