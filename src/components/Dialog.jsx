@@ -11,15 +11,7 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
-export function DialogShell({
-  open,
-  onClose,
-  labelledBy,
-  describedBy,
-  children,
-  className = '',
-  dismissible = true,
-}) {
+export function DialogShell({ open, onClose, labelledBy, describedBy, children, className = '', dismissible = true }) {
   const dialogRef = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -68,9 +60,7 @@ export function DialogShell({
       window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
-      if (previousFocus && typeof previousFocus.focus === 'function') {
-        previousFocus.focus({ preventScroll: true });
-      }
+      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus({ preventScroll: true });
     };
   }, [open, dismissible]);
 
@@ -78,13 +68,13 @@ export function DialogShell({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6"
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
       role="presentation"
       onMouseDown={event => {
         if (event.target === event.currentTarget && dismissible) closeRef.current();
       }}
     >
-      <div className="absolute inset-0 animate-fade-in bg-ink-900/45 backdrop-blur-[3px]" aria-hidden="true" />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in" aria-hidden="true" />
       <div
         ref={dialogRef}
         role="dialog"
@@ -92,7 +82,7 @@ export function DialogShell({
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className={`relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[24px] border border-line bg-paper-50 shadow-lift animate-scale-in sm:max-h-[88vh] sm:rounded-[24px] ${className}`}
+        className={`relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-xl border border-slate-800 bg-slate-900 shadow-2xl shadow-black/60 animate-scale-in sm:max-h-[86vh] sm:rounded-xl ${className}`}
         onMouseDown={event => event.stopPropagation()}
       >
         {children}
@@ -100,10 +90,10 @@ export function DialogShell({
           <button
             type="button"
             onClick={() => closeRef.current()}
-            className="absolute right-4 top-4 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-line/80 bg-paper-50/90 text-ink-muted transition hover:bg-paper-200 hover:text-ink sm:right-5 sm:top-5"
-            aria-label="Tutup dialog"
+            className="absolute right-2.5 top-2.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-800 bg-slate-900 text-slate-400 transition hover:border-slate-700 hover:text-slate-100"
+            aria-label="Close dialog"
           >
-            <IconX size={17} />
+            <IconX size={14} />
           </button>
         )}
       </div>

@@ -99,15 +99,6 @@ export function IconStar({ size = 14, ...props }) {
   );
 }
 
-export function IconCalendar({ size = 15, ...props }) {
-  return (
-    <svg {...base} width={size} height={size} {...props}>
-      <rect x="3.5" y="5" width="17" height="16" rx="3" />
-      <path d="M8 3v4M16 3v4M3.5 10h17" />
-    </svg>
-  );
-}
-
 export function IconLayers({ size = 17, ...props }) {
   return (
     <svg {...base} width={size} height={size} {...props}>
@@ -117,37 +108,59 @@ export function IconLayers({ size = 17, ...props }) {
   );
 }
 
-export function IconSearchSignal({ size = 28, ...props }) {
-  return (
-    <svg {...base} width={size} height={size} {...props}>
-      <circle cx="10.5" cy="10.5" r="6.5" />
-      <path d="M15.5 15.5 21 21" />
-      <path d="M7 12.5c1.3-1.8 2.7-1.8 4 0s2.7 1.8 4 0" />
-    </svg>
-  );
-}
-
-export function IconSpark({ size = 17, ...props }) {
-  return (
-    <svg {...base} width={size} height={size} {...props}>
-      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" />
-      <circle cx="12" cy="12" r="2.5" />
-    </svg>
-  );
-}
-
-export function IconChart({ size = 17, ...props }) {
-  return (
-    <svg {...base} width={size} height={size} {...props}>
-      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
-    </svg>
-  );
-}
-
 export function IconQuote({ size = 16, ...props }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true" focusable="false" {...props}>
       <path d="M9.5 5.2c-3 1.5-5.1 4.2-5.1 8.1v5.5h6.4v-6.4H7.3c.1-2.1 1.1-3.6 3.1-4.6L9.5 5.2Zm10 0c-3 1.5-5.1 4.2-5.1 8.1v5.5h6.4v-6.4h-3.5c.1-2.1 1.1-3.6 3.1-4.6l-.9-2.6Z" />
+    </svg>
+  );
+}
+
+export function IconGrid({ size = 15, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+export function IconGauge({ size = 15, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <path d="M3.5 18a9 9 0 1 1 17 0" />
+      <path d="m12 14 4-4" />
+      <circle cx="12" cy="14" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconDatabase({ size = 15, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <ellipse cx="12" cy="5.5" rx="8" ry="3" />
+      <path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13" />
+      <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+    </svg>
+  );
+}
+
+export function IconClock({ size = 13, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  );
+}
+
+export function IconShield({ size = 13, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <path d="M12 3l7 3v5.5c0 4.2-2.9 7.8-7 9.5-4.1-1.7-7-5.3-7-9.5V6l7-3Z" />
+      <path d="m9 12 2 2 4-4" />
     </svg>
   );
 }

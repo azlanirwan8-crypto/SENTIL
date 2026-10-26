@@ -3,63 +3,61 @@ import { discoverStores } from '../lib/api.js';
 import { formatDecimal, formatNumber, isNumber } from '../lib/format.js';
 import { DialogShell } from './Dialog.jsx';
 import { StoreGlyph, StoreMark } from './Brand.jsx';
-import { IconAlert, IconCheck, IconExternal, IconInfo, IconRefresh, IconSearch, IconStar } from './icons.jsx';
+import { IconAlert, IconCheck, IconExternal, IconRefresh, IconSearch, IconStar } from './icons.jsx';
 
 const EMPTY_SELECTION = { play: null, appstore: null };
 const MIN_SEARCH_LENGTH = 3;
+const MATCH_BADGES = {
+  exact: ['exact', 'border-pos/30 bg-pos/10 text-pos'],
+  full: ['match', 'border-slate-700 bg-slate-800 text-slate-300'],
+  nearest: ['nearest', 'border-neu/30 bg-neu/10 text-neu'],
+};
 
 function CandidateSkeleton() {
   return (
-    <div className="rounded-xl border border-line/70 bg-paper-50 p-3.5">
-      <div className="skeleton h-3 w-2/3" />
-      <div className="skeleton mt-2.5 h-2.5 w-1/2" />
-      <div className="skeleton mt-4 h-2.5 w-1/3" />
+    <div className="rounded-md border border-slate-800 bg-slate-900/60 p-2.5">
+      <div className="skeleton h-2.5 w-2/3" />
+      <div className="skeleton mt-2 h-2 w-1/2" />
     </div>
   );
 }
 
-function CandidateCard({ store, candidate, checked, onSelect }) {
+function CandidateCard({ store, candidate, checked, auto, onSelect }) {
   const id = `candidate-${store}-${candidate.appId}`;
   const score = isNumber(candidate.score) ? formatDecimal(candidate.score, 2) : 'N/A';
-  const ratingCount = isNumber(candidate.ratings) ? `${formatNumber(candidate.ratings)} penilaian` : null;
+  const ratingCount = isNumber(candidate.ratings) ? `${formatNumber(candidate.ratings)} ratings` : null;
   const storeLabel = store === 'play' ? 'Google Play' : 'App Store';
+  const badge = MATCH_BADGES[candidate.match?.tier] || null;
   return (
     <div className="relative">
-      <input
-        id={id}
-        type="radio"
-        name={`candidate-${store}`}
-        value={candidate.appId}
-        checked={checked}
-        onChange={() => onSelect(candidate)}
-        className="peer sr-only"
-      />
+      <input id={id} type="radio" name={`candidate-${store}`} value={candidate.appId} checked={checked} onChange={() => onSelect(candidate)} className="peer sr-only" />
       <label
         htmlFor={id}
-        className={`flex cursor-pointer gap-3 rounded-xl border p-3.5 pr-11 transition peer-focus-visible:ring-2 peer-focus-visible:ring-teal/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-paper-50 ${
-          checked
-            ? 'border-teal bg-teal-soft/45 shadow-[inset_0_0_0_1px_rgba(14,107,90,.15)]'
-            : 'border-line/80 bg-paper-50 hover:border-line-strong hover:bg-paper-100/80'
+        className={`flex cursor-pointer items-start gap-2 rounded-md border p-2.5 pr-9 transition peer-focus-visible:ring-1 peer-focus-visible:ring-accent ${
+          checked ? 'border-accent/60 bg-accent/[0.08]' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900'
         }`}
       >
-        <span
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
-            checked ? 'border-teal bg-teal text-paper-50' : 'border-line-strong bg-transparent text-transparent'
-          }`}
-          aria-hidden="true"
-        >
-          <IconCheck size={11} />
+        <span className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${checked ? 'border-accent bg-accent text-slate-950' : 'border-slate-700 text-transparent'}`} aria-hidden="true">
+          <IconCheck size={9} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-bold leading-snug text-ink">{candidate.title || 'N/A'}</span>
-          <span className="mt-0.5 block truncate text-[11.5px] text-ink-muted">{candidate.developer || 'N/A'}</span>
-          <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] text-ink-faint">
-            <span className="inline-flex items-center gap-1 font-semibold text-ink-soft">
-              <IconStar size={11} className={isNumber(candidate.score) ? 'text-amber-bright' : 'text-ink-faint'} />
+          <span className="flex items-start gap-1.5">
+            <span className="min-w-0 flex-1 truncate text-[11.5px] font-bold leading-snug text-slate-100">{candidate.title || 'N/A'}</span>
+            {badge && (
+              <span className={`shrink-0 rounded border px-1 py-px text-[10px] font-bold uppercase tracking-wider ${badge[1]}`} title={`Name match ${candidate.match?.score ?? 0} · missing words: ${candidate.match?.missing?.join(', ') || 'none'}`}>
+                {badge[0]}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 block truncate text-[10px] text-slate-400">{candidate.developer || 'N/A'}</span>
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
+            <span className="num inline-flex items-center gap-1 font-bold text-slate-300">
+              <IconStar size={9} className={isNumber(candidate.score) ? 'text-neu' : 'text-slate-400'} />
               {score}
             </span>
-            {ratingCount && <span>{ratingCount}</span>}
-            <span className="rounded bg-paper-200/80 px-1.5 py-0.5 font-mono text-[9.5px] tracking-tight text-ink-muted">{candidate.appId}</span>
+            {ratingCount && <span className="num">{ratingCount}</span>}
+            {auto && <span className="font-semibold text-accent">auto-selected</span>}
+            <span className="truncate rounded bg-slate-800/70 px-1.5 py-px font-mono text-[10px] text-slate-400">{candidate.appId}</span>
           </span>
         </span>
       </label>
@@ -67,11 +65,11 @@ function CandidateCard({ store, candidate, checked, onSelect }) {
         href={candidate.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="absolute right-2.5 top-2.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full text-ink-faint transition hover:bg-paper-200 hover:text-ink"
-        aria-label={`Buka ${candidate.title || 'kandidat'} di ${storeLabel}`}
-        title={`Buka di ${storeLabel}`}
+        className="absolute right-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
+        aria-label={`Open ${candidate.title || 'this candidate'} on ${storeLabel}`}
+        title={`Open in ${storeLabel}`}
       >
-        <IconExternal size={13} />
+        <IconExternal size={11} />
       </a>
     </div>
   );
@@ -80,54 +78,48 @@ function CandidateCard({ store, candidate, checked, onSelect }) {
 function StoreColumn({ store, data, phase, selection, onSelect }) {
   const candidates = data?.candidates || [];
   const searching = phase === 'searching';
+  const autoAppId = candidates.length === 1 && candidates[0].match?.tier === 'exact' ? candidates[0].appId : null;
+  const label = store === 'play' ? 'Google Play' : 'App Store';
+  const filteredOut = data?.filteredOut || 0;
   return (
-    <section className="flex min-h-[300px] flex-col rounded-2xl border border-line/80 bg-paper-100/55 p-3.5">
-      <header className="flex items-center justify-between gap-3 px-1 pb-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <StoreMark store={store} size={30} tone="quiet" />
-          <div className="min-w-0">
-            <p className="text-[12.5px] font-bold text-ink">{store === 'play' ? 'Google Play' : 'App Store'}</p>
-            <p className="text-[10px] text-ink-faint">
-              {searching
-                ? 'Mencari kandidat…'
-                : phase === 'ready'
-                  ? `${candidates.length} kandidat · pilih satu atau lewati`
-                  : 'Kandidat muncul otomatis'}
-            </p>
-          </div>
+    <section className="flex min-h-[260px] flex-col rounded-lg border border-slate-800 bg-slate-950/40">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-800/70 px-2.5 py-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <StoreMark store={store} size={18} tone="quiet" />
+          <p className="truncate text-[11px] font-bold text-slate-200">{label}</p>
         </div>
-        <span className={`h-1.5 w-1.5 rounded-full ${data?.status === 'error' ? 'bg-coral' : candidates.length ? 'bg-teal' : 'bg-line-strong'}`} aria-hidden="true" />
+        <p className="shrink-0 text-[10px] text-slate-400" aria-live="polite">
+          {searching ? 'searching…' : phase === 'ready' ? `${candidates.length} candidate${candidates.length === 1 ? '' : 's'}${filteredOut ? ` · ${filteredOut} filtered out` : ''}` : 'waiting for the entity name'}
+        </p>
       </header>
 
-      <div className="scrollbar-soft -mr-1 flex-1 space-y-2 overflow-y-auto pr-1" style={{ maxHeight: 286 }}>
-        {searching && (
-          <>
-            <CandidateSkeleton />
-            <CandidateSkeleton />
-            <CandidateSkeleton />
-          </>
-        )}
+      <div className="scroll-x min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
+        {searching && (<><CandidateSkeleton /><CandidateSkeleton /><CandidateSkeleton /></>)}
 
         {phase === 'idle' && (
-          <div className="flex h-full min-h-[218px] flex-col items-center justify-center rounded-xl border border-dashed border-line px-5 text-center">
-            <span className="mb-2.5 text-ink-faint"><IconSearch size={20} /></span>
-            <p className="text-[12px] font-semibold text-ink-soft">Menunggu nama entitas</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">Kandidat dicari otomatis saat nama entitas diketik. Tidak ada ID yang perlu diketik.</p>
+          <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-md border border-dashed border-slate-800 px-4 text-center">
+            <IconSearch size={16} className="mb-2 text-slate-400" />
+            <p className="text-[10.5px] font-semibold text-slate-400">Candidates appear automatically</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Type the entity name above. No ID has to be typed.</p>
           </div>
         )}
 
         {phase === 'ready' && data?.status === 'error' && (
-          <div className="rounded-xl border border-coral/25 bg-coral-soft/45 p-3.5 text-[11.5px] leading-relaxed text-coral-deep">
-            <span className="mb-1 flex items-center gap-1.5 font-bold"><IconAlert size={13} /> Pencarian gagal</span>
+          <div className="rounded-md border border-neg/25 bg-neg/[0.07] p-2.5 text-[10.5px] leading-relaxed text-neg">
+            <p className="mb-1 flex items-center gap-1.5 font-bold"><IconAlert size={12} /> Search failed</p>
             {data.message}
           </div>
         )}
 
         {phase === 'ready' && data?.status !== 'error' && candidates.length === 0 && (
-          <div className="flex h-full min-h-[218px] flex-col items-center justify-center rounded-xl border border-dashed border-line px-5 text-center">
-            <p className="text-[12px] font-semibold text-ink-soft">Tidak ada kandidat</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-ink-faint">Sumber tidak mengembalikan aplikasi untuk nama ini. Coba nama lain atau gunakan kanal satunya.</p>
+          <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-md border border-dashed border-slate-800 px-4 text-center">
+            <p className="text-[10.5px] font-semibold text-slate-400">No candidate matches</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{data?.message || 'The store search results were all filtered out because their names do not contain the words you searched for.'}</p>
           </div>
+        )}
+
+        {phase === 'ready' && data?.status !== 'error' && data?.matchMode === 'nearest' && candidates.length > 0 && (
+          <p className="rounded border border-neu/25 bg-neu/[0.07] px-2 py-1.5 text-[10px] leading-relaxed text-neu">{data.message}</p>
         )}
 
         {phase === 'ready' && candidates.map(candidate => (
@@ -136,6 +128,7 @@ function StoreColumn({ store, data, phase, selection, onSelect }) {
             store={store}
             candidate={candidate}
             checked={selection[store]?.appId === candidate.appId}
+            auto={candidate.appId === autoAppId}
             onSelect={candidateValue => onSelect(store, candidateValue)}
           />
         ))}
@@ -146,17 +139,29 @@ function StoreColumn({ store, data, phase, selection, onSelect }) {
 
 function ChannelSummary({ store, chosen }) {
   return (
-    <div className="flex min-w-0 items-start gap-2">
-      <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${chosen ? (store === 'play' ? 'bg-teal text-paper-50' : 'bg-amber text-paper-50') : 'border border-line bg-paper-50 text-ink-faint'}`}>
-        {chosen ? <IconCheck size={11} /> : <StoreGlyph store={store} size={11} />}
+    <div className="flex min-w-0 items-center gap-1.5">
+      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded ${chosen ? (store === 'play' ? 'bg-play text-slate-950' : 'bg-appstore text-slate-950') : 'border border-slate-800 text-slate-400'}`}>
+        {chosen ? <IconCheck size={9} /> : <StoreGlyph store={store} size={9} />}
       </span>
       <span className="min-w-0">
-        <span className="block text-[9px] font-bold uppercase tracking-[0.16em] text-ink-faint">{store === 'play' ? 'Google Play' : 'App Store'}</span>
-        <span className="mt-0.5 block truncate text-[11.5px] font-semibold text-ink">{chosen ? chosen.title || 'N/A' : 'Tidak disertakan'}</span>
+        <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">{store === 'play' ? 'Google Play' : 'App Store'}</span>
+        <span className="block truncate text-[10.5px] font-semibold text-slate-300">{chosen ? chosen.title || 'N/A' : 'not included'}</span>
       </span>
     </div>
   );
 }
+
+// Kanal non-toko yang bisa diaktifkan per analisis. `needs` hanya penjelasan syarat
+// kredensial di server — tidak ada kolom untuk menempel token di sini.
+const SOCIAL_OPTIONS = [
+  { id: 'news', label: 'News & blogs', needsKey: false, needs: 'no key needed' },
+  { id: 'youtube', label: 'YouTube', needsKey: true, needs: 'needs a Google API key' },
+  { id: 'reddit', label: 'Reddit', needsKey: true, needs: 'needs a Reddit app' },
+  { id: 'facebook', label: 'Facebook', needsKey: true, needs: 'needs an Apify token' },
+  { id: 'instagram', label: 'Instagram', needsKey: true, needs: 'needs an Apify token' },
+  { id: 'tiktok', label: 'TikTok', needsKey: true, needs: 'needs an Apify token' },
+  { id: 'x', label: 'X / Twitter', needsKey: true, needs: 'needs an Apify token' },
+];
 
 export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
   const [label, setLabel] = useState('');
@@ -164,6 +169,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
   const [phase, setPhase] = useState('idle');
   const [result, setResult] = useState(null);
   const [selection, setSelection] = useState(EMPTY_SELECTION);
+  const [channels, setChannels] = useState({ news: true });
   const [fieldErrors, setFieldErrors] = useState({});
   const [requestError, setRequestError] = useState(null);
   const [summaryError, setSummaryError] = useState(null);
@@ -178,6 +184,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     setPhase('idle');
     setResult(null);
     setSelection(EMPTY_SELECTION);
+    setChannels({ news: true });
     setFieldErrors({});
     setRequestError(null);
     setSummaryError(null);
@@ -198,6 +205,14 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
       const response = await discoverStores(term);
       if (requestId !== requestIdRef.current) return;
       setResult(response);
+      // Kanal dengan tepat satu kandidat ber-nama persis sudah tidak ambigu, jadi dipilih
+      // lebih dulu. Lebih dari satu kandidat tetap sepenuhnya pilihan pengguna.
+      const unique = { play: null, appstore: null };
+      for (const store of ['play', 'appstore']) {
+        const list = response?.[store]?.candidates || [];
+        if (list.length === 1 && list[0].match?.tier === 'exact') unique[store] = list[0];
+      }
+      setSelection(unique.play || unique.appstore ? unique : EMPTY_SELECTION);
       setPhase('ready');
       searchedForRef.current = term;
     } catch (error) {
@@ -205,7 +220,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
       setPhase('idle');
       searchedForRef.current = null;
       pendingRef.current = null;
-      setRequestError(error.message || 'Pencarian kandidat gagal. Coba ulangi.');
+      setRequestError(error.message || 'The candidate search failed. Try again.');
     }
   }, []);
 
@@ -238,20 +253,19 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     const errors = {};
     const name = label.trim();
     const target = entity.trim();
-    if (name.length < 2) errors.label = 'Nama analisis minimal dua karakter.';
-    else if (name.length > 60) errors.label = 'Nama analisis maksimal 60 karakter.';
+    if (name.length < 2) errors.label = 'The analysis name needs at least two characters.';
+    else if (name.length > 60) errors.label = 'The analysis name takes at most 60 characters.';
     else if (existingLabels.some(existing => existing.toLocaleLowerCase('id-ID') === name.toLocaleLowerCase('id-ID'))) {
-      errors.label = 'Nama ini sudah dipakai. Beri nama yang berbeda.';
+      errors.label = 'This name is already in use.';
     }
-    if (target.length < 2) errors.entity = 'Nama entitas minimal dua karakter.';
-    else if (target.length > 80) errors.entity = 'Nama entitas maksimal 80 karakter.';
-    if (!selection.play && !selection.appstore) {
-      setSummaryError('Pilih minimal satu identitas toko dari kandidat hasil pencarian.');
-    } else {
-      setSummaryError(null);
-    }
+    if (target.length < 2) errors.entity = 'The entity name needs at least two characters.';
+    else if (target.length > 80) errors.entity = 'The entity name takes at most 80 characters.';
+    const hasStore = Boolean(selection.play || selection.appstore);
+    const socialOn = SOCIAL_OPTIONS.some(option => channels[option.id]);
+    if (!hasStore && !socialOn) setSummaryError('Select at least one store identity or enable one social/news channel.');
+    else setSummaryError(null);
     setFieldErrors(errors);
-    if (Object.keys(errors).length || (!selection.play && !selection.appstore)) return;
+    if (Object.keys(errors).length || (!hasStore && !socialOn)) return;
 
     const stores = {};
     for (const store of ['play', 'appstore']) {
@@ -267,154 +281,170 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
         };
       }
     }
-    onSave({ label: name, entity: target, stores });
+    const nextChannels = Object.fromEntries(SOCIAL_OPTIONS.map(option => [option.id, {
+      enabled: channels[option.id] === true,
+      handle: '',
+      videoIds: [],
+      subreddits: [],
+    }]));
+    onSave({ label: name, entity: target, stores, channels: nextChannels });
   }
 
   const selectedCount = Number(Boolean(selection.play)) + Number(Boolean(selection.appstore));
+  const socialCount = SOCIAL_OPTIONS.reduce((sum, option) => sum + Number(channels[option.id] === true), 0);
   const found = result ? (result.play?.candidates?.length || 0) + (result.appstore?.candidates?.length || 0) : 0;
   const busy = phase === 'searching';
 
   return (
-    <DialogShell open={open} onClose={onClose} labelledBy="workspace-dialog-title" describedBy="workspace-dialog-desc" className="sm:max-w-[980px]">
-      <div className="h-1 w-full shrink-0 bg-gradient-to-r from-coral via-amber to-teal" aria-hidden="true" />
-      <header className="shrink-0 border-b border-line/70 px-5 pb-5 pt-6 sm:px-7 sm:pr-16">
-        <p className="eyebrow">Analisis baru</p>
-        <h2 id="workspace-dialog-title" className="mt-2 text-[clamp(1.65rem,3.6vw,2.25rem)] leading-[1.04] text-ink">
-          Dua isian. Sisanya mesin.
-        </h2>
-        <p id="workspace-dialog-desc" className="mt-2 max-w-xl text-[12.5px] leading-relaxed text-ink-muted text-pretty">
-          Beri nama ruang analisis, sebutkan entitasnya, lalu centang identitas toko yang benar dari kandidat yang muncul otomatis.
-        </p>
+    <DialogShell open={open} onClose={onClose} labelledBy="workspace-dialog-title" describedBy="workspace-dialog-desc" className="sm:max-w-[860px]" dismissible={!busy}>
+      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 px-4 py-3">
+        <div className="min-w-0">
+          <p className="label-sm">New analysis</p>
+          <h2 id="workspace-dialog-title" className="mt-1 text-[17px] font-extrabold tracking-tight text-slate-100">Two fields, the rest is automatic</h2>
+          <p id="workspace-dialog-desc" className="mt-1 text-[11px] leading-relaxed text-slate-400">
+            Candidates are searched automatically on Google Play and the App Store. You pick the identity that is right.
+          </p>
+        </div>
       </header>
 
-      <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
-        <div className="grid gap-4 md:grid-cols-2">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <label className="field-label" htmlFor="workspace-label">
-              <span>1 · Nama analisis</span>
-              <span className="text-[10px] font-medium text-ink-faint">{label.length}/60</span>
+            <label className="mb-1 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400" htmlFor="workspace-label">
+              <span>1 · Analysis name</span>
+              <span className="num font-normal text-slate-400">{label.length}/60</span>
             </label>
             <input
               id="workspace-label"
-              className={`field ${fieldErrors.label ? 'field-error' : ''}`}
+              className={`field field-sm ${fieldErrors.label ? 'field-error' : ''}`}
               value={label}
               onChange={event => { setLabel(event.target.value); setFieldErrors(current => ({ ...current, label: undefined })); }}
-              placeholder="Contoh: Ulasan merchant Q4"
+              placeholder="e.g. Merchant reviews Q4"
               maxLength={60}
               autoComplete="off"
               data-autofocus
               aria-invalid={Boolean(fieldErrors.label)}
-              aria-describedby={fieldErrors.label ? 'workspace-label-error' : 'workspace-label-hint'}
+              aria-describedby={fieldErrors.label ? 'workspace-label-error' : undefined}
             />
-            {fieldErrors.label ? (
-              <p id="workspace-label-error" className="mt-1.5 text-[11px] font-medium text-coral-deep" role="alert">{fieldErrors.label}</p>
-            ) : (
-              <p id="workspace-label-hint" className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">Nama ruang kerja di pemilih workspace. Tersimpan hanya di peramban ini.</p>
-            )}
+            {fieldErrors.label && <p id="workspace-label-error" className="mt-1 text-[10px] font-semibold text-neg" role="alert">{fieldErrors.label}</p>}
           </div>
           <div>
-            <label className="field-label" htmlFor="workspace-entity">
-              <span>2 · Nama entitas / target app</span>
-              <span className="text-[10px] font-medium text-ink-faint">{entity.length}/80</span>
+            <label className="mb-1 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400" htmlFor="workspace-entity">
+              <span>2 · Entity name / target app</span>
+              <span className="num font-normal text-slate-400">{entity.length}/80</span>
             </label>
             <div className="relative">
               <input
                 id="workspace-entity"
-                className={`field pr-11 ${fieldErrors.entity ? 'field-error' : ''}`}
+                className={`field field-sm pr-8 ${fieldErrors.entity ? 'field-error' : ''}`}
                 value={entity}
                 onChange={event => { setEntity(event.target.value); setFieldErrors(current => ({ ...current, entity: undefined })); setSummaryError(null); }}
-                placeholder="Contoh: wondr merchant"
+                placeholder="e.g. wondr merchant"
                 maxLength={80}
                 autoComplete="off"
                 aria-invalid={Boolean(fieldErrors.entity)}
                 aria-describedby={fieldErrors.entity ? 'workspace-entity-error' : 'workspace-entity-hint'}
               />
-              <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-faint">
-                {busy
-                  ? <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
-                  : <IconSearch size={16} />}
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                {busy ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-r-transparent" aria-hidden="true" /> : <IconSearch size={13} />}
               </span>
             </div>
             {fieldErrors.entity ? (
-              <p id="workspace-entity-error" className="mt-1.5 text-[11px] font-medium text-coral-deep" role="alert">{fieldErrors.entity}</p>
+              <p id="workspace-entity-error" className="mt-1 text-[10px] font-semibold text-neg" role="alert">{fieldErrors.entity}</p>
             ) : (
-              <p id="workspace-entity-hint" className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-                {entity.trim().length < MIN_SEARCH_LENGTH ? 'Tulis minimal tiga karakter; kandidat muncul sendiri.' : 'Kandidat dicari otomatis ke dua toko.'}
+              <p id="workspace-entity-hint" className="mt-1 text-[10px] text-slate-400">
+                {entity.trim().length < MIN_SEARCH_LENGTH ? 'At least three characters to start searching.' : 'Candidates load automatically while you type.'}
               </p>
             )}
           </div>
         </div>
 
-        <div className="mt-6">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="rule-label">Kandidat toko</p>
-            <div className="flex items-center gap-3">
-              <p className="text-[10.5px] text-ink-faint" aria-live="polite">
-                {busy
-                  ? 'Mencari di dua sumber…'
-                  : phase === 'ready'
-                    ? `${found} kandidat ditemukan · ${selectedCount} dipilih`
-                    : 'Belum ada kandidat'}
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <p className="label-sm">Store candidates</p>
+            <div className="flex items-center gap-2.5">
+              <p className="text-[10px] text-slate-400" aria-live="polite">
+                {busy ? 'searching both sources…' : phase === 'ready' ? `${found} found · ${selectedCount} selected` : 'no candidate yet'}
               </p>
               {phase === 'ready' && (
-                <button
-                  type="button"
-                  onClick={() => runDiscover(entity.trim())}
-                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-ink-muted transition hover:text-ink"
-                >
-                  <IconRefresh size={12} /> Cari ulang
+                <button type="button" onClick={() => runDiscover(entity.trim())} className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-200">
+                  <IconRefresh size={11} /> search again
                 </button>
               )}
             </div>
           </div>
 
           {requestError && (
-            <div className="mb-3 flex items-start gap-2 rounded-xl border border-coral/25 bg-coral-soft/45 p-3 text-[11.5px] leading-relaxed text-coral-deep" role="alert">
-              <IconAlert size={14} className="mt-0.5 shrink-0" />
+            <div className="mb-1.5 flex items-start gap-2 rounded-md border border-neg/25 bg-neg/[0.07] p-2.5 text-[10.5px] leading-relaxed text-neg" role="alert">
+              <IconAlert size={13} className="mt-0.5 shrink-0" />
               <span className="flex-1">{requestError}</span>
-              <button type="button" onClick={() => runDiscover(entity.trim())} className="btn btn-sm btn-outline">Coba lagi</button>
+              <button type="button" onClick={() => runDiscover(entity.trim())} className="btn btn-secondary btn-xs">Try again</button>
             </div>
           )}
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-2">
             <StoreColumn store="play" data={result?.play} phase={phase} selection={selection} onSelect={selectCandidate} />
             <StoreColumn store="appstore" data={result?.appstore} phase={phase} selection={selection} onSelect={selectCandidate} />
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-line/75 bg-paper-100/75 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5">
+          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
             <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-[11px] font-bold text-ink-soft"><IconInfo size={13} /> Ringkasan</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
-                {label.trim() ? `“${label.trim()}”` : 'Nama analisis belum diisi'}
-                <span className="px-1.5 text-line-strong">/</span>
-                {entity.trim() || 'entitas belum diisi'}
+              <p className="label-sm">Summary</p>
+              <p className="mt-1 truncate text-[11px] font-semibold text-slate-300">
+                {label.trim() || '—'} <span className="font-normal text-slate-400">/</span> {entity.trim() || '—'}
               </p>
             </div>
-            <div className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-2 sm:min-w-[280px]">
+            <div className="grid shrink-0 grid-cols-2 gap-x-5 gap-y-1.5">
               <ChannelSummary store="play" chosen={selection.play} />
               <ChannelSummary store="appstore" chosen={selection.appstore} />
             </div>
           </div>
-          <p className="mt-3 border-t border-line/60 pt-2.5 text-[10.5px] leading-relaxed text-ink-faint">
-            Tarikan membaca seluruh ulasan tertulis publik yang dikembalikan sumber, tanpa sampel buatan. Cache kanal berlaku satu jam; tombol Perbarui memaksa tarikan baru.
+          {summaryError && <p className="mt-1.5 text-[10.5px] font-semibold text-neg" role="alert">{summaryError}</p>}
+        </div>
+
+        <div className="card p-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="label">Social &amp; web channels</h3>
+            <p className="text-[10px] text-slate-400">credentials are installed only in the server environment, never on this page</p>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Non-store channels included in the pull">
+            {SOCIAL_OPTIONS.map(option => {
+              const on = channels[option.id] === true;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setChannels(current => ({ ...current, [option.id]: !current[option.id] }))}
+                  className={`filter-chip ${on ? 'filter-chip-active' : ''}`}
+                  title={option.needs}
+                >
+                  {option.label}
+                  <span className={`num ml-1 ${on ? 'opacity-80' : 'text-slate-400'}`}>{option.needsKey ? 'key needed' : 'ready'}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[10px] leading-snug text-slate-400">
+            A channel without credentials is still pulled and reported as Needs credentials, never as zero reviews.
           </p>
-          {summaryError && <p className="mt-2 text-[11px] font-semibold text-coral-deep" role="alert">{summaryError}</p>}
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-line/75 bg-paper-50/95 px-5 py-4 sm:px-7">
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button type="button" onClick={onClose} className="btn btn-ghost">Batal</button>
+      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-800 bg-slate-900/80 px-4 py-2.5">
+        <p className="hidden text-[10px] text-slate-400 sm:block">A pull reads every public review the source returns · 1 h cache</p>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
           <button
             type="button"
             onClick={save}
-            disabled={busy || !selectedCount}
-            className="btn btn-primary min-w-[200px]"
-            title={selectedCount ? 'Simpan workspace lalu tarik datanya' : 'Pilih satu kandidat toko terlebih dahulu'}
+            disabled={busy || (!selectedCount && !socialCount)}
+            className="btn btn-primary"
+            title={selectedCount || socialCount ? 'Save this workspace, then pull its data' : 'Pick one store candidate or enable one social channel'}
           >
-            Simpan &amp; tarik data
+            Save &amp; pull data
           </button>
         </div>
       </footer>

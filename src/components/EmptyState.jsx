@@ -1,14 +1,14 @@
 export function EmptyState({ icon: Icon, title, body, action, compact = false }) {
   return (
-    <div className={`flex flex-col items-center justify-center text-center ${compact ? 'min-h-[180px] px-6 py-8' : 'min-h-[260px] px-6 py-12'}`}>
+    <div className={`flex flex-col items-center justify-center px-4 text-center ${compact ? 'min-h-[112px] py-4' : 'min-h-[150px] py-6'}`}>
       {Icon && (
-        <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-line/80 bg-paper-100 text-ink-muted">
-          <Icon size={20} />
+        <span className="mb-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-800 bg-slate-900 text-slate-400">
+          <Icon size={15} />
         </span>
       )}
-      <p className="font-display text-[19px] font-semibold leading-snug text-ink">{title}</p>
-      {body && <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-ink-muted text-pretty">{body}</p>}
-      {action && <div className="mt-5">{action}</div>}
+      <p className="text-[13px] font-bold text-slate-200">{title}</p>
+      {body && <p className="mt-1 max-w-[38ch] text-[11px] leading-relaxed text-slate-400 text-balance">{body}</p>}
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }

@@ -20,11 +20,6 @@ export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function linePath(points) {
-  if (!points.length) return '';
-  return points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
-}
-
 export function formatTick(value) {
   if (Math.abs(value) >= 1000) return `${Math.round(value / 100) / 10}k`;
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);

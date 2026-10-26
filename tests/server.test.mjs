@@ -53,7 +53,7 @@ describe('server pratinjau lokal', () => {
     assert.match(response.headers.get('content-security-policy'), /script-src 'self'/);
     const html = await response.text();
     assert.match(html, /<div id="root">/);
-    assert.match(html, /Sentiment Intelligence/);
+    assert.match(html, /Sentil/);
   });
 
   test('menyajikan hasil build dan aset font', async () => {

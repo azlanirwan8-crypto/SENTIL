@@ -1,87 +1,71 @@
 import { useMemo, useState } from 'react';
-import { formatDay, formatDecimal, formatNumber, formatNss } from '../../lib/format.js';
+import { formatDay, formatNumber, formatNss } from '../../lib/format.js';
 import { EmptyState } from '../EmptyState.jsx';
-import { IconChart } from '../icons.jsx';
+import { IconGrid } from '../icons.jsx';
 import { ChartFrame, Legend } from './ChartFrame.jsx';
 import { ChartTooltip } from './ChartTooltip.jsx';
 import { clamp, formatTick, niceScale } from './chart-utils.js';
 import { useMeasure } from './useMeasure.js';
-import { SERIES_COLORS } from './palette.js';
+import { SENTIMENT_SERIES, SERIES_COLORS } from './palette.js';
 
-const SERIES = [
-  { key: 'positive', label: 'Positif', color: SERIES_COLORS.positive },
-  { key: 'neutral', label: 'Netral', color: SERIES_COLORS.neutral },
-  { key: 'negative', label: 'Negatif', color: SERIES_COLORS.negative },
-  { key: 'unclassified', label: 'Tak terklasifikasi', color: SERIES_COLORS.unclassified },
-];
-
-const MARGIN = { top: 16, right: 12, bottom: 34, left: 38 };
-const HEIGHT = 286;
+const SERIES = [...SENTIMENT_SERIES].reverse();
+const MARGIN = { top: 10, right: 8, bottom: 22, left: 28 };
+const HEIGHT = 216;
 
 export function DailyTrend({ daily }) {
-  const [measureRef, measuredWidth] = useMeasure(280);
+  const [measureRef, measuredWidth] = useMeasure(240);
   const [hovered, setHovered] = useState(null);
+  // Jendela gulir dipakai untuk menjepit tooltip: chart ini bisa lebih lebar dari kartunya.
+  const [viewStart, setViewStart] = useState(0);
   const data = Array.isArray(daily) ? daily : [];
 
-  const width = Math.max(measuredWidth, 280);
-  // Deret harian yang panjang tetap digambar penuh (tanpa pembuangan hari), tetapi lebar
-  // gulir dibatasi agar halaman tidak melebar ribuan piksel.
-  const desiredWidth = Math.max(width, data.length * 22 + MARGIN.left + MARGIN.right);
-  const chartWidth = Math.min(desiredWidth, Math.max(width, 2400));
+  const width = Math.max(measuredWidth, 240);
+  const desired = Math.max(width, data.length * 18 + MARGIN.left + MARGIN.right);
+  const chartWidth = Math.min(desired, Math.max(width, 1800));
   const plotWidth = chartWidth - MARGIN.left - MARGIN.right;
   const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
   const scale = useMemo(() => niceScale(Math.max(1, ...data.map(day => day.total)), 4), [data]);
   const slot = data.length ? plotWidth / data.length : plotWidth;
-  const barWidth = clamp(slot * 0.58, 3, 24);
-  const tickStep = Math.max(1, Math.ceil(data.length / 8));
+  const barWidth = clamp(slot * 0.62, 2, 16);
+  const tickStep = Math.max(1, Math.ceil(data.length / 6));
+  const totalReviews = data.reduce((sum, day) => sum + day.total, 0);
 
-  const legend = <Legend dense items={SERIES.map(item => ({ key: item.key, label: item.label, color: item.color }))} />;
+  const legend = <Legend items={SENTIMENT_SERIES.map(item => ({ key: item.key, label: item.label, color: item.color }))} />;
 
   if (!data.length) {
     return (
-      <ChartFrame eyebrow="01 · Tren harian" title="Aliran sinyal per hari" legend={legend} hint="Hanya hari yang memiliki ulasan.">
-        <EmptyState compact icon={IconChart} title="Belum ada tanggal" body="Tanggal publikasi tidak tersedia pada ulasan yang terbaca, sehingga tren harian tidak dapat dibentuk." />
+      <ChartFrame label="Daily trend" legend={legend}>
+        <EmptyState compact icon={IconGrid} title="No publication date" body="The daily trend needs a date column on the source reviews." />
       </ChartFrame>
     );
   }
 
   return (
-    <ChartFrame eyebrow="01 · Tren harian" title="Aliran sinyal per hari" legend={legend} hint="Seluruh ulasan dijumlahkan menurut tanggal publikasi; arahkan kursor atau fokus ke batang." className="h-full">
+    <ChartFrame label="Daily trend" meta={`${data.length} days · ${formatNumber(totalReviews)} reviews`} legend={legend} className="h-full">
       <div ref={measureRef} className="relative w-full min-w-0">
-        <div className="scrollbar-soft min-w-0 overflow-x-auto pb-1">
+        <div className="scroll-x min-w-0" onScroll={event => setViewStart(event.currentTarget.scrollLeft)}>
           <div className="relative" style={{ width: chartWidth }}>
-            <svg
-              width={chartWidth}
-              height={HEIGHT}
-              role="group"
-              aria-label={`Tren harian atas ${data.length} hari dan ${formatNumber(data.reduce((sum, day) => sum + day.total, 0))} ulasan.`}
-              className="block max-w-none"
-            >
-              <title>Tren sentimen harian</title>
-              <desc>Batang bertumpuk positif, netral, negatif, dan tak terklasifikasi untuk setiap tanggal yang memiliki ulasan.</desc>
+            <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`Daily trend over ${data.length} days, ${formatNumber(totalReviews)} reviews.`} className="block max-w-none">
+              <title>Daily sentiment trend</title>
               {scale.ticks.map(tick => {
                 const y = MARGIN.top + plotHeight - (tick / scale.max) * plotHeight;
                 return (
                   <g key={tick}>
-                    <line x1={MARGIN.left} y1={y} x2={chartWidth - MARGIN.right} y2={y} stroke={SERIES_COLORS.line} strokeOpacity={tick === 0 ? 0.95 : 0.55} strokeDasharray={tick === 0 ? undefined : '2 4'} />
-                    <text x={MARGIN.left - 9} y={y + 3.5} textAnchor="end" className="fill-ink-faint text-[9.5px] num">{formatTick(tick)}</text>
+                    <line x1={MARGIN.left} y1={y} x2={chartWidth - MARGIN.right} y2={y} stroke={tick === 0 ? SERIES_COLORS.line : SERIES_COLORS.lineSoft} />
+                    <text x={MARGIN.left - 6} y={y + 3} textAnchor="end" className="fill-slate-400 text-[10px] num">{formatTick(tick)}</text>
                   </g>
                 );
               })}
 
               {data.map((day, index) => {
-                const x = MARGIN.left + index * slot + (slot - barWidth) / 2;
+                const bandX = MARGIN.left + index * slot;
+                const x = bandX + (slot - barWidth) / 2;
                 let cursor = MARGIN.top + plotHeight;
                 const active = hovered === index;
                 return (
                   <g key={day.date}>
-                    {active && (
-                      <rect x={MARGIN.left + index * slot} y={MARGIN.top - 5} width={slot} height={plotHeight + 5} fill={SERIES_COLORS.ink} opacity="0.045" rx="4" />
-                    )}
-                    <g
-                      className="animate-bar-grow"
-                      style={{ transformBox: 'fill-box', transformOrigin: 'bottom', animationDelay: `${Math.min(index * 18, 320)}ms` }}
-                    >
+                    {active && <rect x={bandX} y={MARGIN.top - 4} width={slot} height={plotHeight + 4} fill="#FFFFFF" opacity="0.045" />}
+                    <g className="animate-bar-grow" style={{ transformBox: 'fill-box', transformOrigin: 'bottom', animationDelay: `${Math.min(index * 10, 260)}ms` }}>
                       {SERIES.map(series => {
                         const value = day[series.key] || 0;
                         if (!value) return null;
@@ -93,36 +77,31 @@ export function DailyTrend({ daily }) {
                             x={x}
                             y={cursor}
                             width={barWidth}
-                            height={Math.max(1.2, height - 0.6)}
-                            rx={barWidth > 8 ? 1.8 : 0.8}
+                            height={Math.max(1, height - 0.5)}
+                            rx={barWidth > 6 ? 1.5 : 0.5}
                             fill={series.color}
-                            opacity={active ? 1 : 0.88}
+                            opacity={active ? 1 : 0.82}
                           />
                         );
                       })}
                     </g>
                     <rect
-                      x={MARGIN.left + index * slot}
+                      x={bandX}
                       y={MARGIN.top}
                       width={slot}
                       height={plotHeight}
                       fill="transparent"
                       tabIndex={0}
                       role="img"
-                      aria-label={`${formatDay(day.date, { long: true })}: ${day.total} ulasan, ${day.positive} positif, ${day.negative} negatif, ${day.neutral} netral, ${day.unclassified} tak terklasifikasi.`}
+                      aria-label={`${formatDay(day.date, { long: true })}: ${day.total} reviews, ${day.positive} positive, ${day.negative} negative, ${day.neutral} neutral, ${day.unclassified} unclassified.`}
                       onMouseEnter={() => setHovered(index)}
                       onMouseLeave={() => setHovered(current => (current === index ? null : current))}
                       onFocus={() => setHovered(index)}
                       onBlur={() => setHovered(current => (current === index ? null : current))}
-                      className="cursor-default outline-none focus-visible:fill-teal/10"
+                      className="chart-hit"
                     />
                     {(index % tickStep === 0 || index === data.length - 1) && (
-                      <text
-                        x={MARGIN.left + index * slot + slot / 2}
-                        y={HEIGHT - 11}
-                        textAnchor="middle"
-                        className={`text-[9px] num ${active ? 'fill-ink font-bold' : 'fill-ink-faint'}`}
-                      >
+                      <text x={bandX + slot / 2} y={HEIGHT - 7} textAnchor="middle" className={`text-[10px] num ${active ? 'fill-slate-100' : 'fill-slate-400'}`}>
                         {formatDay(day.date)}
                       </text>
                     )}
@@ -140,20 +119,19 @@ export function DailyTrend({ daily }) {
                   x={MARGIN.left + hovered * slot + slot / 2}
                   y={MARGIN.top + plotHeight - (day.total / scale.max) * plotHeight}
                   width={chartWidth}
+                  height={HEIGHT}
+                  viewStart={hovered == null ? 0 : viewStart}
+                  viewWidth={measuredWidth}
                   title={formatDay(day.date, { long: true })}
                   rows={[
-                    { label: 'Total ulasan', value: formatNumber(day.total) },
-                    ...SERIES.map(series => ({ label: series.label, value: formatNumber(day[series.key] || 0), color: series.color })),
-                    { label: 'NSS hari', value: nss == null ? 'N/A' : formatNss(nss) },
+                    { label: 'Total', value: formatNumber(day.total) },
+                    ...SENTIMENT_SERIES.map(series => ({ label: series.label, value: formatNumber(day[series.key] || 0), color: series.color })),
+                    { label: 'NSS', value: nss == null ? 'N/A' : formatNss(nss) },
                   ]}
                 />
               );
             })()}
           </div>
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-3 text-[9.5px] text-ink-faint">
-          <span>{formatNumber(data.length)} hari dengan ulasan</span>
-          <span className="num">Total {formatNumber(data.reduce((sum, day) => sum + day.total, 0))} ulasan</span>
         </div>
       </div>
     </ChartFrame>

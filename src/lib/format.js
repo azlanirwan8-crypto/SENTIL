@@ -1,6 +1,6 @@
-const numberFormatter = new Intl.NumberFormat('id-ID');
-const decimalFormatter = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const compactFormatter = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 });
+const numberFormatter = new Intl.NumberFormat('en-GB');
+const decimalFormatter = new Intl.NumberFormat('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const LOCALE = 'en-GB';
 
 // Number(null) dan Number('') adalah 0. Tanpa penjaga ini, kolom yang kosong di sumber
 // akan tampil sebagai angka nol — padahal yang benar adalah tidak ada angka sama sekali.
@@ -23,12 +23,7 @@ export function formatDecimal(value, digits = 1) {
   const numeric = toNumber(value);
   if (Number.isNaN(numeric)) return 'N/A';
   if (digits === 1) return decimalFormatter.format(numeric);
-  return new Intl.NumberFormat('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(numeric);
-}
-
-export function formatCompact(value) {
-  const numeric = toNumber(value);
-  return Number.isNaN(numeric) ? 'N/A' : compactFormatter.format(numeric);
+  return new Intl.NumberFormat(LOCALE, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(numeric);
 }
 
 export function formatPercent(part, whole, digits = 1) {
@@ -64,7 +59,7 @@ function safeDate(value) {
 export function formatDate(value, options = {}) {
   const date = safeDate(value);
   if (!date) return 'N/A';
-  return new Intl.DateTimeFormat('id-ID', {
+  return new Intl.DateTimeFormat(LOCALE, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -75,7 +70,7 @@ export function formatDate(value, options = {}) {
 export function formatDateTime(value) {
   const date = safeDate(value);
   if (!date) return 'N/A';
-  return new Intl.DateTimeFormat('id-ID', {
+  return new Intl.DateTimeFormat(LOCALE, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -87,14 +82,14 @@ export function formatDateTime(value) {
 export function formatTime(value) {
   const date = safeDate(value);
   if (!date) return 'N/A';
-  return new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' }).format(date);
+  return new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
 export function formatDay(dateString, { long = false } = {}) {
   if (typeof dateString !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return 'N/A';
   const date = new Date(`${dateString}T12:00:00Z`);
   if (Number.isNaN(date.getTime())) return 'N/A';
-  return new Intl.DateTimeFormat('id-ID', {
+  return new Intl.DateTimeFormat(LOCALE, {
     day: '2-digit',
     month: long ? 'long' : 'short',
     year: long ? 'numeric' : undefined,
@@ -106,8 +101,8 @@ export function relativeTime(value, now = Date.now()) {
   const date = safeDate(value);
   if (!date) return 'N/A';
   const delta = Math.round((date.getTime() - now) / 1000);
-  if (Math.abs(delta) < 60) return delta >= 0 ? 'baru saja' : 'kurang dari satu menit lagi';
-  const formatter = new Intl.RelativeTimeFormat('id-ID', { numeric: 'auto' });
+  if (Math.abs(delta) < 60) return delta <= 0 ? 'just now' : 'less than a minute from now';
+  const formatter = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' });
   const ranges = [
     ['year', 60 * 60 * 24 * 365],
     ['month', 60 * 60 * 24 * 30],
@@ -120,45 +115,51 @@ export function relativeTime(value, now = Date.now()) {
       return formatter.format(Math.round(delta / seconds), unit);
     }
   }
-  return 'baru saja';
+  return 'just now';
 }
 
+const PLATFORM_NAMES = {
+  play: 'Google Play',
+  appstore: 'App Store',
+  youtube: 'YouTube',
+  reddit: 'Reddit',
+  news: 'News & blogs',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  x: 'X / Twitter',
+};
+
 export function platformLabel(value) {
-  if (value === 'play') return 'Google Play';
-  if (value === 'appstore') return 'App Store';
-  return value ? String(value) : 'N/A';
+  return PLATFORM_NAMES[value] || (value ? String(value) : 'N/A');
 }
 
 export const SENTIMENT_LABELS = {
-  positive: 'Positif',
-  neutral: 'Netral',
-  negative: 'Negatif',
-  unclassified: 'Tak terklasifikasi',
+  positive: 'Positive',
+  neutral: 'Neutral',
+  negative: 'Negative',
+  unclassified: 'Unclassified',
 };
 
 export function sentimentLabel(value) {
-  return SENTIMENT_LABELS[value] || 'Tak terklasifikasi';
+  return SENTIMENT_LABELS[value] || 'Unclassified';
 }
 
 export function channelStatusLabel(status) {
-  if (status === 'success') return 'Lengkap';
-  if (status === 'partial') return 'Parsial';
-  if (status === 'empty') return 'Kosong';
-  if (status === 'error') return 'Gagal';
+  if (status === 'success') return 'Complete';
+  if (status === 'partial') return 'Partial';
+  if (status === 'empty') return 'Empty';
+  if (status === 'error') return 'Failed';
+  if (status === 'needs_setup') return 'Needs credentials';
   return 'N/A';
 }
 
-export function ratingLabel(value) {
-  if (!Number.isInteger(value) || value < 1 || value > 5) return 'N/A';
-  return `${value} dari 5`;
-}
-
 export function sanitizeFilename(value) {
-  const base = String(value || 'analisis')
+  const base = String(value || 'analysis')
     .normalize('NFKD')
     .replace(/[^\w\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-')
     .toLowerCase();
-  return base || 'analisis';
+  return base || 'analysis';
 }

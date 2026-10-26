@@ -2,26 +2,22 @@ import { formatDecimal, formatNumber, formatNss, formatPercent, isNumber, platfo
 import { IconStar } from './icons.jsx';
 import { storeColor } from './charts/palette.js';
 
-function Card({ eyebrow, children, dark = false, className = '' }) {
+function Cell({ label, children, accent }) {
   return (
-    <article className={`relative flex min-h-[176px] flex-col justify-between overflow-hidden rounded-[20px] border p-5 transition-shadow hover:shadow-lift ${
-      dark
-        ? 'dark-panel noise-dark border-ink text-paper-50'
-        : 'border-line/80 bg-paper-50/90 text-ink shadow-panel'
-    } ${className}`}>
-      <p className={`text-[9px] font-bold uppercase tracking-[0.19em] ${dark ? 'text-paper-50/45' : 'text-ink-faint'}`}>{eyebrow}</p>
+    <div className="flex min-w-0 flex-col justify-between gap-2 border-b border-slate-800/70 p-3 odd:border-r xl:border-b-0 xl:odd:border-r-0 xl:border-l xl:first:border-l-0">
+      <p className={`label ${accent ? 'text-accent' : ''}`}>{label}</p>
       {children}
-    </article>
+    </div>
   );
 }
 
-function NssDirection({ value }) {
-  if (value == null) return 'belum tersedia';
-  if (value >= 60) return 'sangat positif';
-  if (value >= 20) return 'condong positif';
-  if (value > -20) return 'berimbang';
-  if (value > -60) return 'condong negatif';
-  return 'sangat negatif';
+function direction(value) {
+  if (value == null) return 'not available yet';
+  if (value >= 60) return 'very positive';
+  if (value >= 20) return 'tilts positive';
+  if (value > -20) return 'balanced';
+  if (value > -60) return 'tilts negative';
+  return 'very negative';
 }
 
 export function KpiRow({ dataset }) {
@@ -31,119 +27,100 @@ export function KpiRow({ dataset }) {
   const total = Number(summary.reviews) || reviews.length;
   const analyzed = Number(summary.analyzed) || 0;
   const nss = isNumber(summary.nss) ? toNumber(summary.nss) : null;
+  const avgRating = isNumber(summary.avgRating) ? toNumber(summary.avgRating) : null;
   const channelTotals = (summary.channels || [])
     .filter(channel => isNumber(channel.fetched) && toNumber(channel.fetched) > 0)
-    .map(channel => ({ ...channel, count: toNumber(channel.fetched) }));
+    .map(channel => ({ id: channel.id, count: toNumber(channel.fetched) }));
   const channelSum = channelTotals.reduce((sum, channel) => sum + channel.count, 0) || 1;
 
-  const ratingCounts = [1, 2, 3, 4, 5].map(stars => ({
-    stars,
-    count: reviews.filter(review => review.rating === stars).length,
-  }));
+  const ratingCounts = [1, 2, 3, 4, 5].map(stars => ({ stars, count: reviews.filter(review => review.rating === stars).length }));
   const rated = ratingCounts.reduce((sum, entry) => sum + entry.count, 0);
   const maxRatingCount = Math.max(1, ...ratingCounts.map(entry => entry.count));
-  const avgRating = isNumber(summary.avgRating) ? toNumber(summary.avgRating) : null;
 
   return (
-    <section aria-label="Indikator utama analisis" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Card eyebrow="01 · Volume terbaca">
+    <section aria-label="Headline indicators" className="card grid grid-cols-2 overflow-hidden xl:grid-cols-4">
+      <Cell label="Reviews read">
         <div>
-          <div className="flex items-end gap-2">
-            <span className="display-num text-[48px] leading-none text-ink">{formatNumber(total)}</span>
-            <span className="mb-1 text-[11px] font-semibold text-ink-faint">ulasan</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="metric">{formatNumber(total)}</span>
+            <span className="text-[10px] font-semibold text-slate-400">reviews</span>
           </div>
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
-            <span className="font-semibold text-ink-soft">{formatNumber(summary.withText)}</span> berteks · <span className="font-semibold text-ink-soft">{formatNumber(summary.withoutText)}</span> tanpa teks
-          </p>
-        </div>
-        <div>
-          <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-line/60" role="img" aria-label={channelTotals.map(channel => `${platformLabel(channel.id)} ${channel.count}`).join(', ')}>
+          <div className="mt-2 flex h-1 overflow-hidden rounded-full bg-slate-800" role="img" aria-label={channelTotals.map(channel => `${platformLabel(channel.id)} ${channel.count}`).join(', ')}>
             {channelTotals.map(channel => (
               <span key={channel.id} style={{ width: `${(channel.count / channelSum) * 100}%`, backgroundColor: storeColor(channel.id) }} />
             ))}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="mt-1.5 flex flex-wrap gap-x-2.5 text-[10px] text-slate-400">
             {channelTotals.map(channel => (
-              <span key={channel.id} className="inline-flex items-center gap-1 text-[9.5px] text-ink-faint">
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: storeColor(channel.id) }} />
-                {platformLabel(channel.id)} <span className="num font-semibold text-ink-soft">{formatNumber(channel.count)}</span>
+              <span key={channel.id} className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-[1px]" style={{ backgroundColor: storeColor(channel.id) }} />
+                {platformLabel(channel.id)} <span className="num font-semibold text-slate-300">{formatNumber(channel.count)}</span>
               </span>
             ))}
-            {!channelTotals.length && <span className="text-[9.5px] text-ink-faint">Tidak ada kanal terbaca</span>}
+            {isNumber(summary.withText) && (
+              <span className="num">{formatNumber(summary.withText)} with text · {formatNumber(summary.withoutText)} without text</span>
+            )}
           </div>
         </div>
-      </Card>
+      </Cell>
 
-      <Card eyebrow="02 · Cakupan klasifikasi">
+      <Cell label="Classification coverage">
         <div>
-          <div className="flex items-end gap-2">
-            <span className="display-num text-[48px] leading-none text-ink">{total ? formatPercent(analyzed, total) : 'N/A'}</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="metric">{total ? formatPercent(analyzed, total) : 'N/A'}</span>
+            <span className="num text-[10px] text-slate-400">{formatNumber(analyzed)}/{formatNumber(total)}</span>
           </div>
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
-            <span className="font-semibold text-ink-soft">{formatNumber(analyzed)}</span> dari <span className="font-semibold text-ink-soft">{formatNumber(total)}</span> punya skor kata
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-800">
+            <span className="block h-full rounded-full bg-pos transition-all duration-700" style={{ width: `${total ? (analyzed / total) * 100 : 0}%` }} />
+          </div>
+          <p className="mt-1.5 text-[10px] text-slate-400">
+            <span className="num">{formatNumber(summary.unclassified)}</span> unclassified · <span className="num">{formatNumber(model.metrics?.learnedTerms)}</span> learned terms
           </p>
         </div>
-        <div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-line/60">
-            <span className="block h-full rounded-full bg-teal transition-all duration-700" style={{ width: `${total ? (analyzed / total) * 100 : 0}%` }} />
-          </div>
-          <p className="mt-2 text-[9.5px] leading-relaxed text-ink-faint">
-            {formatNumber(summary.unclassified)} tak terklasifikasi · {formatNumber(model.metrics?.learnedTerms)} istilah dipelajari
-          </p>
-        </div>
-      </Card>
+      </Cell>
 
-      <Card eyebrow="03 · Net sentiment" dark>
+      <Cell label="NSS · weak labels" accent>
         <div>
-          <div className="flex items-end gap-2">
-            <span className="display-num text-[48px] leading-none text-paper-50">{nss == null ? 'N/A' : formatNss(nss)}</span>
-            <span className="mb-1 text-[10px] font-semibold text-paper-50/45">/ ±100</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="metric text-accent">{nss == null ? 'N/A' : formatNss(nss)}</span>
+            <span className="text-[10px] text-slate-400">±100</span>
           </div>
-          <p className="mt-3 text-[11px] leading-relaxed text-paper-50/60">
-            Arah label <span className="font-semibold text-paper-50/90">{NssDirection({ value: nss })}</span> · n={formatNumber(analyzed)}
-          </p>
-        </div>
-        <div>
-          <div className="relative h-1.5 rounded-full" style={{ background: 'linear-gradient(90deg, #D46A51, #8E9A92 50%, #2B9C83)' }}>
+          <div className="relative mt-2 h-1 rounded-full" style={{ background: 'linear-gradient(90deg,#FB7185,#475569 50%,#34D399)' }}>
             {nss != null && (
               <span
-                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[2.5px] border-ink bg-paper-50 shadow"
+                className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-950 bg-slate-100"
                 style={{ left: `${((Math.max(-100, Math.min(100, nss)) + 100) / 200) * 100}%` }}
               />
             )}
           </div>
-          <div className="mt-1.5 flex justify-between text-[8.5px] font-semibold uppercase tracking-[0.1em] text-paper-50/35">
-            <span>−100</span><span>0</span><span>+100</span>
-          </div>
-          <p className="mt-2 text-[9px] leading-relaxed text-paper-50/40">Dihitung dari label lemah, bukan probabilitas.</p>
+          <p className="mt-1.5 text-[10px] text-slate-400">
+            {direction(nss)} · n=<span className="num">{formatNumber(analyzed)}</span> · not a probability
+          </p>
         </div>
-      </Card>
+      </Cell>
 
-      <Card eyebrow="04 · Bintang ulasan">
+      <Cell label="Average stars">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <div className="flex items-end gap-1.5">
-              <span className="display-num text-[48px] leading-none text-ink">{avgRating == null ? 'N/A' : formatDecimal(avgRating, 2)}</span>
-              {avgRating != null && <IconStar size={17} className="mb-1.5 text-amber-bright" />}
+            <div className="flex items-center gap-1">
+              <span className="metric">{avgRating == null ? 'N/A' : formatDecimal(avgRating, 2)}</span>
+              {avgRating != null && <IconStar size={13} className="mb-0.5 text-neu" />}
             </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
-              dari <span className="font-semibold text-ink-soft">{formatNumber(rated)}</span> ulasan berating
-            </p>
+            <p className="mt-1.5 text-[10px] text-slate-400">from <span className="num">{formatNumber(rated)}</span> rated reviews · weak signal</p>
           </div>
-          <div className="flex h-[54px] shrink-0 items-end gap-1.5" role="img" aria-label={ratingCounts.map(entry => `${entry.stars} bintang: ${entry.count}`).join(', ')}>
-            {ratingCounts.map(entry => {
-              const tone = entry.stars <= 2 ? 'bg-coral/75' : entry.stars === 3 ? 'bg-amber/75' : 'bg-teal/80';
-              return (
-                <span key={entry.stars} className="flex h-full w-[11px] flex-col items-center justify-end gap-1" title={`${entry.stars} bintang: ${entry.count} ulasan`}>
-                  <span className={`w-full rounded-sm ${tone}`} style={{ height: `${Math.max(entry.count ? 12 : 2, (entry.count / maxRatingCount) * 42)}px` }} />
-                  <span className="text-[7.5px] leading-none text-ink-faint">{entry.stars}</span>
-                </span>
-              );
-            })}
+          <div className="flex h-[38px] shrink-0 items-end gap-1" role="img" aria-label={ratingCounts.map(entry => `${entry.stars} stars: ${entry.count}`).join(', ')}>
+            {ratingCounts.map(entry => (
+              <span key={entry.stars} className="flex flex-col items-center gap-1" title={`${entry.stars}★: ${entry.count} reviews`}>
+                <span
+                  className={`w-[7px] rounded-[1px] ${entry.stars <= 2 ? 'bg-neg/70' : entry.stars === 3 ? 'bg-neu/70' : 'bg-pos/70'}`}
+                  style={{ height: `${Math.max(entry.count ? 6 : 2, (entry.count / maxRatingCount) * 30)}px` }}
+                />
+                <span className="num text-[10px] leading-none text-slate-400">{entry.stars}</span>
+              </span>
+            ))}
           </div>
         </div>
-        <p className="text-[9px] leading-relaxed text-ink-faint">Bintang adalah sinyal lemah untuk mempelajari bobot kata.</p>
-      </Card>
+      </Cell>
     </section>
   );
 }

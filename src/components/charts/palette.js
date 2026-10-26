@@ -1,38 +1,35 @@
 export const SERIES_COLORS = {
-  positive: '#0E6B5A',
-  positiveSoft: '#2B9C83',
-  negative: '#B5462F',
-  negativeSoft: '#D46A51',
-  neutral: '#9C6714',
-  unclassified: '#8E9A92',
-  ink: '#18211C',
-  inkSoft: '#3C4A42',
-  line: '#DCD4C1',
-  paper: '#FCFAF4',
+  positive: '#34D399',
+  neutral: '#FBBF24',
+  negative: '#FB7185',
+  unclassified: '#64748B',
+  text: '#94A3B8',
+  faint: '#64748B',
+  bright: '#E2E8F0',
+  line: '#1E293B',
+  lineSoft: '#172032',
+  surface: '#0F172A',
+  canvas: '#020617',
 };
 
 export const STORE_COLORS = {
-  play: '#0E6B5A',
-  appstore: '#9C6714',
-  default: '#3C4A42',
+  play: '#38BDF8',
+  appstore: '#A78BFA',
+  youtube: '#F87171',
+  reddit: '#FB923C',
+  news: '#22D3EE',
+  facebook: '#818CF8',
+  instagram: '#F472B6',
+  tiktok: '#2DD4BF',
+  x: '#CBD5E1',
+  default: '#94A3B8',
 };
 
 export const SENTIMENT_SERIES = [
-  { key: 'positive', label: 'Positif', color: SERIES_COLORS.positive },
-  { key: 'neutral', label: 'Netral', color: SERIES_COLORS.neutral },
-  { key: 'negative', label: 'Negatif', color: SERIES_COLORS.negative },
-  { key: 'unclassified', label: 'Tak terklasifikasi', color: SERIES_COLORS.unclassified },
-];
-
-export const CLUSTER_COLORS = [
-  { fill: '#B5462F', text: '#FCFAF4' },
-  { fill: '#0E6B5A', text: '#FCFAF4' },
-  { fill: '#7E2D1D', text: '#FCFAF4' },
-  { fill: '#9C6714', text: '#FCFAF4' },
-  { fill: '#3C4A42', text: '#FCFAF4' },
-  { fill: '#D46A51', text: '#18211C' },
-  { fill: '#C18A2B', text: '#18211C' },
-  { fill: '#2B9C83', text: '#101613' },
+  { key: 'positive', label: 'Positive', color: SERIES_COLORS.positive },
+  { key: 'neutral', label: 'Neutral', color: SERIES_COLORS.neutral },
+  { key: 'negative', label: 'Negative', color: SERIES_COLORS.negative },
+  { key: 'unclassified', label: 'Unclassified', color: SERIES_COLORS.unclassified },
 ];
 
 export function storeColor(id) {

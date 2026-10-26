@@ -75,12 +75,12 @@ async function sendFile(response, filePath, request) {
     info = await stat(filePath);
   } catch {
     response.writeHead(404, { ...SECURITY_HEADERS, 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-    response.end(request.method === 'HEAD' ? undefined : 'Tidak ditemukan');
+    response.end(request.method === 'HEAD' ? undefined : 'Not found');
     return;
   }
   if (!info.isFile()) {
     response.writeHead(404, { ...SECURITY_HEADERS, 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-    response.end(request.method === 'HEAD' ? undefined : 'Tidak ditemukan');
+    response.end(request.method === 'HEAD' ? undefined : 'Not found');
     return;
   }
   const extension = path.extname(filePath).toLowerCase();
@@ -116,7 +116,7 @@ export function createAppServer({ syncHandler = createSyncHandler(), root = ROOT
     }
 
     if (pathname.startsWith('/api/')) {
-      sendJson(response, 404, { error: 'route_not_found', message: 'Endpoint tidak dikenal.' });
+      sendJson(response, 404, { error: 'route_not_found', message: 'Unknown endpoint.' });
       return;
     }
 
@@ -128,7 +128,7 @@ export function createAppServer({ syncHandler = createSyncHandler(), root = ROOT
 
     const filePath = resolveStaticPath(pathname, root);
     if (!filePath) {
-      sendJson(response, 404, { error: 'not_found', message: 'Berkas tidak tersedia.' });
+      sendJson(response, 404, { error: 'not_found', message: 'File not available.' });
       return;
     }
     await sendFile(response, filePath, request);
@@ -139,6 +139,6 @@ const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv
 if (isMain) {
   const port = Number(process.env.PORT || 5173);
   createAppServer().listen(port, () => {
-    console.log(`Sentiment Intelligence siap di http://localhost:${port}`);
+    console.log(`Sentil ready at http://localhost:${port}`);
   });
 }

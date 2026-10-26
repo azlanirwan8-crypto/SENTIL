@@ -3,21 +3,18 @@ import { IconTrash } from './icons.jsx';
 
 export function ConfirmDeleteDialog({ open, workspace, onClose, onConfirm }) {
   return (
-    <DialogShell open={open} onClose={onClose} labelledBy="delete-title" describedBy="delete-desc" className="sm:max-w-[460px]">
-      <div className="p-6 sm:p-7">
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-coral/25 bg-coral-soft/60 text-coral-deep">
-          <IconTrash size={19} />
+    <DialogShell open={open} onClose={onClose} labelledBy="delete-title" describedBy="delete-desc" className="sm:max-w-[420px]">
+      <div className="p-4">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neg/25 bg-neg/10 text-neg">
+          <IconTrash size={15} />
         </span>
-        <h2 id="delete-title" className="mt-4 text-[26px] leading-tight text-ink">Hapus analisis ini?</h2>
-        <p id="delete-desc" className="mt-2.5 text-[13px] leading-relaxed text-ink-muted">
-          <span className="font-semibold text-ink">{workspace?.label || 'Analisis ini'}</span> beserta salinan data ulasan dan modelnya akan dihapus dari peramban ini. Sumber publik di Google Play dan App Store tidak berubah.
+        <h2 id="delete-title" className="mt-3 text-[15px] font-extrabold tracking-tight text-slate-100">Delete this analysis?</h2>
+        <p id="delete-desc" className="mt-1.5 text-[11.5px] leading-relaxed text-slate-400">
+          <span className="font-bold text-slate-200">{workspace?.label || 'This analysis'}</span> along with its review copy and model is removed from this browser. Public sources are untouched and this action cannot be undone.
         </p>
-        <p className="mt-3 rounded-xl border border-line/70 bg-paper-100/70 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-ink-muted">
-          Tindakan ini tidak dapat dibatalkan. Ekspor JSON dari tab Metode &amp; data bila kamu masih memerlukannya.
-        </p>
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Batal</button>
-          <button type="button" className="btn btn-danger" onClick={onConfirm}>Hapus permanen</button>
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-danger" onClick={onConfirm}>Delete permanently</button>
         </div>
       </div>
     </DialogShell>

@@ -1,6 +1,8 @@
-export const META_KEY = 'si.workspaces.v1';
-export const ACTIVE_KEY = 'si.active.v1';
-export const DATASET_PREFIX = 'si.dataset.v1.';
+import { fetchDataset, fetchState, putWorkspace, removeWorkspace } from './api.js';
+
+// Workspace dan snapshotnya hidup di database server. Yang tinggal di peramban hanya
+// satu nilai kecil: workspace mana yang sedang dibuka.
+const ACTIVE_KEY = 'si.active.v1';
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isNonEmptyString = value => typeof value === 'string' && value.trim().length > 0;
@@ -8,32 +10,6 @@ const isNonEmptyString = value => typeof value === 'string' && value.trim().leng
 export function createWorkspaceId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   return `ws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function readRaw(key) {
-  try {
-    return { value: window.localStorage.getItem(key), error: null };
-  } catch {
-    return {
-      value: null,
-      error: 'Penyimpanan peramban tidak dapat diakses. Analisis tetap berjalan di memori, tetapi tidak akan bertahan setelah halaman ditutup.',
-    };
-  }
-}
-
-function writeRaw(key, value) {
-  try {
-    window.localStorage.setItem(key, value);
-    return { ok: true, error: null };
-  } catch (error) {
-    const quota = error && (error.name === 'QuotaExceededError' || error.code === 22 || error.code === 1014);
-    return {
-      ok: false,
-      error: quota
-        ? 'Ruang penyimpanan peramban penuh. Data terbaru tetap ada di memori sesi ini, tetapi belum tersimpan. Ekspor JSON agar tidak hilang.'
-        : 'Data tidak dapat disimpan di peramban ini. Data tetap ada di memori sesi ini; ekspor JSON agar tidak hilang.',
-    };
-  }
 }
 
 function normalizeWorkspace(entry) {
@@ -46,23 +22,35 @@ function normalizeWorkspace(entry) {
     updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : null,
     lastSyncedAt: typeof entry.lastSyncedAt === 'string' ? entry.lastSyncedAt : null,
     stores: isObject(entry.stores) ? entry.stores : {},
+    channels: isObject(entry.channels) ? entry.channels : {},
     snapshot: isObject(entry.snapshot) ? entry.snapshot : null,
   };
 }
 
-export function readWorkspaces() {
-  const raw = readRaw(META_KEY);
-  if (raw.error) return { workspaces: [], error: raw.error };
-  if (!raw.value) return { workspaces: [], error: null };
+export function readActiveId() {
   try {
-    const parsed = JSON.parse(raw.value);
-    if (!Array.isArray(parsed)) {
-      return { workspaces: [], error: 'Metadata analisis tidak berbentuk daftar. Tidak ada data yang dihapus otomatis; kamu dapat mengekspor atau memulai analisis baru.' };
-    }
+    return window.localStorage.getItem(ACTIVE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function persistActiveId(id) {
+  try {
+    if (id) window.localStorage.setItem(ACTIVE_KEY, String(id));
+    else window.localStorage.removeItem(ACTIVE_KEY);
+  } catch {
+    // Tanpa penyimpanan peramban sekalipun aplikasi tetap berfungsi; ini hanya kenyamanan.
+  }
+}
+
+export async function loadState() {
+  try {
+    const response = await fetchState();
     const seen = new Set();
     const workspaces = [];
     let dropped = 0;
-    for (const entry of parsed) {
+    for (const entry of Array.isArray(response.workspaces) ? response.workspaces : []) {
       const normalized = normalizeWorkspace(entry);
       if (!normalized || seen.has(normalized.id)) {
         dropped += 1;
@@ -73,60 +61,61 @@ export function readWorkspaces() {
     }
     return {
       workspaces,
-      error: dropped ? `${dropped} entri metadata tidak lengkap dan tidak dimuat. Entri lain dipertahankan.` : null,
+      db: isObject(response.db) ? response.db : null,
+      error: dropped ? `${dropped} workspace rows were incomplete and were skipped.` : null,
     };
-  } catch {
-    return { workspaces: [], error: 'Metadata analisis di peramban rusak dan tidak dapat dibaca. Tidak ada data yang dihapus otomatis; kamu dapat memulai analisis baru.' };
-  }
-}
-
-export function readActiveId() {
-  const raw = readRaw(ACTIVE_KEY);
-  return raw.value || null;
-}
-
-export function persistActiveId(id) {
-  if (!id) {
-    try {
-      window.localStorage.removeItem(ACTIVE_KEY);
-      return { ok: true, error: null };
-    } catch {
-      return { ok: false, error: null };
+  } catch (cause) {
+    // Aksi state tidak dikenal = halaman lebih baru daripada server yang menjawab. Pesan
+    // mentah dari penolakan itu bukan masalah penyimpanan, jadi jangan disamarkan begitu.
+    if (cause?.code === 'action_invalid' || cause?.code === 'route_not_found') {
+      return {
+        workspaces: [],
+        db: null,
+        errorTitle: 'The server answering this page is an older version',
+        error: 'The page asked the server for the workspace list and the server did not recognise that request. Restart the local server (npm start) or redeploy it. Nothing was changed and nothing was deleted.',
+      };
     }
+    return { workspaces: [], db: null, error: cause?.message || 'The analysis server could not be reached.' };
   }
-  return writeRaw(ACTIVE_KEY, String(id));
 }
 
-export function persistWorkspaces(workspaces) {
-  return writeRaw(META_KEY, JSON.stringify(workspaces));
-}
-
-export function readDataset(workspaceId) {
-  if (!workspaceId) return { dataset: null, error: null };
-  const raw = readRaw(`${DATASET_PREFIX}${workspaceId}`);
-  if (raw.error) return { dataset: null, error: raw.error };
-  if (!raw.value) return { dataset: null, error: null };
+export async function loadDataset(workspaceId) {
+  if (!workspaceId) return { dataset: null, db: null, error: null };
   try {
-    const parsed = JSON.parse(raw.value);
-    if (!isObject(parsed) || !Array.isArray(parsed.reviews) || !isObject(parsed.model)) {
-      return { dataset: null, error: 'Isi data analisis ini tidak lengkap. Tarik ulang data untuk memulihkannya.' };
+    const response = await fetchDataset(workspaceId);
+    const dataset = response.dataset;
+    if (!isObject(dataset) || !Array.isArray(dataset.reviews) || !isObject(dataset.model)) {
+      return { dataset: null, db: isObject(response.db) ? response.db : null, error: null };
     }
-    return { dataset: parsed, error: null };
-  } catch {
-    return { dataset: null, error: 'Isi data analisis ini rusak dan tidak dapat dibaca. Tarik ulang data untuk memulihkannya.' };
+    return { dataset, db: isObject(response.db) ? response.db : null, error: null };
+  } catch (cause) {
+    return { dataset: null, db: null, error: cause?.message || 'The snapshot could not be read from the database.' };
   }
 }
 
-export function persistDataset(workspaceId, dataset) {
-  if (!workspaceId) return { ok: false, error: 'Workspace tidak dikenal.' };
-  return writeRaw(`${DATASET_PREFIX}${workspaceId}`, JSON.stringify(dataset));
+export async function saveWorkspace(workspace) {
+  if (!workspace?.id) return { saved: false, error: 'The workspace has no identity yet.' };
+  try {
+    const response = await putWorkspace(workspace);
+    return {
+      saved: isObject(response.workspace),
+      db: isObject(response.db) ? response.db : null,
+      error: isObject(response.workspace) ? null : 'The database did not accept this workspace.',
+    };
+  } catch (cause) {
+    return { saved: false, error: cause?.message || 'The database could not be reached.' };
+  }
 }
 
-export function removeDataset(workspaceId) {
-  if (!workspaceId) return;
+export async function deleteWorkspace(workspaceId) {
+  if (!workspaceId) return { deleted: false, error: null };
   try {
-    window.localStorage.removeItem(`${DATASET_PREFIX}${workspaceId}`);
-  } catch {
-    // Penghapusan metadata sudah cukup untuk menyembunyikan workspace; sisa data yatim tidak berbahaya.
+    const response = await removeWorkspace(workspaceId);
+    return {
+      deleted: response.deleted === true,
+      error: response.deleted === true ? null : 'The database did not confirm the deletion.',
+    };
+  } catch (cause) {
+    return { deleted: false, error: cause?.message || 'The database could not be reached.' };
   }
 }

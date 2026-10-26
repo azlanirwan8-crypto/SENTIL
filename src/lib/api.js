@@ -18,7 +18,7 @@ async function post(payload) {
       credentials: 'same-origin',
     });
   } catch {
-    throw new ApiError('Server analisis tidak dapat dihubungi. Periksa koneksi lalu coba lagi.');
+    throw new ApiError('The analysis server could not be reached. Check the connection and try again.');
   }
 
   const text = await response.text();
@@ -31,13 +31,13 @@ async function post(payload) {
     throw new ApiError(
       body && typeof body.message === 'string'
         ? body.message
-        : `Permintaan gagal dengan status ${response.status}.`,
+        : `The request failed with status ${response.status}.`,
       { status: response.status, code: body && typeof body.error === 'string' ? body.error : 'request_failed' },
     );
   }
 
   if (!body || typeof body !== 'object') {
-    throw new ApiError('Server mengembalikan respons yang tidak dapat dibaca.');
+    throw new ApiError('The server returned a response that could not be read.');
   }
 
   return body;
@@ -47,12 +47,42 @@ export function discoverStores(entity) {
   return post({ action: 'discover', entity });
 }
 
-export function syncWorkspace({ entity, playAppId, appleAppId, force = false }) {
+export function syncWorkspace({ workspace, entity, playAppId, appleAppId, social = {}, force = false }) {
   return post({
     action: 'sync',
+    workspace: workspace || null,
     entity,
     playAppId: playAppId || null,
     appleAppId: appleAppId || null,
+    social,
     force: force === true,
   });
+}
+
+export function fetchState() {
+  return post({ action: 'state' });
+}
+
+export function fetchComparison(workspaceIds) {
+  return post({ action: 'compare', workspaceIds });
+}
+
+export function fetchDataset(workspaceId) {
+  return post({ action: 'dataset', workspaceId });
+}
+
+export function removeWorkspace(workspaceId) {
+  return post({ action: 'workspace-delete', workspaceId });
+}
+
+export function putWorkspace(workspace) {
+  return post({ action: 'workspace-save', workspace });
+}
+
+export function fetchLimits({ entity, playAppId, appleAppId, social = {} }) {
+  return post({ action: 'limits', entity, playAppId: playAppId || null, appleAppId: appleAppId || null, social });
+}
+
+export function resetLimits({ entity, playAppId, appleAppId, social = {} }) {
+  return post({ action: 'limits-reset', entity, playAppId: playAppId || null, appleAppId: appleAppId || null, social });
 }

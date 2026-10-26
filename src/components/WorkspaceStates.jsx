@@ -1,21 +1,63 @@
 import { useEffect, useState } from 'react';
-import { formatDateTime, formatNumber } from '../lib/format.js';
+import { channelStatusLabel, formatDateTime, formatNumber } from '../lib/format.js';
 import { StoreMark } from './Brand.jsx';
 import { Notice } from './Notices.jsx';
-import { EmptyState } from './EmptyState.jsx';
-import { IconAlert, IconArrowRight, IconRefresh, IconSearchSignal } from './icons.jsx';
+import { IconArrowRight, IconExternal, IconRefresh } from './icons.jsx';
 
-function ScanLine({ label, detail, tone = 'teal' }) {
+const CHANNEL_TONES = {
+  success: 'border-pos/25 bg-pos/10 text-pos',
+  partial: 'border-neu/25 bg-neu/10 text-neu',
+  empty: 'border-slate-700 bg-slate-800/70 text-slate-400',
+  error: 'border-neg/30 bg-neg/10 text-neg',
+};
+
+function Spinner({ size = 12 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-paper-50/10 bg-paper-50/[0.045] p-3.5">
-      <span className={`flex h-8 w-8 items-center justify-center rounded-full ${tone === 'amber' ? 'bg-amber' : 'bg-teal'} text-paper-50`}>
-        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />
-      </span>
+    <span
+      className="inline-block animate-spin rounded-full border-[1.5px] border-current border-r-transparent"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function BootScreen({ label = 'Loading' }) {
+  return (
+    <div className="space-y-3" aria-busy="true">
+      <section className="card overflow-hidden">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-3 py-1.5">
+          <h2 className="label">{label}</h2>
+          <p className="text-[10px] text-slate-400">
+            database<span className="sr-only"> is being read</span>
+          </p>
+        </header>
+        <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map(index => (
+            <div key={index}>
+              <div className="skeleton h-2 w-12" />
+              <div className="skeleton mt-3 h-6 w-20" />
+              <div className="skeleton mt-3 h-1.5 w-full" />
+            </div>
+          ))}
+        </div>
+        <div className="progress-indeterminate h-[2px] w-full bg-slate-900" />
+      </section>
+    </div>
+  );
+}
+
+function ScanRow({ store, appId }) {
+  return (
+    <div className="flex items-center gap-2.5 border-b border-slate-800/70 px-3 py-2.5 last:border-b-0">
+      <StoreMark store={store} size={22} tone="quiet" />
       <div className="min-w-0 flex-1">
-        <p className="text-[11.5px] font-bold text-paper-50/90">{label}</p>
-        <p className="mt-0.5 text-[9.5px] text-paper-50/45">{detail}</p>
+        <p className="text-[11.5px] font-bold text-slate-100">{store === 'play' ? 'Google Play' : 'App Store'}</p>
+        <p className="truncate font-mono text-[10px] text-slate-400">{appId}</p>
       </div>
-      <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-teal-bright" aria-hidden="true" />
+      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-accent">
+        <Spinner />
+        pulling
+      </span>
     </div>
   );
 }
@@ -30,81 +72,70 @@ export function SyncScreen({ workspace }) {
   }, []);
 
   return (
-    <div className="mt-5 space-y-4" aria-busy="true" aria-live="polite">
-      <section className="surface overflow-hidden p-5 sm:p-7">
-        <div className="grid items-center gap-7 lg:grid-cols-[0.95fr_1.05fr]">
+    <div className="space-y-3" aria-busy="true">
+      <section className="card overflow-hidden">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-3 py-1.5">
+          <h2 className="label">Pull in progress</h2>
+          <p className="num text-[10px] text-slate-400">
+            {elapsed < 1 ? 'just started' : `${elapsed} seconds`}<span className="sr-only"> since the pull started</span>
+          </p>
+        </header>
+        <div className="grid md:grid-cols-2 md:divide-x divide-slate-800/70">
           <div>
-            <div className="rule-label">Penarikan pertama</div>
-            <h2 className="mt-4 text-[clamp(1.7rem,3.4vw,2.5rem)] leading-[1.05] text-ink">Membaca dua sumber publik.</h2>
-            <p className="mt-3 max-w-md text-[12.5px] leading-relaxed text-ink-muted">
-              Ulasan ditarik langsung dari halaman publik, lalu mesin mempelajari bobot kata dari rating yang ikut terbaca. Tidak ada data contoh dan tidak ada isian pengganti.
-            </p>
-            <div className="mt-5 flex items-center gap-3">
-              <span className="inline-flex items-center gap-2 rounded-full border border-line bg-paper-100 px-3 py-1.5 text-[10.5px] font-semibold text-ink-soft">
-                <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-teal" />
-                {elapsed < 1 ? 'baru dimulai' : `${elapsed} detik berjalan`}
+            {stores.map(store => (
+              <ScanRow key={store} store={store} appId={workspace.stores[store].appId} />
+            ))}
+            <div className="flex items-center gap-2.5 px-3 py-2.5">
+              <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md border border-slate-800 bg-slate-900 text-[10px] font-bold text-slate-400">
+                NLP
               </span>
-              <span className="text-[10px] text-ink-faint">biasanya selesai dalam hitungan detik</span>
+              <p className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-slate-100">Corpus model</p>
+              <span className="text-[10px] text-slate-400">stopwords · weights · topics</span>
             </div>
           </div>
-
-          <div className="dark-panel noise-dark rounded-2xl border border-ink p-4 text-paper-50">
-            <p className="mb-3 text-[8.5px] font-bold uppercase tracking-[0.18em] text-paper-50/40">Permintaan berjalan</p>
-            <div className="space-y-2">
-              {stores.map(store => (
-                <ScanLine
-                  key={store}
-                  label={store === 'play' ? 'Google Play' : 'App Store'}
-                  detail={`${workspace.stores[store].appId} · ulasan publik`}
-                  tone={store === 'play' ? 'teal' : 'amber'}
-                />
-              ))}
-              <ScanLine label="Model korpus" detail="Stopwords frekuensi · bobot rating · klaster" />
-            </div>
-            <p className="mt-3 text-[9px] leading-relaxed text-paper-50/35">
-              Status per tahap tidak dialirkan dari server; waktu di samping adalah waktu permintaan yang sebenarnya.
-            </p>
+          <div className="grid grid-cols-2 gap-0 divide-x divide-slate-800/70">
+            {[0, 1, 2, 3].map(index => (
+              <div key={index} className="p-3 odd:border-r odd:border-slate-800/70">
+                <div className="skeleton h-2 w-12" />
+                <div className="skeleton mt-3 h-6 w-20" />
+                <div className="skeleton mt-3 h-1.5 w-full" />
+              </div>
+            ))}
           </div>
         </div>
+        <div className="progress-indeterminate h-[2px] w-full bg-slate-900" />
       </section>
-
-      <div className="grid gap-3 sm:grid-cols-4">
-        {[0, 1, 2, 3].map(index => (
-          <div key={index} className="surface min-h-[152px] p-4">
-            <div className="skeleton h-2.5 w-16" />
-            <div className="skeleton mt-5 h-9 w-24" />
-            <div className="skeleton mt-5 h-2 w-full" />
-            <div className="skeleton mt-2 h-2 w-2/3" />
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
 function ChannelState({ channel, workspaceStore, store }) {
-  const status = channel?.status || 'pending';
-  const badge = {
-    error: ['Gagal', 'border-coral/25 bg-coral-soft/50 text-coral-deep'],
-    empty: ['Kosong', 'border-line-strong/50 bg-paper-200 text-ink-muted'],
-    partial: ['Parsial', 'border-amber/25 bg-amber-soft/55 text-amber-deep'],
-    success: ['Lengkap', 'border-teal/25 bg-teal-soft/60 text-teal-deep'],
-    pending: ['Menunggu', 'border-line bg-paper-100 text-ink-faint'],
-  }[status] || ['Menunggu', 'border-line bg-paper-100 text-ink-faint'];
+  const status = channel?.status;
+  const tone = CHANNEL_TONES[status] || 'border-slate-800 bg-slate-900 text-slate-400';
+  const url = channel?.app?.url || workspaceStore?.url || null;
   return (
-    <div className="rounded-2xl border border-line/80 bg-paper-100/60 p-4">
-      <div className="flex items-center gap-2.5">
-        <StoreMark store={store} size={30} />
-        <div className="min-w-0 flex-1">
-          <p className="text-[11.5px] font-bold text-ink">{store === 'play' ? 'Google Play' : 'App Store'}</p>
-          <p className="truncate font-mono text-[9px] text-ink-faint">{workspaceStore?.appId || 'N/A'}</p>
-        </div>
-        <span className={`rounded-full border px-2 py-0.5 text-[8.5px] font-bold ${badge[1]}`}>{badge[0]}</span>
+    <div className="min-w-0 p-3">
+      <div className="flex items-center gap-2">
+        <StoreMark store={store} size={22} tone="quiet" />
+        <p className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-slate-100">
+          {store === 'play' ? 'Google Play' : 'App Store'}
+        </p>
+        <span className={`pill ${tone}`}>{channelStatusLabel(status) || 'Not pulled yet'}</span>
+        {url && (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-accent" aria-label="Open the store page">
+            <IconExternal size={12} />
+          </a>
+        )}
       </div>
-      <p className="mt-3 text-[10.5px] leading-relaxed text-ink-muted">
-        {channel?.message || 'Kanal belum pernah ditarik. Tidak ada angka yang ditampilkan sebelum sumber benar-benar menjawab.'}
-      </p>
-      <p className="mt-2 text-[9.5px] text-ink-faint">{channel?.fetched != null ? `${formatNumber(channel.fetched)} ulasan terbaca` : 'Tidak ada angka terbaca'}</p>
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-800/70 pt-2">
+        <span className="truncate font-mono text-[10px] text-slate-400">{workspaceStore?.appId || 'N/A'}</span>
+        <span className="num shrink-0 text-[10px] font-semibold text-slate-400">
+          {channel?.fetched != null ? `${formatNumber(channel.fetched)} read` : '0 read'}
+        </span>
+      </div>
+      {channel?.message && (
+        <p className="mt-1.5 line-clamp-2 text-[10px] leading-snug text-slate-400">{channel.message}</p>
+      )}
     </div>
   );
 }
@@ -115,57 +146,46 @@ export function WorkspaceEmpty({ workspace, dataset, datasetError, syncError, sy
   const stores = ['play', 'appstore'].filter(store => workspace.stores?.[store]?.appId);
   const allError = channels.length > 0 && channels.every(channel => channel.status === 'error');
   const title = dataset
-    ? allError ? 'Kanal tidak dapat dibaca' : 'Tidak ada ulasan tertulis yang terbaca'
-    : syncError ? 'Penarikan gagal' : 'Snapshot belum ada';
+    ? allError ? 'Channels could not be read' : 'No written review was read'
+    : syncError ? 'Pull failed' : 'No snapshot yet';
   const body = dataset
     ? allError
-      ? 'Sumber publik menolak atau tidak merespons pada penarikan terakhir. Ini kegagalan sumber, bukan bukti nol ulasan. Data lama, bila ada, dipertahankan.'
-      : 'Sumber terhubung, tetapi tidak ada ulasan tertulis publik yang dikembalikan untuk kanal yang dipilih. Ini bukan berarti aplikasi tidak memiliki ulasan.'
-    : syncError || datasetError || 'Workspace ini belum memiliki salinan data. Tarik ulasan publik untuk mulai membaca sinyalnya.';
+      ? 'Source failures on the last pull, not proof of zero reviews. The older snapshot is still in use.'
+      : 'The sources responded, but no written review came back for the selected channels.'
+    : syncError || datasetError || 'No data copy exists in this workspace yet.';
 
   return (
-    <div className="mt-5 space-y-4" aria-live="polite">
-      {(syncError || datasetError) && dataset && (
-        <Notice tone="coral" title="Catatan pemuatan" live>{syncError || datasetError}</Notice>
+    <div className="mx-auto w-full max-w-[720px] space-y-3" aria-live="polite">
+      {dataset && (syncError || datasetError) && (
+        <Notice tone="coral" title="Load note" live>{syncError || datasetError}</Notice>
       )}
-      <section className="surface overflow-hidden">
-        <div className="grid lg:grid-cols-[1fr_0.9fr]">
-          <div className="p-6 sm:p-8">
-            <EmptyState
-              icon={syncError ? IconAlert : IconSearchSignal}
-              title={title}
-              body={body}
-              action={
-                <button type="button" onClick={onRefresh} disabled={syncing} className="btn btn-primary">
-                  <IconRefresh size={15} />
-                  {syncing ? 'Menarik data…' : 'Tarik data sekarang'}
-                  {!syncing && <IconArrowRight size={14} />}
-                </button>
-              }
-            />
+
+      <section className="card overflow-hidden">
+        <div className="flex flex-col items-center px-4 py-6 text-center">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-800 bg-slate-900 text-slate-400">
+            <IconRefresh size={15} />
+          </span>
+          <h2 className="mt-3 text-[13px] font-bold text-slate-100">{title}</h2>
+          <p className="mt-1 max-w-[46ch] text-[11px] leading-relaxed text-slate-400 text-balance">{body}</p>
+          <div className="mt-4 flex items-center gap-2">
+            <button type="button" onClick={onRefresh} disabled={syncing} className="btn btn-primary">
+              {syncing ? <Spinner size={12} /> : <IconRefresh size={13} />}
+              {syncing ? 'Pulling data…' : 'Pull data now'}
+              {!syncing && <IconArrowRight size={12} />}
+            </button>
             {dataset?.fetchedAt && (
-              <p className="mt-1 text-center text-[9.5px] text-ink-faint">
-                Snapshot terakhir: {formatDateTime(dataset.fetchedAt)}
-              </p>
+              <span className="text-[10px] text-slate-400">Last snapshot {formatDateTime(dataset.fetchedAt)}</span>
             )}
           </div>
-          <div className="border-t border-line/80 bg-paper-100/50 p-5 sm:p-6 lg:border-l lg:border-t-0">
-            <p className="rule-label">Status kanal</p>
-            <div className="mt-3 space-y-2.5">
-              {stores.map(store => (
-                <ChannelState
-                  key={store}
-                  store={store}
-                  channel={byId.get(store)}
-                  workspaceStore={workspace.stores[store]}
-                />
-              ))}
-            </div>
-            <p className="mt-4 text-[9.5px] leading-relaxed text-ink-faint">
-              Tidak ada metrik yang diisi otomatis saat kanal gagal. Grafik hanya akan muncul dari ulasan yang benar-benar terbaca.
-            </p>
-          </div>
         </div>
+
+        {stores.length > 0 && (
+          <div className="grid border-t border-slate-800/80 sm:grid-cols-2 sm:divide-x divide-slate-800/70">
+            {stores.map(store => (
+              <ChannelState key={store} store={store} channel={byId.get(store)} workspaceStore={workspace.stores[store]} />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

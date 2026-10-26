@@ -1,13 +1,9 @@
-export function Legend({ items, dense = false }) {
+export function Legend({ items }) {
   return (
-    <div className={`flex flex-wrap items-center ${dense ? 'gap-x-3 gap-y-1.5' : 'gap-x-4 gap-y-2'}`}>
+    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
       {items.map(item => (
-        <span key={item.key || item.label} className="inline-flex items-center gap-1.5 text-[10.5px] font-medium text-ink-muted">
-          <span
-            className={`${item.shape === 'line' ? 'h-[2px] w-3.5 rounded-full' : 'h-2 w-2 rounded-full'}`}
-            style={{ backgroundColor: item.color }}
-            aria-hidden="true"
-          />
+        <span key={item.key || item.label} className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
+          <span className="h-1.5 w-1.5 rounded-[1px]" style={{ backgroundColor: item.color }} aria-hidden="true" />
           {item.label}
         </span>
       ))}
@@ -15,18 +11,18 @@ export function Legend({ items, dense = false }) {
   );
 }
 
-export function ChartFrame({ eyebrow, title, hint, legend, children, className = '', bodyClassName = '' }) {
+export function ChartFrame({ label, meta, legend, children, className = '', bodyClassName = '' }) {
+  const id = `chart-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
   return (
-    <section className={`surface flex min-w-0 flex-col ${className}`} aria-labelledby={`chart-${title.replace(/\s+/g, '-').toLowerCase()}`}>
-      <header className="flex flex-wrap items-start justify-between gap-3 px-5 pb-0 pt-5 sm:px-6 sm:pt-6">
-        <div className="min-w-0">
-          <p className="eyebrow">{eyebrow}</p>
-          <h3 id={`chart-${title.replace(/\s+/g, '-').toLowerCase()}`} className="mt-1.5 text-[21px] leading-tight text-ink sm:text-[23px]">{title}</h3>
-          {hint && <p className="mt-1 text-[10.5px] leading-relaxed text-ink-faint">{hint}</p>}
+    <section className={`card flex min-w-0 flex-col ${className}`} aria-labelledby={id}>
+      <header className="flex min-h-[34px] flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-800/70 px-3 py-1.5">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h3 id={id} className="label truncate">{label}</h3>
+          {meta && <span className="num truncate text-[10px] text-slate-400">{meta}</span>}
         </div>
-        {legend && <div className="shrink-0 pt-0.5">{legend}</div>}
+        {legend && <div className="shrink-0">{legend}</div>}
       </header>
-      <div className={`min-h-0 min-w-0 flex-1 px-4 pb-5 pt-5 sm:px-6 sm:pb-6 ${bodyClassName}`}>{children}</div>
+      <div className={`min-h-0 flex-1 p-3 ${bodyClassName}`}>{children}</div>
     </section>
   );
 }

@@ -1,0 +1,196 @@
+import assert from 'node:assert/strict';
+import test, { describe } from 'node:test';
+
+import { DbError, createDatabase, dbConfiguration } from '../lib/db.mjs';
+
+const ENV = {
+  SUPABASE_URL: 'https://example.supabase.co/',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-key-palsu',
+};
+
+function reviewOf(index) {
+  return {
+    id: `r-${index}`,
+    platform: index % 2 ? 'play' : 'appstore',
+    rating: (index % 5) + 1,
+    text: `ulasan ${index}`,
+    publishedAt: '2026-10-01T00:00:00.000Z',
+  };
+}
+
+function recorder(handler) {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    calls.push({
+      path: `${url.pathname}${url.search}`,
+      method: options.method || 'GET',
+      prefer: options.headers.prefer || null,
+      body,
+    });
+    return handler({ url, method: options.method || 'GET', body, calls });
+  };
+  return { calls, fetchImpl };
+}
+
+function ok(payload) {
+  return {
+    ok: true,
+    status: 200,
+    async text() {
+      return payload === null ? '' : JSON.stringify(payload);
+    },
+  };
+}
+
+function noContent() {
+  return { ok: true, status: 204, async text() { return ''; } };
+}
+
+function fail(status, text) {
+  return { ok: false, status, async text() { return text; } };
+}
+
+describe('konfigurasi database', () => {
+  test('tanpa url dan tanpa kunci service role, database dilaporkan tidak aktif', () => {
+    assert.equal(dbConfiguration({}).enabled, false);
+    assert.match(dbConfiguration({}).reason, /SUPABASE_URL/);
+    assert.equal(dbConfiguration({ SUPABASE_URL: 'https://x.supabase.co' }).enabled, false);
+    assert.match(dbConfiguration({ SUPABASE_URL: 'https://x.supabase.co' }).reason, /SERVICE_ROLE/);
+  });
+
+  test('url non-https atau memuat kredensial ditolak', () => {
+    const base = { SUPABASE_SERVICE_ROLE_KEY: 'k' };
+    assert.equal(dbConfiguration({ ...base, SUPABASE_URL: 'http://x.supabase.co' }).enabled, false);
+    assert.equal(dbConfiguration({ ...base, SUPABASE_URL: 'https://user:pass@x.supabase.co' }).enabled, false);
+    assert.equal(dbConfiguration({ ...base, SUPABASE_URL: 'bukan-url' }).enabled, false);
+  });
+
+  test('url valid dirapikan tanpa slash penutup', () => {
+    const config = dbConfiguration(ENV);
+    assert.equal(config.enabled, true);
+    assert.equal(config.baseUrl, 'https://example.supabase.co');
+  });
+
+  test('status jujur ketika database belum dipasang, tanpa permintaan jaringan', () => {
+    const { calls, fetchImpl } = recorder(() => ok([]));
+    const db = createDatabase({ env: {}, fetchImpl });
+    return db.status().then(status => {
+      assert.equal(status.enabled, false);
+      assert.equal(status.reachable, false);
+      assert.equal(calls.length, 0, 'tidak ada permintaan saat konfigurasi tidak ada');
+    });
+  });
+});
+
+describe('tulis snapshot', () => {
+  test('ulasan ditulis per tahap dan penanda revisi dipindah setelah lengkap', async () => {
+    const reviews = Array.from({ length: 2500 }, (_, index) => reviewOf(index));
+    const { calls, fetchImpl } = recorder(({ url, method }) => {
+      if (method === 'GET' && url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 4 }]);
+      if (method === 'POST' && url.pathname.endsWith('sentil_workspace')) return noContent();
+      if (method === 'POST' && url.pathname.endsWith('sentil_review')) return noContent();
+      if (method === 'DELETE') return noContent();
+      return ok([]);
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const saved = await db.saveSnapshot({
+      workspace: { id: 'ws-1', label: 'Audit', entity: 'aud', stores: {}, channels: {} },
+      dataset: { reviews, summary: { reviews: 2500 }, model: { status: 'ready' }, fetchedAt: '2026-10-01T00:00:00.000Z' },
+    });
+
+    assert.equal(saved.revision, 5, 'revisi berikutnya dari penanda yang ada');
+    assert.equal(saved.stored, 2500);
+    const writes = calls.filter(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_review'));
+    assert.deepEqual(writes.map(call => call.body.length), [1000, 1000, 500], 'batch terduga tanpa kehilangan baris');
+    assert.equal(writes.every(call => call.body.every(row => row.revision === 5)), true);
+    assert.deepEqual(writes[0].body.map(row => row.ordinal).slice(0, 3), [0, 1, 2]);
+    assert.deepEqual(writes[2].body[0].payload, reviewOf(2000), 'payload disimpan utuh seperti hasil mesin');
+
+    const head = calls.find(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_dataset'));
+    assert.equal(JSON.parse(`"${head.body[0].workspace_id}"`), 'ws-1');
+    assert.equal(head.body[0].revision, 5);
+    assert.equal(head.body[0].review_count, 2500);
+    assert.equal(head.prefer.includes('merge-duplicates'), true);
+
+    const sweeps = calls.filter(call => call.method === 'DELETE' && call.path.startsWith('/rest/v1/sentil_review'));
+    assert.equal(sweeps.length, 2, 'satu sapuan yatim sebelum tulis, satu pembuangan setelah penanda pindah');
+    assert.equal(sweeps[0].path.includes('revision=gt.4'), true, 'sisa penulisan gagal di atas pointer dibuang sebelum insert');
+    assert.equal(sweeps[1].path.includes('revision=lt.5'), true, 'revisi lama dibuang setelah penanda dipindah');
+    const firstInsert = calls.findIndex(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_review'));
+    assert.ok(calls.indexOf(sweeps[0]) < firstInsert, 'sapuan yatim harus mendahului penyisipan');
+    const headIndex = calls.findIndex(call => call.path.startsWith('/rest/v1/sentil_dataset') && call.method === 'POST');
+    assert.ok(headIndex < calls.indexOf(sweeps[1]));
+  });
+
+  test('workspace baru memulai dari revisi satu dan ulasan kosong tetap menulis penanda', async () => {
+    const { calls, fetchImpl } = recorder(({ url, method }) => {
+      if (method === 'GET' && url.pathname.endsWith('sentil_dataset')) return ok([]);
+      return noContent();
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const saved = await db.saveSnapshot({ workspace: { id: 'ws-2', label: 'B', entity: 'b' }, dataset: { reviews: [] } });
+    assert.equal(saved.revision, 1);
+    assert.equal(calls.filter(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_review')).length, 0);
+    assert.equal(calls.some(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_dataset')), true);
+  });
+
+  test('tolakan database surfaced sebagai DbError dengan status aslinya', async () => {
+    const { fetchImpl } = recorder(({ method }) => (method === 'GET' ? ok([]) : fail(400, '{"message":"invalid input syntax"}')));
+    const db = createDatabase({ env: ENV, fetchImpl });
+    await assert.rejects(
+      () => db.saveSnapshot({ workspace: { id: 'ws-3', label: 'C', entity: 'c' }, dataset: { reviews: [reviewOf(0)] } }),
+      error => error instanceof DbError && error.status === 400 && /invalid input syntax/.test(error.detail),
+    );
+  });
+});
+
+describe('baca snapshot', () => {
+  test('halaman ulasan dirangkai sampai halaman terakhir habis', async () => {
+    const first = Array.from({ length: 1000 }, (_, index) => ({ payload: reviewOf(index) }));
+    const second = Array.from({ length: 400 }, (_, index) => ({ payload: reviewOf(1000 + index) }));
+    const { calls, fetchImpl } = recorder(({ url }) => {
+      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 1400, entity: 'aud', model: {}, summary: {} }]);
+      const offset = Number(url.searchParams.get('offset'));
+      if (offset === 0) return ok(first);
+      if (offset === 1000) return ok(second);
+      return ok([]);
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const dataset = await db.loadDataset('ws-1');
+    assert.equal(dataset.reviews.length, 1400);
+    assert.equal(dataset.reviews[1399].id, 'r-1399');
+    assert.equal(dataset.stored.revision, 7);
+    assert.equal(calls.filter(call => call.path.startsWith('/rest/v1/sentil_review')).length, 2, 'halaman pendek menghentikan paging tanpa permintaan tambahan');
+    assert.equal(calls[1].path.includes('revision=eq.7'), true, 'hanya revisi aktif yang dibaca');
+  });
+
+  test('workspace tanpa snapshot mengembalikan null, bukan data kosong yang mengira berhasil', async () => {
+    const { fetchImpl } = recorder(() => ok([]));
+    const db = createDatabase({ env: ENV, fetchImpl });
+    assert.equal(await db.loadDataset('ws-none'), null);
+  });
+
+  test('daftar workspace dipetakan ke bentuk klien', async () => {
+    const { fetchImpl } = recorder(() => ok([{
+      id: 'ws-9',
+      label: 'Audit',
+      entity: 'aud',
+      stores: { play: { appId: 'com.aud' } },
+      channels: { news: { enabled: true } },
+      snapshot: { reviews: 12 },
+      created_at: '2026-10-01T00:00:00.000Z',
+      updated_at: '2026-10-02T00:00:00.000Z',
+      last_synced_at: null,
+    }]));
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const [workspace] = await db.listWorkspaces();
+    assert.deepEqual(Object.keys(workspace).sort(), ['channels', 'createdAt', 'entity', 'id', 'label', 'lastSyncedAt', 'snapshot', 'stores', 'updatedAt'].sort());
+    assert.equal(workspace.stores.play.appId, 'com.aud');
+  });
+
+  test('permintaan yang gagal di jaringan dilaporkan sebagai db_unreachable', async () => {
+    const db = createDatabase({ env: ENV, fetchImpl: async () => { throw Object.assign(new Error('boom'), { name: 'TimeoutError' }); } });
+    await assert.rejects(() => db.listWorkspaces(), error => error.code === 'db_unreachable' && /TimeoutError/.test(error.message));
+  });
+});

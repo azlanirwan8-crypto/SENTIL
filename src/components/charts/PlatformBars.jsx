@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { formatNumber, formatNss, formatPercent, platformLabel } from '../../lib/format.js';
 import { EmptyState } from '../EmptyState.jsx';
-import { IconChart } from '../icons.jsx';
+import { IconGrid } from '../icons.jsx';
 import { StoreMark } from '../Brand.jsx';
 import { ChartFrame, Legend } from './ChartFrame.jsx';
 import { ChartTooltip } from './ChartTooltip.jsx';
@@ -9,154 +9,147 @@ import { formatTick, niceScale } from './chart-utils.js';
 import { useMeasure } from './useMeasure.js';
 import { SENTIMENT_SERIES, SERIES_COLORS, storeColor } from './palette.js';
 
-const HEIGHT = 268;
-const MARGIN = { top: 20, right: 12, bottom: 42, left: 36 };
+const HEIGHT = 208;
+const MARGIN = { top: 14, right: 8, bottom: 34, left: 28 };
+
+function platformNss(platform) {
+  const analyzed = platform.positive + platform.negative + platform.neutral;
+  return analyzed ? ((platform.positive - platform.negative) / analyzed) * 100 : null;
+}
 
 export function PlatformBars({ platforms }) {
-  const [measureRef, measuredWidth] = useMeasure(280);
+  const [measureRef, measuredWidth] = useMeasure(240);
   const [hovered, setHovered] = useState(null);
+  // Jendela gulir dipakai untuk menjepit tooltip: chart ini bisa lebih lebar dari kartunya.
+  const [viewStart, setViewStart] = useState(0);
   const data = Array.isArray(platforms) ? platforms.filter(item => item.total > 0) : [];
-  const width = Math.max(measuredWidth, 280);
-  const chartWidth = Math.max(width, data.length * 154);
+  const total = data.reduce((sum, item) => sum + item.total, 0);
+  const width = Math.max(measuredWidth, 240);
+  const chartWidth = Math.max(width, data.length * 132);
   const plotWidth = chartWidth - MARGIN.left - MARGIN.right;
   const plotHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
   const maxSeries = Math.max(1, ...data.flatMap(platform => SENTIMENT_SERIES.map(series => platform[series.key] || 0)));
   const scale = useMemo(() => niceScale(maxSeries, 4), [maxSeries]);
-  const groupBand = data.length ? plotWidth / data.length : plotWidth;
-  const barWidth = Math.min(21, Math.max(8, groupBand / 7.5));
-  const seriesGap = 4;
-  const clusterWidth = barWidth * SENTIMENT_SERIES.length + seriesGap * (SENTIMENT_SERIES.length - 1);
+  const band = data.length ? plotWidth / data.length : plotWidth;
+  const barWidth = Math.min(16, Math.max(6, band / 8));
+  const gap = 3;
+  const clusterWidth = barWidth * SENTIMENT_SERIES.length + gap * (SENTIMENT_SERIES.length - 1);
 
-  const legend = <Legend dense items={SENTIMENT_SERIES.map(item => ({ key: item.key, label: item.label, color: item.color }))} />;
+  const legend = <Legend items={SENTIMENT_SERIES.map(item => ({ key: item.key, label: item.label, color: item.color }))} />;
 
   if (!data.length) {
     return (
-      <ChartFrame eyebrow="04 · Kanal × sentimen" title="Komposisi label per platform" legend={legend} hint="Batang berkelompok menurut kanal sumber.">
-        <EmptyState compact icon={IconChart} title="Belum ada label" body="Tidak ada ulasan berlabel yang dapat dibandingkan antar-kanal untuk analisis ini." />
+      <ChartFrame label="Channel × sentiment" legend={legend}>
+        <EmptyState compact icon={IconGrid} title="No label per channel yet" body="This chart needs a labelled review on at least one channel." />
       </ChartFrame>
     );
   }
 
   return (
-    <ChartFrame eyebrow="04 · Kanal × sentimen" title="Komposisi label per platform" legend={legend} hint="Batang berkelompok menurut kanal; satu ulasan memiliki satu label." className="h-full" bodyClassName="flex flex-col">
+    <ChartFrame label="Channel × sentiment" meta={`${data.length} channels`} legend={legend} className="h-full">
       <div ref={measureRef} className="relative w-full min-w-0">
-        <div className="scrollbar-soft min-w-0 overflow-x-auto pb-1">
+        <div className="scroll-x min-w-0" onScroll={event => setViewStart(event.currentTarget.scrollLeft)}>
           <div className="relative" style={{ width: chartWidth }}>
-            <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`Komposisi sentimen untuk ${data.length} kanal.`}>
-              <title>Komposisi label sentimen per platform</title>
-              <desc>Batang positif, netral, negatif, dan tak terklasifikasi dikelompokkan per kanal ulasan.</desc>
+            <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`Label composition for ${data.length} channels.`}>
+              <title>Sentiment label composition per platform</title>
               {scale.ticks.map(tick => {
                 const y = MARGIN.top + plotHeight - (tick / scale.max) * plotHeight;
                 return (
                   <g key={tick}>
-                    <line x1={MARGIN.left} y1={y} x2={chartWidth - MARGIN.right} y2={y} stroke={SERIES_COLORS.line} strokeOpacity={tick === 0 ? 0.95 : 0.55} strokeDasharray={tick === 0 ? undefined : '2 4'} />
-                    <text x={MARGIN.left - 8} y={y + 3.5} textAnchor="end" className="fill-ink-faint text-[9.5px] num">{formatTick(tick)}</text>
+                    <line x1={MARGIN.left} y1={y} x2={chartWidth - MARGIN.right} y2={y} stroke={tick === 0 ? SERIES_COLORS.line : SERIES_COLORS.lineSoft} />
+                    <text x={MARGIN.left - 6} y={y + 3} textAnchor="end" className="fill-slate-400 text-[10px] num">{formatTick(tick)}</text>
                   </g>
                 );
               })}
 
-              {data.map((platform, groupIndex) => {
-                const bandX = MARGIN.left + groupIndex * groupBand;
-                const startX = bandX + (groupBand - clusterWidth) / 2;
+              {data.map((platform, index) => {
+                const bandX = MARGIN.left + index * band;
+                const startX = bandX + (band - clusterWidth) / 2;
                 const active = hovered === platform.id;
-                const topValue = Math.max(...SENTIMENT_SERIES.map(series => platform[series.key] || 0));
-                const topY = MARGIN.top + plotHeight - (topValue / scale.max) * plotHeight;
                 return (
                   <g key={platform.id}>
-                    {active && (
-                      <rect x={bandX + 5} y={MARGIN.top - 8} width={groupBand - 10} height={plotHeight + 8} rx="8" fill={SERIES_COLORS.ink} opacity="0.04" />
-                    )}
-                    <g className="animate-bar-grow" style={{ transformBox: 'fill-box', transformOrigin: 'bottom', animationDelay: `${groupIndex * 70}ms` }}>
+                    {active && <rect x={bandX + 4} y={MARGIN.top - 6} width={band - 8} height={plotHeight + 6} rx="4" fill="#FFFFFF" opacity="0.045" />}
+                    <g className="animate-bar-grow" style={{ transformBox: 'fill-box', transformOrigin: 'bottom', animationDelay: `${index * 60}ms` }}>
                       {SENTIMENT_SERIES.map((series, seriesIndex) => {
                         const value = platform[series.key] || 0;
+                        if (!value) return null;
                         const barHeight = (value / scale.max) * plotHeight;
-                        const x = startX + seriesIndex * (barWidth + seriesGap);
-                        return value > 0 ? (
+                        return (
                           <rect
                             key={series.key}
-                            x={x}
+                            x={startX + seriesIndex * (barWidth + gap)}
                             y={MARGIN.top + plotHeight - barHeight}
                             width={barWidth}
-                            height={Math.max(1.2, barHeight - 0.5)}
-                            rx={Math.min(3, barWidth / 3)}
+                            height={Math.max(1, barHeight - 0.5)}
+                            rx="1.5"
                             fill={series.color}
-                            opacity={hovered == null || active ? 1 : 0.45}
+                            opacity={hovered == null || active ? 1 : 0.4}
                           />
-                        ) : null;
+                        );
                       })}
                     </g>
                     <rect
                       x={bandX}
                       y={MARGIN.top}
-                      width={groupBand}
+                      width={band}
                       height={plotHeight}
                       fill="transparent"
                       tabIndex={0}
                       role="img"
-                      aria-label={`${platformLabel(platform.id)}: ${platform.total} ulasan; ${platform.positive} positif, ${platform.neutral} netral, ${platform.negative} negatif, ${platform.unclassified} tak terklasifikasi.`}
+                      aria-label={`${platformLabel(platform.id)}: ${platform.total} reviews; ${platform.positive} positive, ${platform.neutral} neutral, ${platform.negative} negative, ${platform.unclassified} unclassified.`}
                       onMouseEnter={() => setHovered(platform.id)}
                       onMouseLeave={() => setHovered(current => (current === platform.id ? null : current))}
                       onFocus={() => setHovered(platform.id)}
                       onBlur={() => setHovered(current => (current === platform.id ? null : current))}
-                      className="cursor-default outline-none focus-visible:fill-teal/10"
+                      className="chart-hit"
                     />
-                    <text x={bandX + groupBand / 2} y={MARGIN.top + plotHeight + 17} textAnchor="middle" className={`text-[10px] font-semibold ${active ? 'fill-ink' : 'fill-ink-soft'}`}>
+                    <text x={bandX + band / 2} y={MARGIN.top + plotHeight + 15} textAnchor="middle" className={`text-[10px] font-semibold ${active ? 'fill-slate-100' : 'fill-slate-400'}`}>
                       {platformLabel(platform.id)}
                     </text>
-                    <text x={bandX + groupBand / 2} y={MARGIN.top + plotHeight + 31} textAnchor="middle" className="fill-ink-faint text-[8.5px] num">
-                      {formatNumber(platform.total)} ulasan
+                    <text x={bandX + band / 2} y={MARGIN.top + plotHeight + 27} textAnchor="middle" className="fill-slate-400 text-[10px] num">
+                      {formatNumber(platform.total)} reviews
                     </text>
-                    {topValue > 0 && (
-                      <text x={bandX + groupBand / 2} y={topY - 7} textAnchor="middle" className="fill-ink-faint text-[8.5px] num">
-                        puncak {formatNumber(topValue)}
-                      </text>
-                    )}
                   </g>
                 );
               })}
             </svg>
+            {hovered != null && (() => {
+              const platform = data.find(item => item.id === hovered);
+              if (!platform) return null;
+              const nss = platformNss(platform);
+              const tallest = Math.max(0, ...SENTIMENT_SERIES.map(series => platform[series.key] || 0));
+              return (
+                <ChartTooltip
+                  visible
+                  x={MARGIN.left + data.indexOf(platform) * band + band / 2}
+                  y={MARGIN.top + plotHeight - (tallest / scale.max) * plotHeight}
+                  width={chartWidth}
+                  height={HEIGHT}
+                  viewStart={hovered == null ? 0 : viewStart}
+                  viewWidth={measuredWidth}
+                  title={platformLabel(platform.id)}
+                  rows={[
+                    { label: 'Total', value: formatNumber(platform.total) },
+                    ...SENTIMENT_SERIES.map(series => ({ label: series.label, value: formatNumber(platform[series.key] || 0), color: series.color })),
+                    { label: 'NSS', value: nss == null ? 'N/A' : formatNss(nss) },
+                  ]}
+                />
+              );
+            })()}
           </div>
         </div>
-
-        {hovered != null && (() => {
-          const platform = data.find(item => item.id === hovered);
-          if (!platform) return null;
-          const groupIndex = data.indexOf(platform);
-          const activeAnalyzed = platform.positive + platform.negative + platform.neutral;
-          const nss = activeAnalyzed ? ((platform.positive - platform.negative) / activeAnalyzed) * 100 : null;
-          return (
-            <ChartTooltip
-              visible
-              x={MARGIN.left + groupIndex * groupBand + groupBand / 2}
-              y={MARGIN.top + 30}
-              width={chartWidth}
-              title={platformLabel(platform.id)}
-              rows={[
-                { label: 'Total', value: formatNumber(platform.total) },
-                ...SENTIMENT_SERIES.map(series => ({ label: series.label, value: formatNumber(platform[series.key] || 0), color: series.color })),
-                { label: 'NSS kanal', value: nss == null ? 'N/A' : formatNss(nss) },
-              ]}
-            />
-          );
-        })()}
       </div>
 
-      <div className="mt-4 grid gap-2 border-t border-line/60 pt-3 sm:grid-cols-2">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {data.map(platform => {
-          const analyzed = platform.positive + platform.negative + platform.neutral;
-          const nss = analyzed ? ((platform.positive - platform.negative) / analyzed) * 100 : null;
+          const nss = platformNss(platform);
           return (
-            <div key={platform.id} className="flex items-center gap-2.5 rounded-xl bg-paper-100/70 px-2.5 py-2">
-              <StoreMark store={platform.id} size={25} tone="quiet" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[10.5px] font-bold text-ink">{platformLabel(platform.id)}</p>
-                <p className="text-[9px] text-ink-faint">{formatPercent(platform.total, data.reduce((sum, item) => sum + item.total, 0))} dari total</p>
-              </div>
-              <div className="text-right">
-                <p className="num text-[12px] font-bold" style={{ color: storeColor(platform.id) }}>{nss == null ? 'N/A' : formatNss(nss)}</p>
-                <p className="text-[8px] uppercase tracking-[0.12em] text-ink-faint">NSS kanal</p>
-              </div>
-            </div>
+            <span key={platform.id} className="chip">
+              <StoreMark store={platform.id} size={13} tone="quiet" />
+              {platformLabel(platform.id)}
+              <span className="num font-bold" style={{ color: storeColor(platform.id) }}>{nss == null ? 'N/A' : formatNss(nss)}</span>
+              <span className="num text-slate-400">{formatPercent(platform.total, total)}</span>
+            </span>
           );
         })}
       </div>

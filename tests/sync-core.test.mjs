@@ -87,7 +87,7 @@ describe('penemuan identitas toko', () => {
     assert.equal(result.appstore.status, 'ok');
     assert.equal(result.play.candidates[0].appId, 'com.tes');
     assert.equal(result.appstore.candidates[0].appId, '12345');
-    assert.match(result.play.message, /tidak memilih kandidat/i);
+    assert.match(result.play.message, /does not choose a candidate/i);
     assert.equal(result.selected, undefined, 'server tidak boleh menentukan pilihan');
   });
 
@@ -206,6 +206,39 @@ describe('penarikan dan analisis', () => {
     assert.equal(row.author, 'Ulasan 2');
     assert.equal(row.rating, 1);
     assert.equal(row.analysis.sentiment, 'negative');
+  });
+
+  test('teks daftar dari kanal toko dipakai mesin sebagai kosakata topik', async () => {
+    const { deps } = fakeDeps({
+      fetchGooglePlayReviews: async () => ({
+        id: 'play',
+        status: 'success',
+        appId: 'com.tes',
+        fetched: 5,
+        reviews: [
+          playReview('1', 1, 'verifikasi akun saya tertolak terus', '2026-03-01'),
+          playReview('2', 5, 'verifikasi cepat sekali membantu', '2026-03-02'),
+          playReview('3', 2, 'verifikasi lama dan notifikasi tidak masuk', '2026-03-03'),
+          playReview('4', 1, 'verifikasi tidak selesai sampai sekarang', '2026-03-04'),
+          playReview('5', 2, 'verifikasi rekening tertahan', '2026-03-05'),
+        ],
+        app: { title: 'Aplikasi Tes', developer: 'PT Tes', url: 'https://play.example/com.tes', score: 4.2, ratingCount: 30, ratingHistogram: null, listing: 'Aplikasi Tes mempercepat verifikasi rekening dan notifikasi belanja.' },
+        coverage: { pages: 1, rows: 5, duplicates: 0, reportedReviewCount: 5, reportedRatingCount: 30, sampleLimit: null },
+        message: '5 ulasan terbaca',
+        truncated: false,
+        error: null,
+      }),
+    });
+    const service = createSyncService({ deps });
+    const result = await service.sync({ entity: 'Aplikasi Tes', playAppId: 'com.tes' });
+    const ids = result.model.topics.map(topic => topic.id);
+    assert.ok(ids.includes('verifikasi'), 'istilah dari teks daftar aplikasi harus menjadi topik');
+    const verifikasi = result.model.topics.find(topic => topic.id === 'verifikasi');
+    assert.equal(verifikasi.low, 4, 'empat ulasan 1-2 bintang menyebut verifikasi');
+    assert.equal(verifikasi.high, 1);
+    assert.equal(verifikasi.listingMentions, 1);
+    assert.equal(result.model.topicSource, 'store-listing');
+    assert.deepEqual(result.reviews.find(review => review.id === 'play-1').analysis.topics, ['verifikasi']);
   });
 
   test('ringkasan sesuai dengan model korpus yang dikembalikan', async () => {
