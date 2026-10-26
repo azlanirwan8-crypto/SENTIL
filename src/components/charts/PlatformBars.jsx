@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { formatNumber, formatNss, formatPercent, platformLabel } from '../../lib/format.js';
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
@@ -20,8 +20,9 @@ function platformNss(platform) {
 export function PlatformBars({ platforms }) {
   const [measureRef, measuredWidth] = useMeasure(240);
   const [hovered, setHovered] = useState(null);
-  // Jendela gulir dipakai untuk menjepit tooltip: chart ini bisa lebih lebar dari kartunya.
-  const [viewStart, setViewStart] = useState(0);
+  // Jepitan tooltip butuh offset gulir saat render, jadi offset dibaca langsung dari DOM.
+  const scrollRef = useRef(null);
+  const [, bumpScroll] = useState(0);
   const data = Array.isArray(platforms) ? platforms.filter(item => item.total > 0) : [];
   const total = data.reduce((sum, item) => sum + item.total, 0);
   const width = Math.max(measuredWidth, 240);
@@ -48,7 +49,7 @@ export function PlatformBars({ platforms }) {
   return (
     <ChartFrame label="Channel × sentiment" meta={`${data.length} channels`} legend={legend} className="h-full">
       <div ref={measureRef} className="relative w-full min-w-0">
-        <div className="scroll-x min-w-0" onScroll={event => setViewStart(event.currentTarget.scrollLeft)}>
+        <div ref={scrollRef} className="scroll-x min-w-0" onScroll={() => { if (hovered != null) bumpScroll(value => value + 1); }}>
           <div className="relative" style={{ width: chartWidth }}>
             <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`Label composition for ${data.length} channels.`}>
               <title>Sentiment label composition per platform</title>
@@ -125,7 +126,7 @@ export function PlatformBars({ platforms }) {
                   y={MARGIN.top + plotHeight - (tallest / scale.max) * plotHeight}
                   width={chartWidth}
                   height={HEIGHT}
-                  viewStart={hovered == null ? 0 : viewStart}
+                  viewStart={scrollRef.current?.scrollLeft || 0}
                   viewWidth={measuredWidth}
                   title={platformLabel(platform.id)}
                   rows={[

@@ -1,15 +1,11 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-
-const PAD = 8;
-const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
+import { tooltipAnchor } from './chart-utils.js';
 
 // Panelnya solid dan dijepit di dalam area chart. Selama ini panelnya transparan dengan
 // backdrop-blur, jadi warna bar menembus teksnya, dan clamp horizontal memakai lebar dugaan
 // sehingga tooltip bisa keluar dari kartu.
 //
-// `viewStart`/`viewWidth` adalah jendela scroll yang sedang terlihat. Chart yang lebih lebar
-// dari kartunya digulir, jadi tooltip dijepit ke jendela itu — bukan ke lebar konten — supaya
-// tidak pernah keluar dari kartu dan tidak pernah menambah lebar gulir palsu.
+// `viewStart`/`viewWidth` adalah jendela scroll yang sedang terlihat; lihat tooltipAnchor.
 export function ChartTooltip({ x, y, width, height, viewStart = 0, viewWidth = 0, title, rows, visible }) {
   const ref = useRef(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
@@ -22,13 +18,16 @@ export function ChartTooltip({ x, y, width, height, viewStart = 0, viewWidth = 0
 
   if (!visible || !Array.isArray(rows) || !rows.length) return null;
 
-  const half = Math.max(box.width / 2, 70);
-  const viewSpan = viewWidth || width;
-  const minLeft = Math.max(half + PAD, viewStart + half + PAD);
-  const maxLeft = Math.min(width - half - PAD, Math.max(minLeft, viewStart + viewSpan - half - PAD));
-  const left = clamp(x, minLeft, maxLeft);
-  const above = y - PAD - box.height > 0;
-  const top = above ? y - 10 : clamp(y + 14, PAD, Math.max(PAD, (height || y + 140) - box.height - PAD));
+  const { left, top, above } = tooltipAnchor({
+    x,
+    y,
+    width,
+    height,
+    boxWidth: box.width,
+    boxHeight: box.height,
+    viewStart,
+    viewWidth,
+  });
 
   return (
     <div

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { formatDay, formatNumber, formatNss } from '../../lib/format.js';
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
@@ -15,8 +15,10 @@ const HEIGHT = 216;
 export function DailyTrend({ daily }) {
   const [measureRef, measuredWidth] = useMeasure(240);
   const [hovered, setHovered] = useState(null);
-  // Jendela gulir dipakai untuk menjepit tooltip: chart ini bisa lebih lebar dari kartunya.
-  const [viewStart, setViewStart] = useState(0);
+  // Jepitan tooltip butuh offset gulir saat render, jadi offset dibaca langsung dari DOM:
+  // menunggu event scroll membuat tooltip kadang menjepit ke posisi lama.
+  const scrollRef = useRef(null);
+  const [, bumpScroll] = useState(0);
   const data = Array.isArray(daily) ? daily : [];
 
   const width = Math.max(measuredWidth, 240);
@@ -43,7 +45,7 @@ export function DailyTrend({ daily }) {
   return (
     <ChartFrame label="Daily trend" meta={`${data.length} days · ${formatNumber(totalReviews)} reviews`} legend={legend} className="h-full">
       <div ref={measureRef} className="relative w-full min-w-0">
-        <div className="scroll-x min-w-0" onScroll={event => setViewStart(event.currentTarget.scrollLeft)}>
+        <div ref={scrollRef} className="scroll-x min-w-0" onScroll={() => { if (hovered != null) bumpScroll(value => value + 1); }}>
           <div className="relative" style={{ width: chartWidth }}>
             <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`Daily trend over ${data.length} days, ${formatNumber(totalReviews)} reviews.`} className="block max-w-none">
               <title>Daily sentiment trend</title>
@@ -120,7 +122,7 @@ export function DailyTrend({ daily }) {
                   y={MARGIN.top + plotHeight - (day.total / scale.max) * plotHeight}
                   width={chartWidth}
                   height={HEIGHT}
-                  viewStart={hovered == null ? 0 : viewStart}
+                  viewStart={scrollRef.current?.scrollLeft || 0}
                   viewWidth={measuredWidth}
                   title={formatDay(day.date, { long: true })}
                   rows={[
