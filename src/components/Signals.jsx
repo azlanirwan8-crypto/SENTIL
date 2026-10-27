@@ -1,12 +1,15 @@
 import { formatDecimal, formatNumber } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
+import { AnalystBadge, aiText } from './Analyst.jsx';
 import { ChartFrame } from './charts/ChartFrame.jsx';
 import { EmptyState } from './EmptyState.jsx';
 import { IconAlert, IconGauge } from './icons.jsx';
 
 // Panel ini tidak merangkai kalimat: setiap baris dikirim oleh lapisan sinyal sebagai angka
 // hasil ukur plus satu kalimat yang angkanya ada di dalam `facts`. Tugas klien hanya memformat
-// ulang angka itu, tidak menafsir atau menambahkan klaim.
+// ulang angka itu, tidak menafsir atau menambahkan klaim. Bacaan lapisan `ai-analyst-v1` duduk
+// di atas daftar itu sebagai satu blok tersendiri — bertemukan, dan tidak pernah menyamar
+// sebagai salah satu baris terukur.
 
 // Hanya arah yang boleh berwarna. Enam warna kategori pada baris sedekat ini membaca sebagai
 // permen, bukan sebagai temuan: theme/channel/structure hanyalah pengelompok, jadi mereka netral,
@@ -52,7 +55,8 @@ export function Signal({ item }) {
   );
 }
 
-export function Signals({ signals, filtered = false }) {
+export function Signals({ signals, ai = null, filtered = false }) {
+  const narrative = ai?.status === 'answered' ? aiText(ai.reading?.narrative) : '';
   if (!signals || !Array.isArray(signals.items)) {
     return (
       <ChartFrame label={t('Analyst signals')}>
@@ -92,6 +96,18 @@ export function Signals({ signals, filtered = false }) {
       legend={<span className="text-[10px] text-slate-400">{t('each line is a claim its own numbers support')}</span>}
       bodyClassName="flex flex-col"
     >
+      {narrative ? (
+        <div className="mb-2 shrink-0 rounded border border-slate-600/70 bg-slate-800/40 px-2.5 py-2">
+          <div className="flex items-baseline gap-2">
+            <span className="label-sm shrink-0">{t('Analyst reading')}</span>
+            <AnalystBadge model={ai.model} />
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-200">{narrative}</p>
+          <p className="mt-1 text-[10px] leading-snug text-slate-400">
+            {t('This paragraph interprets the lines below it. It was written from rankings and wording, not from counts, and it contains no number by design.')}
+          </p>
+        </div>
+      ) : null}
       <ul className="grid items-start gap-2 md:grid-cols-2 xl:grid-cols-3">
         {signals.items.map(item => <Signal key={item.id} item={item} />)}
       </ul>

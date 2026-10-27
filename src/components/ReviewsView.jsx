@@ -9,6 +9,7 @@ import {
   sentimentLabel,
 } from '../lib/format.js';
 import { t, topicLabel } from '../lib/i18n.js';
+import { AnalystLine, aiText } from './Analyst.jsx';
 import { EmptyState } from './EmptyState.jsx';
 import { StoreMark } from './Brand.jsx';
 import { IconChevronDown, IconExternal, IconQuote, IconSearch, IconStar, IconX } from './icons.jsx';
@@ -161,6 +162,7 @@ export function ReviewsView({ dataset }) {
   const [visible, setVisible] = useState(PAGE);
   const reviews = Array.isArray(dataset.reviews) ? dataset.reviews : [];
   const topics = Array.isArray(dataset.model?.topics) ? dataset.model.topics : [];
+  const ai = dataset.model?.ai?.status === 'answered' ? dataset.model.ai : null;
   const topicsById = useMemo(() => new Map(topics.map(topic => [topic.id, topic])), [topics]);
   // Badge topik per ulasan dibaca dari kamus lewat id, bukan dari nama yang dibakar di baris:
   // sebutan kamuslah yang harus ikut berganti saat bahasa diubah. Nama lama hanya menjadi
@@ -354,6 +356,12 @@ export function ReviewsView({ dataset }) {
           </div>
         )}
       </section>
+
+      {ai && aiText(ai.reading.reviews) ? (
+        <div className="rounded border border-slate-800/80 bg-slate-950/40 px-3 py-2">
+          <AnalystLine field={ai.reading.reviews} model={ai.model} label={t('How reviewers write')} />
+        </div>
+      ) : null}
 
       <div className="flex items-baseline justify-between px-0.5">
         <p role="status" aria-live="polite" className="text-[11px] text-slate-400">

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { formatNumber, formatNss, formatPercent, platformLabel } from '../../lib/format.js';
 import { t } from '../../lib/i18n.js';
+import { AnalystBadge, aiText } from '../Analyst.jsx';
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
 import { StoreMark } from '../Brand.jsx';
@@ -18,7 +19,7 @@ function platformNss(platform) {
   return analyzed ? ((platform.positive - platform.negative) / analyzed) * 100 : null;
 }
 
-export function PlatformBars({ platforms }) {
+export function PlatformBars({ platforms, ai = null }) {
   const [measureRef, measuredWidth] = useMeasure(240);
   const [hovered, setHovered] = useState(null);
   // Jepitan tooltip butuh offset gulir saat render, jadi offset dibaca langsung dari DOM.
@@ -26,6 +27,12 @@ export function PlatformBars({ platforms }) {
   const [, bumpScroll] = useState(0);
   const data = Array.isArray(platforms) ? platforms.filter(item => item.total > 0) : [];
   const total = data.reduce((sum, item) => sum + item.total, 0);
+  // Diagnosis kanal ditulis lapisan analis di atas komposisi yang sudah diukur. Ia dibaca dari
+  // id kanal, dan hanya baris yang benar-benar punya bacaan yang tampil — bukan hover-only,
+  // jadi pembaca layar dan keyboard melihat kalimat yang sama.
+  const notes = ai?.status === 'answered'
+    ? data.map(platform => ({ id: platform.id, text: aiText(ai.reading?.platforms?.[platform.id]) })).filter(entry => entry.text)
+    : [];
   const width = Math.max(measuredWidth, 240);
   const chartWidth = Math.max(width, data.length * 132);
   const plotWidth = chartWidth - MARGIN.left - MARGIN.right;
@@ -152,6 +159,18 @@ export function PlatformBars({ platforms }) {
           );
         })}
       </div>
+
+      {notes.length ? (
+        <ul className="mt-2.5 space-y-1 border-t border-slate-800/70 pt-2" aria-label={t('Analyst diagnosis per channel')}>
+          {notes.map(note => (
+            <li key={note.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[10px] leading-snug text-slate-300">
+              <AnalystBadge model={ai.model} />
+              <span className="label-sm shrink-0">{platformLabel(note.id)}</span>
+              <span className="min-w-0">{note.text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </ChartFrame>
   );
 }

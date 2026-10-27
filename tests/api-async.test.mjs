@@ -256,12 +256,15 @@ describe('hitung ulang dari baris tersimpan', () => {
     assert.equal(db.seen.includes('snap:ws-1:4'), true);
     assert.equal(db.seen.includes('run:recomputed:4'), true);
     assert.equal(body.message.includes('No source was contacted'), true);
-    // Lapisan penamaan ikut dijalankan saat hitung ulang, dan tanpa apa pun yang bisa dinamai ia
-    // mengaku apa adanya — bukan menghilang, bukan pura-pura bernama.
+    // Lapisan analis ikut dijalankan saat hitung ulang, dan tanpa kunci ia mengaku apa adanya —
+    // bukan menghilang, bukan pura-pura bernama.
+    const ai = saved[0].model.ai;
+    assert.equal(ai.version, 'ai-analyst-v1');
+    assert.equal(ai.status, 'skipped');
+    assert.match(ai.reason, /GEMINI_API_KEY|nothing measured/);
+    assert.deepEqual(ai.names, {});
+    assert.deepEqual(ai.reading, { narrative: null, reviews: null, method: null, labels: {}, platforms: {} });
     const pain = saved[0].model.painPoints;
-    assert.equal(pain.naming.version, 'label-naming-v1');
-    assert.equal(pain.naming.status, 'skipped');
-    assert.match(pain.naming.reason, /no clusters to name|GEMINI_API_KEY/);
     for (const label of pain.labels) {
       assert.equal(label.heading.includes(label.evidence), true, 'judul label memuat kalimat reviewers');
       if (label.category) assert.equal(label.heading, `${label.category.name}: ${label.evidence}`);

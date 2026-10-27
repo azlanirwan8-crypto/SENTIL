@@ -85,9 +85,10 @@ export function topicAlias(topic) {
 
 // Klaster fitur mengirim dua sebutan sebagai sepasang field (`en` dan `id`) alih-alih sebagai
 // satu objek topik. Pilihannya sama: sebutan bahasa aktif, dengan bahasa lain tetap bisa
-// ditampilkan di sebelahnya.
+// ditampilkan di sebelahnya. Bahasa lain juga menjadi penolong ketika hanya satu yang lolos
+// validasi — baris yang hilang sebagian lebih baik terbaca satu bahasa daripada kosong.
 export function bilingual(en, id) {
-  return (language === 'id' && id) ? id : en;
+  return language === 'id' ? (id || en || '') : (en || id || '');
 }
 
 // Sebutan bahasa lain dari pasangan di atas, untuk baris audit yang sengaja memperlihatkan

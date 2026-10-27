@@ -99,7 +99,7 @@ export function Overview({ dataset, workspace }) {
 
           <div className="grid gap-3 xl:grid-cols-12">
             <div className="min-w-0 xl:col-span-12">
-              <Signals signals={dataset.model?.signals} filtered={scoped.filtered} />
+              <Signals signals={dataset.model?.signals} ai={dataset.model?.ai} filtered={scoped.filtered} />
             </div>
             <div className="min-w-0 xl:col-span-8">
               <DailyTrend daily={scoped.model.daily} />
@@ -111,10 +111,10 @@ export function Overview({ dataset, workspace }) {
               <TopicMap topics={scoped.model.topics} filtered={scoped.filtered} />
             </div>
             <div className="min-w-0 xl:col-span-5">
-              <PlatformBars platforms={scoped.model.platforms} />
+              <PlatformBars platforms={scoped.model.platforms} ai={dataset.model?.ai} />
             </div>
             <div className="min-w-0 xl:col-span-12">
-              <PainLabels pain={dataset.model?.painPoints} topics={dataset.model?.topics} filtered={scoped.filtered} />
+              <PainLabels pain={dataset.model?.painPoints} topics={dataset.model?.topics} ai={dataset.model?.ai} filtered={scoped.filtered} />
             </div>
           </div>
         </>

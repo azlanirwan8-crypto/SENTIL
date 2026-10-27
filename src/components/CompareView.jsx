@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconCheck, IconRefresh } from './icons.jsx';
+import { aiText } from './Analyst.jsx';
 import { Notice } from './Notices.jsx';
 import { fetchComparison } from '../lib/api.js';
 import { formatNumber, formatNss, relativeTime } from '../lib/format.js';
@@ -131,6 +132,35 @@ function MatrixTable({ result }) {
             ))}
           </tbody>
         </table>
+      </div>
+    </Panel>
+  );
+}
+
+// Bacaan lintas project dari lapisan `ai-analyst-v1`. Matriks, leaderboard, dan heatmap tetap
+// pengukuran mesin; panel ini hanya menafsirkan urutan kolom, dan hilang sendiri ketika lapisan
+// tidak menjawab — tidak ada kotak kosong yang menyamar sebagai analisis.
+function CompareReading({ result }) {
+  const ai = result.ai?.status === 'answered' ? result.ai : null;
+  if (!ai) return null;
+  const compare = aiText(ai.reading.compare);
+  const notes = (Array.isArray(result.projects) ? result.projects : [])
+    .map(project => ({ id: project.id, label: project.label, text: aiText(ai.reading.apps?.[project.id]) }))
+    .filter(entry => entry.text);
+  if (!compare && !notes.length) return null;
+  return (
+    <Panel title={t('Analyst reading')} meta={`AI · ${ai.model || t('model')}`} className="xl:col-span-12">
+      <div className="space-y-1.5">
+        {compare ? <p className="text-[11px] leading-relaxed text-slate-200">{compare}</p> : null}
+        {notes.map(note => (
+          <p key={note.id} className="flex flex-wrap items-baseline gap-x-2 text-[10px] leading-snug text-slate-300">
+            <span className="label-sm shrink-0">{note.label}</span>
+            <span className="min-w-0">{note.text}</span>
+          </p>
+        ))}
+        <p className="border-t border-slate-800/70 pt-1.5 text-[10px] leading-relaxed text-slate-400">
+          {t('Written from the order of the columns and the loudest complaint area of each project. The model never sees a count and never writes one; every cell above stays measured.')}
+        </p>
       </div>
     </Panel>
   );
@@ -287,6 +317,11 @@ export function CompareView({ workspaces, onToast }) {
           <div className="grid gap-3 xl:grid-cols-12">
             <MatrixTable result={view} />
           </div>
+          {view.ai?.status === 'answered' ? (
+            <div className="grid gap-3 xl:grid-cols-12">
+              <CompareReading result={view} />
+            </div>
+          ) : null}
           <div className="grid gap-3 xl:grid-cols-12">
             <Leaderboard result={view} />
             <Insights result={view} />

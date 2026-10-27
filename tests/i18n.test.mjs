@@ -204,6 +204,15 @@ test('sebutan kamus hanya dipilih oleh lib/i18n.js, dan panel yang menampilkanny
   assert.equal(topicAlias(pairs), 'Crash & Error Aplikasi');
   assert.equal(bilingual('Authentication', 'Autentikasi'), 'Authentication');
   assert.equal(bilingualAlias('Authentication', 'Autentikasi'), 'Autentikasi');
+  // Bacaan AI boleh lolos hanya pada satu bahasa (kalimat lain memuat angka dan dibuang).
+  // Yang tampil lalu adalah bahasa yang ada, bukan baris kosong.
+  setLanguage('en');
+  assert.equal(bilingual(null, 'Bacaan hanya Indonesia'), 'Bacaan hanya Indonesia');
+  assert.equal(bilingual('English only', null), 'English only');
+  assert.equal(bilingual(null, null), '');
+  setLanguage('id');
+  assert.equal(bilingual('English only', null), 'English only');
+  setLanguage('en');
 });
 
 test('pemilihan bahasa bertahan walau penyimpanan peramban diblokir', () => {

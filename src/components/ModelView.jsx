@@ -10,6 +10,7 @@ import {
   toNumber,
 } from '../lib/format.js';
 import { bilingual, bilingualAlias, t, topicAlias, topicLabel } from '../lib/i18n.js';
+import { AnalystBadge, aiText } from './Analyst.jsx';
 import { EmptyState } from './EmptyState.jsx';
 import { Signal } from './Signals.jsx';
 import { Notice } from './Notices.jsx';
@@ -240,7 +241,8 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const topicsById = useMemo(() => new Map(topics.map(topic => [topic.id, topic])), [topics]);
   const pain = model.painPoints || {};
   const painLabels = Array.isArray(pain.labels) && pain.labelRules ? pain.labels : [];
-  const aiNames = pain.naming?.status === 'named' ? pain.naming.names || {} : null;
+  const ai = model.ai || null;
+  const aiNames = ai?.status === 'answered' ? ai.names || {} : null;
   const labelMetrics = pain.labelMetrics || {};
   const signals = model.signals || null;
   const signalItems = Array.isArray(signals?.items) ? signals.items : [];
@@ -326,6 +328,14 @@ export function ModelView({ dataset, workspace, db, onExport }) {
             metric={signals
               ? `${formatNumber(signals.metrics?.reported || 0)} ${t('dari')} ${formatNumber(signals.metrics?.candidates || 0)} ${t('kandidat lolos uji')}`
               : t('lapisan sinyal belum ada di snapshot ini')}
+          />
+          <Step
+            index="08"
+            title={t('Lapisan analis di atas angka')}
+            detail={t('Satu panggilan model per penarikan, dan isinya hanya bisa berupa kata: yang dikirim hanyalah urutan, arah, nama kamus, dan redaksi reviewers; setiap kalimat yang kembali memuat satu pun angka dibuang sebelum tampil. Bacaannya memakai dua bahasa sekaligus, dan seluruh panel yang menampiknya menandai sumbernya dengan AI · model.')}
+            metric={ai
+              ? `${ai.version || 'ai-analyst-v1'} · ${ai.status || t('tanpa status')}${ai.metrics?.reading?.rejected ? ` · ${formatNumber(ai.metrics.reading.rejected)} ${t('kalimat dibuang')}` : ''}`
+              : t('lapisan analis belum ada di snapshot ini')}
           />
         </div>
       </section>
@@ -525,7 +535,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                     </td>
                     <td className="py-2 pr-2 align-top text-[10px]">
                       {aiNames?.[entry.id]?.category
-                        ? <span title={`${t('Kategori diberi nama oleh')} ${pain.naming.model} ${t('berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin')}`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span><span className="block truncate text-slate-400">{aiNames[entry.id].subLabel || t('nama model')}</span></span>
+                        ? <span title={`${t('Kategori diberi nama oleh')} ${ai.model} ${t('berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin')}`}><span className="font-semibold text-slate-200">{aiText(aiNames[entry.id].category)}</span><span className="block truncate text-slate-400">{aiText(aiNames[entry.id].subLabel) || t('nama model')}</span></span>
                         : entry.category
                           ? <span title={`${t('Nama topik kamus domain yang lebih padat di gerombol ini daripada di keluhan lain')} (${formatNumber(entry.category.inside)} ${t('dari')} ${formatNumber(entry.reviewCount)} ${t('ulasan gerombol')})`}><span className="font-semibold text-slate-300">{topicLabel(topicsById.get(entry.category.id) || entry.category)}</span><span className="block text-slate-400">{t('dari kamus domain')}</span></span>
                           : <span className="text-slate-400" title={t('Belum ada penamaan yang lolos uji bukti untuk gerombol ini')}>N/A</span>}
@@ -566,9 +576,22 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               {t('Arah dihitung dari')} {pain.labelMetrics?.trend ? `${t('rentang')} ${pain.labelMetrics.trend.firstDay} ${t('sampai')} ${pain.labelMetrics.trend.lastDay}` : t('rentang tanggal yang tidak tersedia')}.{' '}
               {t('Kolom')} <span className="font-semibold text-slate-300">{t('Kanal')}</span> {t('adalah kanal yang paling banyak memuat label itu, dibaca sebagai porsi keluhan kanal tersebut.')}{' '}
               {t('Kolom')} <span className="font-semibold text-slate-300">{t('Kategori')}</span> {t('punya dua sumber dan keduanya ditulis di barisnya: nama topik kamus domain yang lolos uji kepadatan')} ({pain.labelRules?.category || t('lebih dari satu ulasan gerombol memuatnya, dan porsinya beda nyata dari keluhan lain')}), {t('atau nama yang diberi model bahasa')}{' '}
-              ({pain.naming?.status === 'named' ? `${pain.naming.model} ${t('atas')} ${formatNumber(pain.naming.clusters || 0)} ${t('gerombol')}, ${formatNumber(painLabels.filter(entry => pain.naming.names?.[entry.id]?.category).length)} ${t('baris tampil bernama model')}` : `${t('lapisan penamaan berstatus')} ${pain.naming?.status || t('belum ada di snapshot ini')}${pain.naming?.reason ? ` — ${pain.naming.reason}` : ''}`}).
+              ({ai?.status === 'answered' ? `${ai.model} ${t('atas')} ${formatNumber(ai.clusters || 0)} ${t('gerombol')}, ${formatNumber(painLabels.filter(entry => ai.names?.[entry.id]?.category).length)} ${t('baris tampil bernama model')}` : `${t('lapisan analis berstatus')} ${ai?.status || t('belum ada di snapshot ini')}${ai?.reason ? ` — ${ai.reason}` : ''}`}).
               {' '}{t('Yang tidak pernah terjadi: angka ikut menamai atau ikut dinamai — seluruh kolom jumlah, porsi, pujian, arah, dan kanal tetap pengukuran mesin.')}
             </p>
+            {/* Catatan metode dari lapisan analis: ia menilai bacaannya sendiri, dan jumlah
+                kalimat yang dibuang karena memuat angka ikut dilaporkan, bukan disembunyikan. */}
+            {aiText(ai?.reading?.method) ? (
+              <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[10px] leading-relaxed text-slate-300">
+                <AnalystBadge model={ai.model} note={t('Kalimat ini ditulis lapisan analis tentang seberapa jauh bacaannya bisa dipercaya')} />
+                <span className="min-w-0">{aiText(ai.reading.method)}</span>
+              </p>
+            ) : null}
+            {ai?.status === 'answered' && ai.metrics?.reading?.rejected ? (
+              <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+                <span className="num font-semibold text-slate-300">{formatNumber(ai.metrics.reading.rejected)}</span> {t('kalimat model dibuang karena memuat angka atau tidak berbentuk kalimat; yang tampil di panel hanyalah yang lolos uji itu.')}
+              </p>
+            ) : null}
           </div>
         ) : (
           <EmptyState
@@ -604,6 +627,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
             [t('Mesin'), dataset.engine?.version || 'N/A'],
             [t('Supervisi'), dataset.engine?.supervision === 'weak-rating' ? t('sinyal bintang lemah') : dataset.engine?.supervision || 'N/A'],
             [t('Kamus topik'), dataset.engine?.dictionary && dataset.engine.dictionary !== 'none' ? dataset.engine.dictionary : t('tidak ada di snapshot ini')],
+            [t('Lapisan analis'), dataset.engine?.analyst ? `${dataset.engine.analyst.version} · ${dataset.engine.analyst.status}${dataset.engine.analyst.model ? ` · ${dataset.engine.analyst.model}` : ''}` : t('belum ada di snapshot ini')],
             [t('Deteksi bahasa'), languages.version || t('tidak ada di snapshot ini')],
             [t('Ukuran'), formatBytes(snapshotBytes)],
           ].map(([label, value]) => (

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import { formatNumber, formatPercent } from '../lib/format.js';
 import { t, topicLabel } from '../lib/i18n.js';
+import { AnalystBadge, aiText } from './Analyst.jsx';
 import { EmptyState } from './EmptyState.jsx';
 import { ChartFrame } from './charts/ChartFrame.jsx';
 import { IconLayers } from './icons.jsx';
@@ -38,7 +39,7 @@ function Trend({ entry }) {
   );
 }
 
-export function PainLabels({ pain, topics, filtered = false }) {
+export function PainLabels({ pain, topics, ai = null, filtered = false }) {
   const [open, setOpen] = useState(null);
   // Kategori menyimpan id topik kamus, bukan kedua sebutannya. Sebutan yang dibaca manajer
   // diambil dari kamus yang sama yang dipakai peta keluhan, jadi satu fitur tidak pernah
@@ -98,10 +99,12 @@ export function PainLabels({ pain, topics, filtered = false }) {
   // (interpretasi atas frasa yang sudah diukur) dan istilah halaman toko yang lolos uji
   // kepadatan. Satu baris dihitung satu kali — istilah toko yang namanya tertutup nama model
   // dilaporkan terpisah, tidak dijumlahkan ke baris yang sama.
-  const naming = pain.naming || null;
-  const aiNames = naming?.status === 'named' ? naming.names || {} : null;
+  const naming = ai || null;
+  const aiNames = naming?.status === 'answered' ? naming.names || {} : null;
+  const readings = naming?.status === 'answered' ? naming.reading?.labels || {} : null;
   const aiRows = labels.filter(entry => aiNames?.[entry.id]?.category);
   const aiCount = aiRows.length;
+  const readCount = labels.filter(entry => readings?.[entry.id]).length;
   const storeRows = labels.filter(entry => entry.category && !aiNames?.[entry.id]?.category);
   const termCount = storeRows.length;
   const maskedTermCount = labels.filter(entry => entry.category && aiNames?.[entry.id]?.category).length;
@@ -135,15 +138,19 @@ export function PainLabels({ pain, topics, filtered = false }) {
             {labels.map((entry, index) => {
               const active = open === entry.id;
               const width = Math.max(2, (entry.reviewCount / ceiling) * 100);
-              const ai = aiNames?.[entry.id]?.category ? aiNames[entry.id] : null;
+              const aiInfo = aiNames?.[entry.id]?.category ? aiNames[entry.id] : null;
               const store = entry.category;
               // Baris pertama judul adalah AREA (nama kamus, atau interpretasi model atas frasa
               // yang sama); baris kedua adalah kalimat reviewers apa adanya. Tidak ada satu pun
               // kata di kolom ini yang berasal dari kepala: kamus domain, klaim model yang
               // ditandai, atau teks korpus.
               const dictionaryName = store ? areaName(store) : null;
-              const area = ai ? ai.category : dictionaryName;
-              const areaSource = ai ? 'ai' : store ? 'dictionary' : 'corpus';
+              const area = aiInfo ? aiText(aiInfo.category) : dictionaryName;
+              const areaSource = aiInfo ? 'ai' : store ? 'dictionary' : 'corpus';
+              const reading = readings?.[entry.id] || null;
+              const subLabel = aiInfo ? aiText(aiInfo.subLabel) : '';
+              const cause = reading ? aiText(reading.cause) : '';
+              const action = reading ? aiText(reading.action) : '';
               return (
                 <tr key={entry.id} className={`border-b border-slate-800/50 last:border-0 ${active ? 'bg-slate-800/40' : ''}`}>
                   <th scope="row" className="min-w-[212px] py-1.5 pr-3 text-left font-normal">
@@ -195,6 +202,19 @@ export function PainLabels({ pain, topics, filtered = false }) {
                           {formatNumber(entry.reviewCount)} {t('distinct reviews mention at least one of these phrases. Counting each phrase separately would report')} {formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))} {t('findings from the same people.')}
                           {entry.nameSource === 'term' ? ` ${t("The engine's short name for this cluster is")} ${entry.name} ${t('— the anchor word these phrases agree on; the full wording is listed above.')}` : ''}
                         </p>
+                        {/* Dua baris interpretasi di bawah frasa: ia menyebut apa yang ditulis
+                            reviewers, bukan apa yang terjadi di sistem. Tidak ada angka padanya,
+                            dan sumbernya selalu bertanda. */}
+                        {cause || action ? (
+                          <div className="mt-1.5 border-t border-slate-800/70 pt-1.5">
+                            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                              <AnalystBadge model={naming?.model} />
+                              <span className="text-[10px] text-slate-400">{t('an interpretation of the wording above, not a measured cause')}</span>
+                            </p>
+                            {cause ? <p className="mt-1 text-[10px] leading-relaxed text-slate-300"><span className="label-sm">{t('Likely cause')}</span> {cause}</p> : null}
+                            {action ? <p className="mt-0.5 text-[10px] leading-relaxed text-slate-300"><span className="label-sm">{t('Next action')}</span> {action}</p> : null}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </th>
@@ -209,7 +229,7 @@ export function PainLabels({ pain, topics, filtered = false }) {
                     >
                       {areaSource === 'ai' ? `AI · ${naming?.model || t('model')}` : areaSource === 'dictionary' ? t('domain dictionary') : t('reviewer wording')}
                     </span>
-                    {ai && store ? (
+                    {aiInfo && store ? (
                       <span
                         title={`${t('Measured density')}: ${formatNumber(store.inside)} ${t('of')} ${formatNumber(entry.reviewCount)} ${t('reviews in this cluster carry the dictionary term')} ${dictionaryName}${t(', denser than among other complaints')}`}
                         className="mt-1 block truncate text-[10px] text-slate-400"
@@ -217,7 +237,7 @@ export function PainLabels({ pain, topics, filtered = false }) {
                         {t('measured')}: {dictionaryName}
                       </span>
                     ) : null}
-                    {ai?.subLabel ? <span className="block truncate text-[10px] text-slate-400">{ai.subLabel}</span> : null}
+                    {subLabel ? <span className="block truncate text-[10px] text-slate-400">{subLabel}</span> : null}
                   </td>
                   <td className="num py-1.5 pr-3 text-right text-[11px] text-slate-400">{formatNumber(entry.phraseCount)}</td>
                   <td className="num py-1.5 pr-3 text-right text-[12px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
@@ -242,15 +262,15 @@ export function PainLabels({ pain, topics, filtered = false }) {
         {filtered ? ` ${t('Counts cover the whole corpus, not the active filter.')}` : ''}
       </p>
       <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-        {t('The Named by column is the one interpreted part, and its state is reported as it is:')}{' '}
-        {naming?.status === 'named'
-          ? <>{t('it ran with')} <span className="font-semibold text-slate-400">{naming.model}</span> {t('over')} {formatNumber(naming.clusters || 0)} {t('clusters and')} {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : t('no')} {t('of the rows shown')} {aiCount === 1 ? t('carries') : t('carry')} {t('its name')}{termCount ? <>, {formatNumber(termCount)} {t('carry a domain topic name denser inside this cluster than among other complaints')}</> : null}{maskedTermCount ? <>, {formatNumber(maskedTermCount)} {maskedTermCount === 1 ? t('further topic name') : t('further topic names')} {t('measured here but shown under the model name')}</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} {orphanNames === 1 ? t('returned name') : t('returned names')} {t('matched no row on this table and')} {orphanNames === 1 ? t('was') : t('were')} {t('ignored')}</> : null}.</>
+        {t('The Named by column and the two interpretation lines inside a row are the interpreted parts, and the layer state is reported as it is:')}{' '}
+        {naming?.status === 'answered'
+          ? <>{t('it ran with')} <span className="font-semibold text-slate-400">{naming.model}</span> {t('over')} {formatNumber(naming.clusters || 0)} {t('clusters and')} {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : t('no')} {t('of the rows shown')} {aiCount === 1 ? t('carries') : t('carry')} {t('its name')}; {readCount ? <span className="num">{formatNumber(readCount)}</span> : t('no')} {readCount === 1 ? t('row carries') : t('rows carry')} {t('a cause and a next action')}{termCount ? <>, {formatNumber(termCount)} {t('carry a domain topic name denser inside this cluster than among other complaints')}</> : null}{maskedTermCount ? <>, {formatNumber(maskedTermCount)} {maskedTermCount === 1 ? t('further topic name') : t('further topic names')} {t('measured here but shown under the model name')}</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} {orphanNames === 1 ? t('returned name') : t('returned names')} {t('matched no row on this table and')} {orphanNames === 1 ? t('was') : t('were')} {t('ignored')}</> : null}.</>
           : naming?.status === 'skipped'
-            ? <>{t('it did not run —')} {naming.reason || t('the naming layer was not configured')} {t('— so every area below comes from the domain dictionary, or the row shows reviewer wording only.')}</>
+            ? <>{t('it did not run —')} {naming.reason || t('the analyst layer was not configured')} {t('— so every area below comes from the domain dictionary, or the row shows reviewer wording only.')}</>
             : naming?.status === 'failed'
-              ? <>{t('it ran and failed —')} {naming.reason || t('no usable names came back')}{naming.detail ? <>, {t('source said')}: {naming.detail}</> : null}{Array.isArray(naming.tried) && naming.tried.length > 1 ? <>, {t('models tried')}: <span className="font-mono">{naming.tried.map(entry => `${entry.model} (${entry.status ?? t('no answer')})`).join(', ')}</span></> : null} {t('— so every area below comes from the domain dictionary, or the row shows reviewer wording only.')}</>
-              : t('this snapshot has no naming record at all; it was pulled before the naming layer existed, or nothing was clustered to name.')}{' '}
-        {t('No number in the table comes from naming — counts, shares and trend are measured.')}
+              ? <>{t('it ran and failed —')} {naming.reason || t('no usable text came back')}{naming.detail ? <>, {t('source said')}: {naming.detail}</> : null}{Array.isArray(naming.tried) && naming.tried.length > 1 ? <>, {t('models tried')}: <span className="font-mono">{naming.tried.map(entry => `${entry.model} (${entry.status ?? t('no answer')})`).join(', ')}</span></> : null} {t('— so every area below comes from the domain dictionary, or the row shows reviewer wording only.')}</>
+              : t('this snapshot has no analyst record at all; it was pulled before the layer existed, or nothing was measured for it to read.')}{' '}
+        {t('No number in the table comes from the analyst — counts, shares and trend are measured.')}
       </p>
     </ChartFrame>
   );

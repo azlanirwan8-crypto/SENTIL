@@ -12,14 +12,18 @@ import { buildComparison } from '../lib/compare-engine.mjs';
 import { storeResult } from '../lib/persist.mjs';
 import { projectDataset } from '../lib/dataset-view.mjs';
 import { pullProgress, percentOf } from '../lib/pull-progress.mjs';
-import { NAMING_VERSION, nameClusters } from '../lib/label-naming.mjs';
+import { ANALYST_VERSION, analyseComparison, analyseCorpus } from '../lib/ai-analyst.mjs';
 import { createQuota } from '../lib/rate-limit.mjs';
 import { analyzeCorpus, ENGINE_VERSION } from '../lib/corpus-engine.mjs';
 
 const BODY_LIMIT = 16384;
-// Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset, compare,
-// limits, job) tidak dikenai kuota: murah, dan memblokirnya justru membuat dasbor tidak terbaca.
+// Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset, limits,
+// job) tidak dikenai kuota: murah, dan memblokirnya justru membuat dasbor tidak terbaca. Compare
+// juga tidak — tetapi ia kini membayar satu panggilan model untuk bacaan lintas project, jadi
+// waktunya dibatasi lebih ketat daripada penarikan: matriksnya sudah dihitung mesin dan selalu
+// dikirim, yang boleh menunggu hanyalah kalimat pembacanya.
 const QUOTA_ACTIONS = new Set(['sync', 'discover']);
+const COMPARE_READ_TIMEOUT_MS = 30_000;
 // Seberapa sering progres penarikan boleh menyentuh database. Peramban bertanya tiap 2 detik, jadi
 // lebih sering dari ini hanya menambah permintaan tanpa angka baru untuk dibaca.
 const PROGRESS_FLUSH_MS = 2_000;
@@ -274,16 +278,15 @@ export function createSyncHandler(service = syncService, { db = database, quota 
     const startedAt = Date.now();
     const raw = stored.reviews.map(({ analysis, ...rest }) => rest);
     const { rows, model } = analyzeCorpus(raw, { generatedAt: stored.fetchedAt || new Date().toISOString(), listing, entity: stored.entity || workspace.entity || '' });
-    // Hitung ulang juga menjalankan lapisan penamaan, supaya "Re-run analysis" bisa mengganti
-    // nama label tanpa menyentuh sumber mana pun. State-nya selalu dicatat — termasuk "tidak ada
-    // yang bisa dinamai" — supaya panel tidak pernah bilang snapshot ini tidak punya catatan.
-    // Tanpa kunci atau saat panggilan gagal, nama kamus tetap dipakai dan hasil hitung ulang tidak
-    // pernah bergantung padanya.
-    const naming = await nameClusters(
-      (model.painPoints?.labels || []).map(label => ({ id: label.id, phrases: label.phrases.map(entry => entry.text) })),
-      { env },
-    );
-    model.painPoints.naming = { version: NAMING_VERSION, at: model.generatedAt || new Date().toISOString(), ...naming };
+    // Hitung ulang juga menjalankan lapisan analis, supaya "Re-run analysis" bisa mengganti nama
+    // label DAN menulis bacaan panel tanpa menyentuh sumber mana pun. State-nya selalu dicatat —
+    // termasuk "tidak ada yang bisa dibaca" — supaya panel tidak pernah bilang snapshot ini tidak
+    // punya catatan. Tanpa kunci atau saat panggilan gagal, seluruh panel jatuh ke teks mesin.
+    model.ai = {
+      version: ANALYST_VERSION,
+      at: model.generatedAt || new Date().toISOString(),
+      ...(await analyseCorpus(model, { env })),
+    };
     // Korpus 69.000 baris dipegang tiga kali pada titik ini (bahan mentah, hasil analisis, dan
     // salinan penyimpanan). Salinan mentah tidak dibutuhkan lagi setelah model terbentuk, jadi
     // dilepas sebelum tulisan dimulai — fungsi serverless punya langit-langit memori, dan
@@ -467,7 +470,16 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           const found = workspaces.find(workspace => workspace.id === id);
           return found || { id, label: id, entity: byId[id]?.entity || null };
         });
-        json(response, 200, { ...buildComparison({ workspaces: selected, datasets: byId }), db: probe });
+        const matrix = buildComparison({ workspaces: selected, datasets: byId });
+        // Satu panggilan untuk bacaan lintas project. Aksi ini adalah aksi baca, jadi waktunya
+        // dibatasi lebih ketat daripada penarikan: matriks dan seluruh selnya sudah dihitung mesin
+        // dan selalu dikirim walau model tidak menjawab.
+        matrix.ai = {
+          version: ANALYST_VERSION,
+          at: matrix.generatedAt,
+          ...(await analyseComparison(matrix, { env, timeoutMs: COMPARE_READ_TIMEOUT_MS })),
+        };
+        json(response, 200, { ...matrix, db: probe });
         return;
       }
       if (payload.action === 'workspace-save') {
