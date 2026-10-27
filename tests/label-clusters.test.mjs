@@ -293,23 +293,41 @@ describe('gerombol frasa menjadi label', () => {
     assert.deepEqual(result.labels[0].channels, [{ id: 'play', count: 5, pool: 40 }]);
   });
 
-  test('kategori = istilah halaman toko yang lebih padat di dalam gerombol', () => {
-    const hits = new Map([['lama sekali', range(0, 2)], ['tidak jelas', range(0, 2)]]);
-    const items = [item('lama sekali', 3, { anchor: 'lama' }), item('tidak jelas', 3, { anchor: 'jelas' })];
-    const topicsOf = new Map([[0, ['pencairan']], [1, ['pencairan']], [2, ['aplikasi']]]);
-    for (let index = 3; index < 23; index += 1) topicsOf.set(index, ['aplikasi']);
+  test('kategori = topik kamus yang istilahnya sungguh tertulis di wording gerombol', () => {
+    const hits = new Map([['saldo tidak muncul', range(0, 2)], ['saldo hilang tiba', range(0, 2)]]);
+    const items = [item('saldo tidak muncul', 3, { anchor: 'saldo' }), item('saldo hilang tiba', 3, { anchor: 'saldo' })];
+    const topicsOf = new Map([[0, ['balance_display']], [1, ['balance_display']], [2, ['login_access']]]);
+    for (let index = 3; index < 23; index += 1) topicsOf.set(index, ['login_access']);
     const result = build(hits, new Map(), items, 40, new Map(), {
       negativeIndexes: [...Array(40).keys()],
       topicsOf,
-      topicNames: new Map([['pencairan', 'Pencairan'], ['aplikasi', 'Aplikasi']]),
+      topicNames: new Map([['balance_display', 'Balance Display'], ['login_access', 'Login & Session Access']]),
     });
     const label = result.labels[0];
     assert.equal(label.reviewCount, 3);
-    assert.equal(label.category.id, 'pencairan');
-    assert.equal(label.category.name, 'Pencairan');
+    assert.equal(label.category.id, 'balance_display');
+    assert.equal(label.category.name, 'Balance Display');
     assert.equal(label.category.inside, 2);
     assert.equal(label.category.pool, 2);
     assert.equal(result.metrics.categorized, 1);
+  });
+
+  // Kategori tidak boleh diwarisi dari ulasan panjang. Pada 33.600 ulasan Shopee, keluhan iklan
+  // ("ada iklan shopee", "iklan maksa") dapat kategori Login & Session Access dan Statements &
+  // Reports hanya karena ulasan yang memuatnya juga menyebut masuk aplikasi atau laporan.
+  test('topik yang tidak tertulis di wording gerombol tidak bisa mewarisi kategori dari ulasannya', () => {
+    const hits = new Map([['ada iklan shopee', range(0, 4)]]);
+    const items = [item('ada iklan shopee', 5)];
+    const topicsOf = new Map();
+    for (const index of range(0, 4)) topicsOf.set(index, ['login_access', 'statement_report']);
+    const result = build(hits, new Map(), items, 40, new Map(), {
+      negativeIndexes: [...Array(40).keys()],
+      topicsOf,
+      topicNames: new Map([['login_access', 'Login & Session Access'], ['statement_report', 'Statements & Reports']]),
+    });
+    assert.equal(result.labels[0].category, null, 'tidak ada istilah kamus di frasa gerombol ini');
+    assert.equal(result.metrics.categorized, 0);
+    assert.equal(result.labels[0].headingSource, 'phrase', 'judul lalu memang hanya teks reviewers, dan itu ditandai');
   });
 
   test('satu ulasan yang kebetulan memuat istilah toko tidak cukup untuk menamai kategori', () => {
