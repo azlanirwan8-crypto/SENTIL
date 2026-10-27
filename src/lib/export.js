@@ -5,7 +5,7 @@ export function exportWorkspace(workspace, dataset) {
   const payload = {
     format: 'sentil/workspace-v1',
     exportedAt: new Date().toISOString(),
-    note: 'Full export of one workspace: metadata, every review that was read, the per-review analysis, the corpus model, and channel coverage. No sample was dropped or added.',
+    note: 'Every review row that this workspace read, with its text verbatim and the analysis fields shown on screen, plus the corpus model and channel coverage. No sample was dropped or added. Derived columns used only inside the engine (topic triggers, listing terms, per-line language) stay in the database and are not part of this file.',
     workspace: {
       id: workspace.id,
       label: workspace.label,
