@@ -348,6 +348,88 @@ describe('aksi penyimpanan database', () => {
     assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'run:storing:2', 'snap:ws-1:2', 'run:ok:2'], 'penanda dibaca, pekerjaan ditandai berjalan, tahap simpan ditandai, lalu hasil disimpan dan diriwayatkan');
   });
 
+  test('aksi dataset mengirim baris ramping dengan url per kanal', async () => {
+    const stored = {
+      entity: 'aud',
+      fetchedAt: '2026-10-20T00:00:00.000Z',
+      model: { version: 'corpus-rating-v3', nss: -12, topics: [{ id: 'biometric_login', name: 'Biometric login' }] },
+      summary: { reviews: 1, analyzed: 1 },
+      channels: [{ id: 'play', status: 'success', fetched: 1 }],
+      reviews: [{
+        id: 'r-1',
+        platform: 'play',
+        author: 'Rina',
+        text: 'gagal verifikasi sidik jari',
+        rating: 2,
+        date: '2026-10-01',
+        publishedAt: '2026-10-01T00:00:00.000Z',
+        sourceUrl: 'https://play.google.com/store/apps/details?id=com.aud',
+        store: 'Google Play',
+        language: 'id',
+        meta: { appVersion: '3.1.0', via: 'play-page' },
+        analysis: {
+          sentiment: 'negative',
+          score: -0.61,
+          language: 'id',
+          topics: ['biometric_login'],
+          topicNames: ['Biometric login'],
+          primaryTopic: 'biometric_login',
+          topicTriggers: { biometric_login: ['sidik jari'] },
+          matchedTerms: [{ term: 'gagal', weight: -1.4 }],
+        },
+      }],
+    };
+    const db = fakeDb({ async loadDataset(id) { return stored; } });
+    const handler = createSyncHandler(stubService(), { db });
+    const body = (await run(handler, fakeRequest({ body: { action: 'dataset', workspaceId: 'ws-1' } }))).json();
+    const row = body.dataset.reviews[0];
+    assert.equal(row.text, 'gagal verifikasi sidik jari', 'teks ulasan dikirim utuh — proyeksi tidak memotong isi');
+    assert.equal(row.analysis.sentiment, 'negative');
+    assert.deepEqual(row.analysis.topicNames, ['Biometric login']);
+    assert.equal('sourceUrl' in row, false);
+    assert.equal(row.store, undefined);
+    assert.equal(row.analysis.primaryTopic, undefined);
+    assert.equal(row.analysis.topicTriggers, undefined);
+    assert.equal(row.meta.via, undefined);
+    assert.deepEqual(body.dataset.sourceUrls, { play: 'https://play.google.com/store/apps/details?id=com.aud' });
+    assert.deepEqual(body.dataset.model, stored.model, 'angka agregat tidak boleh berubah oleh proyeksi');
+    assert.deepEqual(body.dataset.summary, stored.summary);
+    assert.equal(stored.reviews[0].sourceUrl, 'https://play.google.com/store/apps/details?id=com.aud', 'satu-satunya salinan yang dibaca db tidak disentuh');
+  });
+
+  test('penarikan inline mengirim baris ramping tetapi menyimpan baris penuh', async () => {
+    const saved = [];
+    const db = fakeDb({
+      async saveSnapshot({ dataset }) {
+        saved.push(dataset.reviews[0]);
+        return { revision: 3, stored: dataset.reviews.length, elapsedMs: 12 };
+      },
+    });
+    const service = stubService({
+      sync: {
+        action: 'sync',
+        ok: true,
+        entity: 'aud',
+        fetchedAt: '2026-10-02T00:00:00.000Z',
+        reviews: [{
+          id: 'r-1',
+          platform: 'play',
+          text: 'gagal verifikasi',
+          sourceUrl: 'https://play.google.com/store/apps/details?id=com.aud',
+          analysis: { sentiment: 'negative', matchedTerms: [] },
+        }],
+        channels: [{ id: 'play', status: 'success', fetched: 1 }],
+        summary: { reviews: 1, analyzed: 1 },
+      },
+    });
+    const handler = createSyncHandler(service, { db });
+    const body = (await run(handler, fakeRequest({ body: { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE } }))).json();
+    assert.equal('sourceUrl' in body.reviews[0], false, 'respons ke peramban memakai peta kanal');
+    assert.deepEqual(body.sourceUrls, { play: 'https://play.google.com/store/apps/details?id=com.aud' });
+    assert.equal(saved[0].sourceUrl, 'https://play.google.com/store/apps/details?id=com.aud', 'yang tersimpan di database tetap baris lengkap');
+    assert.equal(saved[0].analysis.sentiment, 'negative');
+  });
+
   test('sync tanpa identitas workspace tetap mengembalikan data tetapi melaporkan tidak disimpan', async () => {
     const db = fakeDb();
     const handler = createSyncHandler(stubService(), { db });

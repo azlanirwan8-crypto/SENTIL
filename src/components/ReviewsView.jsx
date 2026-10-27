@@ -50,13 +50,15 @@ function Stars({ rating }) {
   );
 }
 
-function ReviewRow({ review, topicLabels }) {
+function ReviewRow({ review, topicLabels, sourceUrls }) {
   const [expanded, setExpanded] = useState(false);
   const sentiment = review.analysis?.sentiment || 'unclassified';
   const text = typeof review.text === 'string' ? review.text : '';
   const long = text.length > 320;
   const terms = Array.isArray(review.analysis?.matchedTerms) ? review.analysis.matchedTerms : [];
-  const sourceUrl = safeHttpUrl(review.sourceUrl);
+  // Jalur baca mengirim satu URL per kanal, bukan per baris: URL-nya sama untuk seluruh ulasan
+  // dari kanal yang sama dan menyedot 12% dari isi respons.
+  const sourceUrl = safeHttpUrl(review.sourceUrl || sourceUrls?.[review.platform]);
   const language = typeof review.analysis?.language === 'string' ? review.analysis.language : null;
   const primary = topicLabels[0] || null;
 
@@ -357,6 +359,7 @@ export function ReviewsView({ dataset }) {
             <ReviewRow
               key={`${review.platform}:${review.id}:${index}`}
               review={review}
+              sourceUrls={dataset.sourceUrls}
               topicLabels={(review.analysis?.topicNames?.length ? review.analysis.topicNames : (review.analysis?.topics || []).slice(0, 4).map(id => topicNames.get(id) || id))}
             />
           ))}

@@ -10,6 +10,7 @@ import { SyncError, normalizeSocialTargets, summarizeDataset, syncService, ceili
 import { database } from '../lib/db.mjs';
 import { buildComparison } from '../lib/compare-engine.mjs';
 import { storeResult } from '../lib/persist.mjs';
+import { projectDataset } from '../lib/dataset-view.mjs';
 import { createQuota } from '../lib/rate-limit.mjs';
 import { analyzeCorpus, ENGINE_VERSION } from '../lib/corpus-engine.mjs';
 
@@ -186,7 +187,9 @@ export function createSyncHandler(service = syncService, { db = database, quota 
         });
       }
       const stored = await storeResult(db, workspace, result);
-      return { ...result, stored, jobId, incremental: { ...(result.incremental || {}), note: cacheNote } };
+      // Jawaban inline (server lokal, uji) memakai bentuk yang sama seperti aksi `dataset`:
+      // kolom yang tidak dibaca layar tidak diberangkatkan, tapi yang tersimpan tetap utuh.
+      return { ...projectDataset(result), stored, jobId, incremental: { ...(result.incremental || {}), note: cacheNote } };
     } catch (error) {
       if (workspace?.id) {
         await note({
@@ -390,7 +393,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           json(response, 200, { action: 'dataset', db: probe, workspaceId, dataset: null });
           return;
         }
-        json(response, 200, { action: 'dataset', db: probe, workspaceId, dataset: await db.loadDataset(workspaceId) });
+        json(response, 200, { action: 'dataset', db: probe, workspaceId, dataset: projectDataset(await db.loadDataset(workspaceId)) });
         return;
       }
       if (payload.action === 'compare') {
