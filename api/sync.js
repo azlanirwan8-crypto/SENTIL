@@ -20,10 +20,6 @@ const BODY_LIMIT = 16384;
 // Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset, compare,
 // limits, job) tidak dikenai kuota: murah, dan memblokirnya justru membuat dasbor tidak terbaca.
 const QUOTA_ACTIONS = new Set(['sync', 'discover']);
-// Cap 'running' yang lebih tua dari plafon + margin ini tidak akan pernah ditulis ulang:
-// fungsinya sudah dimatikan platform. Menganggapnya masih hidup membuat peramban menunggu
-// selamanya pada penarikan yang sebenarnya sudah mati.
-const ABANDONED_MARGIN_MS = 60_000;
 // Seberapa sering progres penarikan boleh menyentuh database. Peramban bertanya tiap 2 detik, jadi
 // lebih sering dari ini hanya menambah permintaan tanpa angka baru untuk dibaca.
 const PROGRESS_FLUSH_MS = 2_000;
@@ -34,7 +30,7 @@ const PENDING_STATUSES = new Set(['running', 'storing']);
 // Fase terakhir yang bisa dibaca dari cap status saja, untuk polling yang tidak menemukan catatan
 // progres (kolom progress belum dipasang di database, atau penarikan dimulai sebelum catatan itu
 // ada). Cap status itu nyata, jadi fasenya nyata — persennya tidak, dan karena itu tidak dikirim.
-const STATUS_PHASE = { running: 'fetch', storing: 'write', ok: 'done', empty: 'done', unchanged: 'done', recomputed: 'done', error: 'failed', abandoned: 'failed' };
+const STATUS_PHASE = { running: 'fetch', storing: 'write', ok: 'done', empty: 'done', unchanged: 'done', recomputed: 'done', error: 'failed' };
 
 // Catatan progres minimum dari cap status saja. Persennya dihitung oleh fungsi yang sama seperti
 // catatan hidup, jadi aturan yang sama berlaku: tanpa penyebut yang terukur, tidak ada angka yang
@@ -50,27 +46,6 @@ function progressFromRun(run) {
     chunks: { done: 0, total: 0 },
   };
   return { ...record, ...percentOf(record), source: 'run status' };
-}
-// Pull adalah aksi mahal. Di Vercel ia dipindahkan ke latar belakang (waitUntil) sehingga
-// peramban menerima jawaban dalam hitungan milidetik dan menyambungnya lewat polling; di luar
-// Vercel (server lokal, uji) tidak ada waitUntil, jadi penarikan tetap diselesaikan dalam
-// permintaan. Deteksinya malas dan sekali saja — impor top-level bisa membuat berkas fungsi
-// ini gagal dibangun di runtime yang tidak mengenal await tingkat modul.
-let backgroundWaitUntil = null;
-
-// waitUntil hanya dipakai kalau fungsi ini benar-benar berjalan di Vercel. Di server lokal, di
-// uji, atau di host Node lain, penarikan tetap diselesaikan dalam permintaan — perilaku yang sama
-// seperti sebelum lapisan asinkron ada, jadi tidak ada jalur tersembunyi yang tidak diuji.
-async function loadWaitUntil(env = process.env) {
-  if (!env.VERCEL && !env.VERCEL_ENV) return null;
-  if (backgroundWaitUntil !== null) return backgroundWaitUntil;
-  try {
-    const module = await import('@vercel/functions');
-    backgroundWaitUntil = typeof module?.waitUntil === 'function' ? module.waitUntil : false;
-  } catch {
-    backgroundWaitUntil = false;
-  }
-  return backgroundWaitUntil;
 }
 
 // Pengaman baca data lama: kalau snapshot sebelumnya tidak bisa dibaca, penarikan berjalan
@@ -182,7 +157,7 @@ function workspaceFrom(value) {
   };
 }
 
-export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }), env = process.env, waitUntil = null } = {}) {
+export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }), env = process.env } = {}) {
   async function note(run) {
     if (!db.enabled) return null;
     try { return await db.logRun(run); } catch { return null; /* riwayat tidak boleh menggagalkan penarikan */ }
@@ -191,15 +166,15 @@ export function createSyncHandler(service = syncService, { db = database, quota 
   // Satu pekerjaan penarikan: baca penanda inkremental, tarik, analisis, simpan. Dipakai baik
   // oleh jalur latar belakang (Vercel) maupun jalur inline (server lokal / uji), jadi hanya ada
   // satu urutan kerja untuk keduanya.
-  async function runPullJob(args, workspace, { jobId = null, runId = null } = {}) {
+  async function runPullJob(args, workspace) {
     const startedAt = Date.now();
     const deadlineAt = pullDeadline({ startedAt, env });
     const { since, carry, note: cacheNote } = await readIncremental(db, workspace?.id, args.force);
-    // Kunci progres = project, bukan id pekerjaan: peramban mem-polling lewat workspaceId, dan
-    // project tidak punya dua penarikan yang berjalan bersamaan.
-    const progressKey = workspace?.id || jobId || `inline:${startedAt}`;
+    // Kunci progres = project: peramban mem-polling lewat workspaceId, dan satu project tidak
+    // pernah punya dua penarikan yang berjalan bersamaan.
+    const progressKey = workspace?.id || `inline:${startedAt}`;
     pullProgress.begin(progressKey, { workspaceId: workspace?.id || null, entity: args.entity });
-    let runRowId = typeof runId === 'number' ? runId : null;
+    let runRowId = null;
     let lastFlush = 0;
     // Progres ditulis ke baris riwayat yang sama supaya instance lain bisa menjawab polling.
     // Ditahap 2 detik: 51.000 baris punya puluhan peristiwa, dan tiap peristiwa tidak perlu jadi
@@ -239,12 +214,9 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       lastFlush = 0;
       flush();
     };
-    // Cap 'running' ditulis di sini kalau belum ditulis oleh permintaan yang menjawab 202.
-    // Tanpa identitas project tidak ada yang bisa mem-polling, jadi baris tanpa workspace_id
-    // hanya mengotori riwayat. Catatan cache pindah ke cap 'storing' kalau baris 'running'
-    // sudah lebih dulu ditulis (saat itu penanda inkrementalnya belum terbaca).
-    const claimed = runRowId !== null;
-    if (workspace?.id && !claimed) runRowId = await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: cacheNote, elapsedMs: null });
+    // Cap 'running' hanya ditulis kalau pekerjaan ini benar-benar punya project: tanpa identitas,
+    // tidak ada yang bisa mem-polling dan baris tanpa workspace_id hanya mengotori riwayat.
+    if (workspace?.id) runRowId = await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: cacheNote, elapsedMs: null });
     try {
       const result = await service.sync({ ...args, since, carry, deadlineAt, onProgress });
       if (workspace?.id) {
@@ -254,7 +226,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           status: 'storing',
           reviews: Array.isArray(result.reviews) ? result.reviews.length : result.incremental?.carried ?? null,
           channels: Array.isArray(result.channels) ? result.channels.map(channel => ({ id: channel.id, status: channel.status, fetched: channel.fetched })) : null,
-          error: claimed ? cacheNote : null,
+          error: null,
           elapsedMs: Date.now() - startedAt,
         });
       }
@@ -264,7 +236,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       flush();
       // Jawaban inline (server lokal, uji) memakai bentuk yang sama seperti aksi `dataset`:
       // kolom yang tidak dibaca layar tidak diberangkatkan, tapi yang tersimpan tetap utuh.
-      return { ...projectDataset(result), stored, jobId, incremental: { ...(result.incremental || {}), note: cacheNote } };
+      return { ...projectDataset(result), stored, incremental: { ...(result.incremental || {}), note: cacheNote } };
     } catch (error) {
       pullProgress.finish(progressKey, 'failed');
       lastFlush = 0;
@@ -409,34 +381,15 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           social,
           force,
         };
-        const hold = typeof waitUntil === 'function' ? waitUntil : await loadWaitUntil(env);
-        if (hold) {
-          // Jawaban keluar dulu, pekerjaan jalan di belakang. Peramban menyambungkan statusnya
-          // lewat aksi "job" — tidak ada lagi permintaan HTTP yang menggantung 90+ detik.
-          const jobId = `${workspace?.id || 'anonymous'}:${Date.now()}`;
-          // Cap 'running' ditulis sebelum jawaban 202 meninggalkan fungsi. Kalau tidak, polling
-          // pertama (2 detik kemudian) masih menemukan baris penarikan SEBELUMNYA — dan kalau
-          // baris lama itu berstatus abandoned atau error, peramban berhenti menunggu padahal
-          // penarikannya baru saja mulai. Dengan baris yang lebih dulu ada, baris terbaru selalu
-          // milik pekerjaan ini, dan layar progres punya sesuatu yang jujur untuk dibaca.
-          const runId = workspace?.id
-            ? await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null })
-            : null;
-          hold(runPullJob(args, workspace, { jobId, runId }).catch(error => {
-            if (error instanceof SyncError || Number.isInteger(error?.status)) return;
-            console.error('[api/sync] kegagalan pekerjaan latar belakang:', error);
-          }));
-          json(response, 202, {
-            action: 'sync',
-            accepted: true,
-            jobId,
-            workspaceId: workspace?.id || null,
-            pollingMs: 2000,
-            message: 'The pull is running on the server. Stored data is untouched until it finishes; poll "job" for this project for the status.',
-          });
-          return;
-        }
-        json(response, 200, await runPullJob(args, workspace, { jobId: null }));
+        // Penarikan diselesaikan DI DALAM permintaan. Jalur latar belakang (waitUntil + 202)
+        // pernah dipasang dan diukur dua kali pada 27 Oktober atas korpus 51.682 dan 54.832
+        // ulasan: keduanya berhenti di tengah fase tulis (potongan 48 dari 55) tanpa pernah
+        // memindahkan penanda revisi dan tanpa menulis cap selesai — instance function dibekukan
+        // setelah respons keluar, dan pekerjaan yang tidak terlihat tidak bisa diandalkan.
+        // Di dalam permintaan, plafon maxDuration berlaku penuh; itu jalur yang dulu menuntaskan
+        // 69.356 ulasan. Progres tetap hidup: baris 'running'/'storing' ditulis di dalam request
+        // yang sama dan peramban membacanya lewat aksi "job" sementara permintaan ini berjalan.
+        json(response, 200, await runPullJob(args, workspace));
         return;
       }
       if (payload.action === 'job') {
@@ -446,41 +399,29 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           json(response, 200, { action: 'job', db: probe, workspaceId, run: null });
           return;
         }
+        // Baris riwayat dibaca tanpa aturan umur: `created_at` datang dari timezone sesi database
+        // (instalasi ini mengirim 03:51 ketika UTC sedang 11:51), jadi membandingkannya dengan jam
+        // fungsi selalu salah — penarikan yang baru saja mulai langsung dinyatakan mati oleh
+        // plafon platform, dan itu kegagalan yang diukur di produksi, bukan teori.
         const stored = await db.latestRun(workspaceId);
-        const born = Date.parse(stored?.createdAt || '');
-        // Status 'running'/'storing' yang umurnya sudah lewat plafon fungsi tidak akan pernah
-        // selesai: fungsinya sudah dipotong platform. Ia dilaporkan apa adanya supaya klien
-        // berhenti menunggu dan data lama yang tersimpan tetap terbaca.
-        const abandoned = PENDING_STATUSES.has(stored?.status) && Number.isFinite(born)
-          && Date.now() - born > ceilingMs(env) + ABANDONED_MARGIN_MS;
-        // Jawaban 202 membawa jobId `<project>:<epoch fungsi>`. Baris riwayat yang lahir sebelum
-        // epoch itu bukan milik pekerjaan ini — biasanya cap penarikan sebelumnya. Melaporkannya
-        // sebagai selesai membuat peramban berhenti menunggu penarikan yang baru saja mulai, jadi
-        // baris asing itu dibaca sebagai "belum ada kabar" dan polling terus berjalan.
-        const jobBorn = Number.parseInt(String(payload.jobId || '').split(':').pop(), 10);
-        const foreign = Number.isFinite(jobBorn) && Number.isFinite(born) && born < jobBorn - 5_000;
-        const run = foreign ? null : (abandoned
-          ? { ...stored, status: 'abandoned', error: 'The server stopped before this pull could record that it finished, so its result cannot be read from here. What is on screen is still the last snapshot that did finish. Pull again — the pages already read make the next run shorter.' }
-          : stored);
         // Progres dibaca dari memori instance ini kalau ada; kalau polling mendarat di instance
         // lain, yang dipakai adalah snapshot terakhir yang tersimpan di baris riwayat. Tanpa
-        // keduanya, klien tetap mendapat status fase dari riwayat — tanpa persen, bukan dengan
-        // persen karangan.
+        // keduanya, klien tetap mendapat fase dan jumlah baris dari cap status — tanpa persen,
+        // bukan dengan persen karangan.
         const live = pullProgress.get(workspaceId);
         const progress = live
           ? { ...live, source: 'this instance' }
           : stored?.progress
             ? { ...stored.progress, source: 'run history' }
-            : run ? progressFromRun(run) : null;
+            : stored ? progressFromRun(stored) : null;
         json(response, 200, {
           action: 'job',
           db: probe,
           workspaceId,
-          pending: foreign || PENDING_STATUSES.has(run?.status),
-          finished: foreign ? false : (run ? !PENDING_STATUSES.has(run.status) : false),
-          abandoned: foreign ? false : abandoned,
+          pending: PENDING_STATUSES.has(stored?.status),
+          finished: stored ? !PENDING_STATUSES.has(stored.status) : false,
           progress,
-          run,
+          run: stored,
         });
         return;
       }

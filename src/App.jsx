@@ -34,40 +34,31 @@ const STATE_POLL_MS = 75_000;
 // beberapa detik, dan berhenti menunggu setelah anggaran ini — kalau lewat, yang ditampilkan
 // tetap snapshot terakhir yang utuh, bukan separuh hasil.
 const JOB_POLL_MS = 2_000;
-const JOB_BUDGET_MS = 8 * 60_000;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// Menyambungkan penarikan yang berjalan di latar belakang: tunggu status selesai, lalu baca
-// kembali dataset yang baru disimpan. Yang dikembalikan berbentuk sama seperti jawaban penarikan
-// biasa, jadi sisa halaman tidak perlu tahu ada dua jalur.
-async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = JOB_BUDGET_MS, jobId = null, onProgress = null } = {}) {
-  const startedAt = Date.now();
-  let run = null;
-  while (Date.now() - startedAt < budgetMs) {
-    await sleep(pollingMs);
-    let state;
-    try {
-      // jobId dikirim supaya server tahu baris riwayat mana yang milik penarikan ini; tanpa itu
-      // polling pertama bisa membaca cap penarikan sebelumnya dan melaporkannya sebagai selesai.
-      state = await fetchJob(workspaceId, jobId);
-    } catch (error) {
-      return { ok: false, reason: error.message || 'The pull status could not be read.' };
+// Progres dibaca sambil menunggu, bukan sesudahnya. Penarikan berjalan di dalam satu permintaan
+// dan baris riwayatnya ('running' → 'storing' → cap akhir) ditulis oleh permintaan yang sama, jadi
+// peramban tinggal bertanya tiap dua detik sementara jawabannya belum sampai. Layar punya angka
+// yang bergerak tanpa perlu menebak, dan tidak ada pekerjaan yang hidup di tempat yang tidak bisa
+// dilihat orang.
+function watchPullProgress(workspaceId, onProgress, { pollingMs = JOB_POLL_MS } = {}) {
+  let stopped = false;
+  const loop = async () => {
+    while (!stopped) {
+      await sleep(pollingMs);
+      if (stopped) break;
+      try {
+        const state = await fetchJob(workspaceId);
+        if (!stopped && state.progress) onProgress(state.progress, state.run || null);
+      } catch {
+        // Permintaan status yang gugur tidak boleh menghentikan penarikannya sendiri; pertanyaan
+        // berikutnya datang dua detik kemudian.
+      }
     }
-    if (state.run) run = state.run;
-    if (state.progress && typeof onProgress === 'function') onProgress(state.progress, run);
-    if (state.finished) break;
-  }
-  if (!run || run.status === 'running' || run.status === 'storing') {
-    return { ok: false, stillRunning: true, reason: 'The pull is still running on the server. What is on screen is still the last complete snapshot — check again in a moment.' };
-  }
-  if (run.status === 'error') return { ok: false, reason: run.error || 'The pull failed on the server.' };
-  if (run.status === 'abandoned') return { ok: false, reason: run.error || 'The server stopped this pull at its platform time limit. Nothing was written and the stored snapshot is unchanged.' };
-  if (run.status === 'unchanged') return { ok: true, unchanged: true, run };
-  const loaded = await loadDataset(workspaceId);
-  if (loaded.error) return { ok: false, reason: loaded.error };
-  if (!loaded.dataset) return { ok: false, reason: 'The finished pull could not be read back from the database.' };
-  return { ok: true, data: loaded.dataset, db: loaded.db, run };
+  };
+  void loop();
+  return () => { stopped = true; };
 }
 
 function snapshotOf(data) {
@@ -229,35 +220,9 @@ export default function App() {
     setSyncing({ workspaceId: workspace.id, force, startedAt: Date.now() });
     setSyncProgress(null);
     setSyncError(null);
+    const stopWatching = watchPullProgress(workspace.id, setSyncProgress);
     try {
-      let data = await syncWorkspace({ workspace, entity: workspace.entity, playAppId, appleAppId, social, force });
-      if (data.accepted) {
-        // Jawaban pertama hanya berisi "pekerjaan diterima". Data datang setelah pekerjaan di
-        // server selesai, dibaca ulang dari database lewat status pekerjaan.
-        pushToast('The pull is running on the server. Keep browsing; this screen updates when it finishes.', 'info', 'Pull moved to the background');
-        const awaited = await awaitPullJob(workspace.id, { pollingMs: data.pollingMs, jobId: data.jobId, onProgress: setSyncProgress });
-        if (!awaited.ok) {
-          setSyncError(awaited.reason);
-          pushToast(awaited.reason, awaited.stillRunning ? 'warning' : 'error', awaited.stillRunning ? 'Still running' : 'Pull did not complete');
-          return;
-        }
-        if (awaited.unchanged) {
-          const checkedAt = new Date().toISOString();
-          pushToast('The sources answered and nothing new came in since the stored snapshot, so no analysis was repeated and nothing was overwritten.', 'info', 'No new reviews');
-          applyWorkspaces(workspacesRef.current.map(item => (item.id === workspace.id ? { ...item, lastSyncedAt: checkedAt, updatedAt: checkedAt } : item)));
-          return;
-        }
-        data = {
-          ...awaited.data,
-          db: awaited.db,
-          stored: {
-            ok: true,
-            revision: awaited.data.stored?.revision ?? null,
-            rows: awaited.data.stored?.reviewCount ?? awaited.data.reviews.length,
-            elapsedMs: awaited.run?.elapsedMs ?? null,
-          },
-        };
-      }
+      const data = await syncWorkspace({ workspace, entity: workspace.entity, playAppId, appleAppId, social, force });
       if (data.db) setDbStatus(data.db);
       const channels = Array.isArray(data.channels) ? data.channels : [];
       const allFailed = channels.length > 0 && channels.every(channel => channel.status === 'error');
@@ -293,7 +258,9 @@ export default function App() {
       else if (data.reviews.length === 0) pushToast('Sources responded, but no written review came back.', 'warning', 'Zero reviews read');
       else if (anyFailed || anyPartial) pushToast(`${formatNumber(data.reviews.length)} reviews read; some channels are still incomplete.`, 'warning', 'Partial result');
       else pushToast(`${formatNumber(data.reviews.length)} reviews read; the corpus model was refreshed.`, 'success', 'Snapshot ready');
-      if (stored && stored.ok === true) {
+      if (stored && stored.ok === true && stored.unchanged) {
+        pushToast('The sources answered and nothing new came in since the stored snapshot, so no analysis was repeated and nothing was overwritten.', 'info', 'No new reviews');
+      } else if (stored && stored.ok === true) {
         pushToast(`${formatNumber(stored.rows)} review rows saved as revision ${stored.revision}.`, 'success', 'Saved to the database');
       } else if (stored && stored.ok === false) {
         pushToast(stored.reason, 'warning', 'Not stored in the database');
@@ -302,6 +269,7 @@ export default function App() {
       setSyncError(error.message || 'The pull failed.');
       pushToast(error.message || 'The pull failed.', 'error', 'Pull failed');
     } finally {
+      stopWatching();
       syncingRef.current = false;
       setSyncing(null);
       setSyncProgress(null);

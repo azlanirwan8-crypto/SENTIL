@@ -74,7 +74,7 @@ function fakeDb(overrides = {}) {
   };
 }
 
-describe('penarikan asinkron dan cache inkremental', () => {
+describe('penarikan dalam permintaan, riwayat progres, dan cache inkremental', () => {
   test('aksi job membaca status pekerjaan terakhir', async () => {
     const db = fakeDb();
     const handler = createSyncHandler(stubService(), { db });
@@ -112,33 +112,18 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.equal(body.progress.overallPercent, null, 'tanpa pekerjaan yang terukur, tidak ada persen yang dikirim');
   });
 
-  test('cap running yang umurnya lewat plafon fungsi dilaporkan sebagai pekerjaan yang ditinggalkan', async () => {
-    // Inilah kegagalan yang terukur di produksi: penarikan 50.000+ ulasan dipotong platform
-    // tepat di 300 detik dan cap 'running' tidak pernah ditulis ulang. Tanpa aturan ini,
-    // peramban menunggu selamanya pada penarikan yang sudah mati.
+  test('cap berjalan tidak dihakimi oleh jam database', async () => {
+    // created_at datang dari timezone sesi Postgres: instalasi produksi ini mengirim 03:51 ketika
+    // UTC sedang 11:51. Aturan umur apa pun yang membandingkannya dengan jam fungsi selalu salah —
+    // dan itulah yang membuat penarikan yang baru mulai dilaporkan "mati di plafon platform"
+    // padahal sedang berjalan. Yang tersisa untuk dinilai hanyalah status barisnya sendiri.
     const db = fakeDb({ runRow: { id: 10, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null, createdAt: new Date(Date.now() - 400_000).toISOString() } });
     const handler = createSyncHandler(stubService(), { db });
     const body = (await run(handler, { action: 'job', workspaceId: 'ws-1' })).json();
-    assert.equal(body.pending, false);
-    assert.equal(body.finished, true);
-    assert.equal(body.abandoned, true);
-    assert.equal(body.run.status, 'abandoned');
-    assert.match(body.run.error, /result cannot be read from here/, 'yang diketahui hanyalah fungsinya berhenti sebelum selesai dicatat');
-    assert.equal(/nothing was written/.test(body.run.error), false, 'hasilnya tidak diketahui, jadi tidak boleh dikatakan tidak ada yang tertulis');
-  });
-
-  test('cap penarikan sebelumnya tidak membuat penarikan yang baru berhenti menunggu', async () => {
-    // Baris riwayat terakhir itu punya penarikan SEBELUMNYA (error, 40 detik lalu). Jawaban 202
-    // membawa jobId dengan epoch fungsi, dan baris yang lahir sebelum epoch itu bukan milik
-    // pekerjaan ini — melaporkannya sebagai selesai akan membuat peramban menyerah sebelum
-    // penarikannya sendiri sempat tercatat.
-    const db = fakeDb({ runRow: { id: 5, status: 'error', reviews: null, channels: null, error: 'old failure', elapsedMs: 120, createdAt: new Date(Date.now() - 40_000).toISOString() } });
-    const handler = createSyncHandler(stubService(), { db });
-    const body = (await run(handler, { action: 'job', workspaceId: 'ws-1', jobId: `ws-1:${Date.now()}` })).json();
-    assert.equal(body.pending, true, 'yang ada di layar adalah penarikan yang sedang menunggu barisnya sendiri');
+    assert.equal(body.pending, true, 'umur barisnya bukan bukti bahwa pekerjaannya mati');
     assert.equal(body.finished, false);
-    assert.equal(body.run, null, 'cap milik orang lain tidak dikirim sebagai hasil');
-    assert.equal(body.progress, null, 'tanpa baris milik sendiri tidak ada progres yang bisa dilaporkan');
+    assert.equal(body.run.status, 'running');
+    assert.equal(body.abandoned, undefined, 'tidak ada lagi label abandoned yang dihitung dari jam');
   });
 
   test('job tidak mengirim id project yang bentuknya tidak sah ke database', async () => {
@@ -149,8 +134,11 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.deepEqual(db.seen, []);
   });
 
-  test('penarikan diserahkan ke latar belakang dan menjawab 202 tanpa menunggu', async () => {
-    let held = null;
+  test('penarikan diselesaikan di dalam permintaan dan dicatat sampai cap terakhir', async () => {
+    // Jalur latar belakang (waitUntil + 202) pernah dipasang dan diukur dua kali pada korpus
+    // 50 ribuan: keduanya berhenti di tengah fase tulis tanpa pernah memindahkan penanda revisi,
+    // karena instance dibekukan setelah respons keluar. Penarikan harus terjadi di tempat orang
+    // bisa melihatnya selesai — di dalam permintaan yang plafon waktunya berlaku penuh.
     const db = fakeDb();
     const service = stubService({
       action: 'sync',
@@ -161,26 +149,22 @@ describe('penarikan asinkron dan cache inkremental', () => {
       channels: [{ id: 'play', status: 'success', fetched: 1 }],
       summary: { reviews: 1, analyzed: 1 },
     });
-    const handler = createSyncHandler(service, { db, waitUntil: promise => { held = promise; } });
+    const handler = createSyncHandler(service, { db });
     const response = await run(handler, { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE });
-    assert.equal(response.statusCode, 202, 'peramban tidak lagi menahan satu permintaan sampai penarikan selesai');
+    assert.equal(response.statusCode, 200);
     const body = response.json();
-    assert.equal(body.accepted, true);
-    assert.equal(body.pollingMs, 2000, 'setengah interval lama supaya bilah progres bergerak saat penarikan panjang');
-    assert.match(body.jobId, /^ws-1:/);
-    assert.equal(body.reviews, undefined, 'isi penarikan tidak dikirim pada jawaban pertama');
-    assert.ok(held, 'pekerjaan diserahkan ke waitUntil');
-    await held;
-    assert.deepEqual(db.seen, ['run:running:null', 'cursor:ws-1', 'run:storing:1', 'snap:ws-1:1', 'run:ok:1'], 'cap berjalan ditulis sebelum jawaban 202 keluar, baru penanda dibaca — polling pertama tidak boleh menemukan baris penarikan sebelumnya');
+    assert.equal(body.accepted, undefined, 'tidak ada jawaban "diterjakan di belakang" lagi');
+    assert.equal(body.reviews.length, 1, 'hasil penarikan dikirim oleh permintaan yang sama');
+    assert.equal(body.stored.ok, true);
+    assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'run:storing:1', 'snap:ws-1:1', 'run:ok:1'], 'penanda dibaca, pekerjaan ditandai berjalan, tahap simpan ditandai, lalu hasil disimpan dan diriwayatkan');
   });
 
   test('penarikan diberi batas waktu mutlak agar muat sebelum plafon fungsi', async () => {
     const db = fakeDb();
     const service = stubService();
-    const handler = createSyncHandler(service, { db, waitUntil: promise => { promise.catch(() => {}); } });
+    const handler = createSyncHandler(service, { db });
     const before = Date.now();
     await run(handler, { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE });
-    await new Promise(resolve => setImmediate(resolve));
     const call = service.calls[0];
     assert.ok(Number.isFinite(call.deadlineAt), 'kanal harus tahu kapan waktu fungsi habis');
     // 300 dtk plafon dikurangi 12 dtk ruang penutup; tidak boleh lebih dari itu.
