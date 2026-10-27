@@ -364,8 +364,11 @@ describe('penarikan inkremental', () => {
 });
 
 describe('anggaran waktu penarikan terhadap plafon fungsi', () => {
-  test('tanpa deadline, kanal memakai anggaran yang dikonfigurasi', () => {
-    assert.equal(fetchBudgetMs({ configured: DEFAULT_PLAY_BUDGET_MS }), DEFAULT_PLAY_BUDGET_MS);
+  test('tanpa deadline, anggaran tetap dibatasi plafon baris satu penarikan', () => {
+    const budget = fetchBudgetMs({ configured: DEFAULT_PLAY_BUDGET_MS });
+    // 70.000 baris pada 900 baris/detik = 77,8 dtk; itu batas memori, bukan batas waktu.
+    assert.ok(budget < DEFAULT_PLAY_BUDGET_MS, 'satu penarikan tidak boleh membawa korpus tak terbatas');
+    assert.ok(budget >= 70_000 && budget <= 80_000, `anggaran ${budget}ms tidak sesuai plafon 70.000 baris`);
   });
 
   test('deadline menyisihkan biaya analisis dan tulis, bukan hanya sisa waktu', async () => {
@@ -373,10 +376,15 @@ describe('anggaran waktu penarikan terhadap plafon fungsi', () => {
     // Baris yang ditarik pada jendela itu harus dianalisis dan ditulis juga, jadi anggaran
     // tarik dibagi (1 + 0,6 ms/baris x 900 baris/dtk / 1000) = 1,54.
     const started = 1_800_000_000_000;
-    const budget = fetchBudgetMs({ deadlineAt: started + 288_000, now: started, configured: DEFAULT_PLAY_BUDGET_MS });
-    assert.ok(budget < DEFAULT_PLAY_BUDGET_MS, `anggaran ${budget}ms harus mengecil saat waktu menipis`);
+    const budget = fetchBudgetMs({
+      deadlineAt: started + 120_000,
+      now: started,
+      configured: DEFAULT_PLAY_BUDGET_MS,
+      maxRows: Number.POSITIVE_INFINITY,
+    });
+    assert.ok(budget < 120_000 - 35_000, `anggaran ${budget}ms harus mengecil saat waktu menipis`);
     const rows = (budget / 1000) * 900;
-    assert.ok(budget + rows * 0.6 + 35_000 <= 288_000, 'tarik + pasca + cadangan tidak boleh lewat plafon');
+    assert.ok(budget + rows * 0.6 + 35_000 <= 120_000, 'tarik + pasca + cadangan tidak boleh lewat plafon');
   });
 
   test('waktu yang sudah habis tetap diberi ruang menulis, bukan nol', () => {
