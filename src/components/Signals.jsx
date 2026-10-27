@@ -139,9 +139,10 @@ export function Signals({ signals, pain = null, topics = null, ai = null, filter
         {signals.items.map(item => <Signal key={item.id} item={item} area={areaFor(item)} />)}
       </ul>
       <p className="mt-2 shrink-0 border-t border-slate-800/70 pt-1.5 text-[10px] leading-relaxed text-slate-400">
-        {t('A line appears only when the difference between two shares is too big to be luck. That is the same test that admits a phrase or a topic, and no cutoff is picked per project. Direction compares the second half of')} <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : t('the observed period')}</span> {t('against the first')}{basis.trend && basis.trend.earlyNegative != null
-          ? <> {t('on')} <span className="num">{formatNumber(basis.trend.earlyNegative)}</span> {t('vs')} <span className="num">{formatNumber(basis.trend.lateNegative)}</span> {t('complaints')}</>
-          : null}. {metrics.trimmed
+        {t('A line appears only when the difference between two shares is too big to be luck. That is the same test that admits a phrase or a topic, and no cutoff is picked per project. Direction compares the second half of')} <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : t('the observed period')}</span> {t('with the first')}{basis.trend && basis.trend.earlyNegative != null
+          ? <> — <span className="num">{formatNumber(basis.trend.earlyNegative)}</span> {t('complaints then,')} <span className="num">{formatNumber(basis.trend.lateNegative)}</span> {t('in the second half.')}</>
+          : null}
+        {metrics.trimmed
             ? <><span className="num">{formatNumber(metrics.trimmed)}</span> {t('candidates sat outside the display budget and are counted above.')}</>
             : t('Nothing was trimmed.')}
         {filtered ? ` ${t('Counts cover every review in this project, not only the filtered ones.')}` : ''}
