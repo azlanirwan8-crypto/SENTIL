@@ -11,10 +11,109 @@
 @tailwind utilities;
 
 @layer base {
+  /* Satu lapis token untuk dua tema. Ramp-nya disimpan sebagai triplet RGB supaya Tailwind bisa
+     memasang alpha (`bg-slate-800/70` tetap bekerja), dan tema hanya menukar isi variabel —
+     587 pemakaian kelas di 43 komponen ikut berpindah tanpa satu pun komponen disentuh.
+     Tema terang adalah cermin ramp: slot 50 (teks paling terang di gelap) menjadi tinta paling
+     gelap, slot 950 (latar paling dalam) menjadi kertas. Satu-satunya pengecualian adalah slot
+     400: teks peredam harus tetap teredam di kedua tema, jadi nilainya diturunkan sampai 5,7:1
+     di atas kartu terang, bukan dicerminkan apa adanya (cermin murni memberi 7,5:1 dan membuat
+     semua keterangan tampak seperti teks utama). */
   :root {
     color-scheme: dark;
     --topbar-height: 52px;
     --sidebar-width: 208px;
+
+    --slate-50: 248 250 252;
+    --slate-100: 241 245 249;
+    --slate-200: 226 232 240;
+    --slate-300: 203 213 225;
+    --slate-400: 148 163 184;
+    --slate-500: 100 116 139;
+    --slate-600: 71 85 105;
+    --slate-700: 51 65 85;
+    --slate-800: 30 41 59;
+    --slate-900: 15 23 42;
+    --slate-950: 2 6 23;
+
+    /* Warna data membawa makna, jadi ia punya dua nilai — bukan satu nilai yang dicerminkan.
+       Di kartu gelap ia harus tetap terbaca di atas #0F172A; di kartu terang di atas #F1F5F9. */
+    --pos: 52 211 153;
+    --neg: 251 113 133;
+    --neu: 251 191 36;
+    --unk: 100 116 139;
+    --accent: 34 211 238;
+    --rose-300: 253 164 175;
+    --rose-400: 251 113 133;
+    --rose-500: 244 63 94;
+    --play: 114 162 202;
+    --appstore: 170 146 211;
+    --youtube: 211 131 115;
+    --reddit: 214 162 102;
+    --news: 112 169 169;
+    --facebook: 148 156 209;
+    --instagram: 210 137 183;
+    --tiktok: 193 141 206;
+    --x: 191 198 207;
+    --channel-default: 148 163 184;
+
+    /* Permukaan dan sapuan yang tidak lewat kelas Tailwind. */
+    --page-from: #0A1220;
+    --page-to: #020617;
+    --sweep: rgba(148, 163, 184, 0.14);
+    --scroll-thumb: #1E293B;
+    --scroll-thumb-hover: #334155;
+    --hover-band: #FFFFFF;
+    --hover-band-opacity: 0.045;
+    --nss-cold: #A9636D;
+    --nss-mid: #3C4A61;
+    --nss-warm: #3C8A72;
+  }
+
+  [data-theme='light'] {
+    color-scheme: light;
+
+    --slate-50: 2 6 23;
+    --slate-100: 15 23 42;
+    --slate-200: 30 41 59;
+    --slate-300: 51 65 85;
+    --slate-400: 82 96 116;
+    --slate-500: 71 85 105;
+    --slate-600: 100 116 139;
+    --slate-700: 203 213 225;
+    --slate-800: 226 232 240;
+    --slate-900: 241 245 249;
+    --slate-950: 248 250 252;
+
+    --pos: 5 108 75;
+    --neg: 190 18 60;
+    --neu: 155 72 8;
+    --unk: 71 85 105;
+    --accent: 12 106 132;
+    --rose-300: 159 18 57;
+    --rose-400: 190 18 60;
+    --rose-500: 225 29 72;
+    --play: 39 84 125;
+    --appstore: 97 62 152;
+    --youtube: 156 51 37;
+    --reddit: 146 84 10;
+    --news: 20 94 94;
+    --facebook: 67 78 158;
+    --instagram: 157 51 118;
+    --tiktok: 124 45 138;
+    --x: 71 85 105;
+    --channel-default: 71 85 105;
+
+    --page-from: #EDF1F7;
+    --page-to: #F8FAFC;
+    --sweep: rgba(15, 23, 42, 0.1);
+    --scroll-thumb: #CBD5E1;
+    --scroll-thumb-hover: #94A3B8;
+    --hover-band: #0F172A;
+    --hover-band-opacity: 0.055;
+    --nss-cold: #E7B0B7;
+    --nss-mid: #C7D0DD;
+    --nss-warm: #A6D6BE;
   }
 
   html {
@@ -27,16 +126,16 @@
        berbaris 4px, dua lapisan itu membaca sebagai moiré di sela-sela — dan sapuan cyan adalah
        warna interaksi yang dipakai sebagai dekorasi, jadi ia bersaing dengan warna data. Yang
        tersisa satu gradasi vertikal tenang yang memisahkan kepala dari isi. */
-    background-image: linear-gradient(180deg, #0A1220 0, #020617 340px);
+    background-image: linear-gradient(180deg, var(--page-from) 0, var(--page-to) 340px);
   }
 
   ::selection {
-    background: rgba(34, 211, 238, 0.28);
-    color: #f1f5f9;
+    background: rgb(var(--accent) / 0.28);
+    color: rgb(var(--slate-100));
   }
 
   :focus-visible {
-    outline: 2px solid #22d3ee;
+    outline: 2px solid rgb(var(--accent));
     outline-offset: 1px;
   }
 
@@ -54,14 +153,14 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #1e293b;
+    background: var(--scroll-thumb);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #334155;
+    background: var(--scroll-thumb-hover);
     background-clip: content-box;
   }
 
@@ -78,6 +177,14 @@
   .num {
     font-variant-numeric: tabular-nums lining-nums;
     font-feature-settings: 'tnum' 1, 'lnum' 1;
+  }
+
+  /* Angka pendamping (jumlah ulasan di samping nama menu, frekuensi istilah di tabel Metode).
+     Sebelumnya diredam dengan opacity .6–.7 — di kartu gelap itu masih terbaca, di kartu terang
+     jatuh ke 2,6:1. Yang membedakan angka ini dari labelnya adalah bentuknya (tabular, tanpa
+     huruf besar), bukan transparansinya. */
+  .count-quiet {
+    @apply num text-slate-400;
   }
 
   .label {
@@ -169,7 +276,7 @@
   }
 
   .nav-item-active {
-    @apply bg-slate-800 text-slate-50 shadow-[inset_2px_0_0_0_#22d3ee] hover:bg-slate-800 hover:text-slate-50;
+    @apply bg-slate-800 text-slate-50 shadow-[inset_2px_0_0_0_rgb(var(--accent))] hover:bg-slate-800 hover:text-slate-50;
   }
 
   .filter-chip {
@@ -188,7 +295,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.14), transparent);
+    background: linear-gradient(90deg, transparent, var(--sweep), transparent);
     transform: translateX(-100%);
     animation: skeleton-sweep 1.5s infinite;
   }
@@ -210,7 +317,7 @@
      dan penanda hover 4,5% putih hanya 1,1:1 terhadap kartu (tidak terlihat). */
   .chart-hit:focus-visible {
     outline: none;
-    stroke: #22d3ee;
+    stroke: rgb(var(--accent));
     stroke-width: 1.5;
   }
 }
@@ -241,7 +348,7 @@
   position: absolute;
   inset-block: 0;
   width: 42%;
-  background: linear-gradient(90deg, transparent, #22d3ee);
+  background: linear-gradient(90deg, transparent, rgb(var(--accent)));
   animation: progress-slide 1.4s ease-in-out infinite;
 }
 
@@ -252,12 +359,12 @@
   .progress-indeterminate::after {
     width: 100%;
     animation: none;
-    background: linear-gradient(90deg, rgba(34, 211, 238, 0.25), #22d3ee);
+    background: linear-gradient(90deg, rgb(var(--accent) / 0.25), rgb(var(--accent)));
   }
 
   .skeleton::after {
     animation: none;
     transform: none;
-    background: rgba(148, 163, 184, 0.1);
+    background: var(--sweep);
   }
 }

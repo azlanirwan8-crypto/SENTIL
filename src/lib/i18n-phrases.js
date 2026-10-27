@@ -585,6 +585,10 @@ export const EN_TO_ID = [
   ["Dashboard", "Dasbor"],
   ["Review", "Ulasan"],
   ["Platform", "Kanal"],
+  ["Enter full screen","Layar penuh"],
+  ["Exit full screen","Keluar dari layar penuh"],
+  ["Switch to light theme","Beralih ke tema terang"],
+  ["Switch to dark theme","Beralih ke tema gelap"],
 ];
 
 export const ID_TO_EN = [

@@ -67,7 +67,7 @@ export function DailyTrend({ daily }) {
                 const active = hovered === index;
                 return (
                   <g key={day.date}>
-                    {active && <rect x={bandX} y={MARGIN.top - 4} width={slot} height={plotHeight + 4} fill="#FFFFFF" opacity="0.045" />}
+                    {active && <rect x={bandX} y={MARGIN.top - 4} width={slot} height={plotHeight + 4} fill={SERIES_COLORS.hoverBand} />}
                     <g className="animate-bar-grow" style={{ transformBox: 'fill-box', transformOrigin: 'bottom', animationDelay: `${Math.min(index * 10, 260)}ms` }}>
                       {SERIES.map(series => {
                         const value = day[series.key] || 0;

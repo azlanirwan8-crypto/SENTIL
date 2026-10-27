@@ -1,8 +1,11 @@
+import { useCallback, useEffect, useState } from 'react';
+
 import { LogoMark } from './Brand.jsx';
 import { Progress } from './Progress.jsx';
-import { IconChevronDown, IconPlus, IconRefresh, IconTrash } from './icons.jsx';
+import { IconChevronDown, IconCollapse, IconExpand, IconMoon, IconPlus, IconRefresh, IconSun, IconTrash } from './icons.jsx';
 import { formatNumber } from '../lib/format.js';
 import { setLanguage, t, useLanguage } from '../lib/i18n.js';
+import { toggleTheme, useTheme } from '../lib/theme.js';
 
 function Spinner({ size = 13 }) {
   return (
@@ -52,8 +55,37 @@ function FlagIndonesian() {
   );
 }
 
+// Layar penuh adalah keadaan peramban, bukan keadaan aplikasi: yang diikuti hanyalah
+// `fullscreenchange`, karena pengguna juga bisa keluar dengan Esc dan tombolnya tidak boleh
+// berpura-pura masih di dalam. Peramban tanpa dukungan tidak menampilkan tombolnya sama sekali
+// — tombol mati yang tidak melakukan apa pun lebih buruk daripada tombol yang tidak ada.
+function useFullscreen() {
+  const supported = typeof document !== 'undefined' && typeof document.documentElement?.requestFullscreen === 'function';
+  const [active, setActive] = useState(() => Boolean(supported && document.fullscreenElement));
+
+  useEffect(() => {
+    if (!supported) return undefined;
+    const sync = () => setActive(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, [supported]);
+
+  const toggle = useCallback(() => {
+    if (!supported) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.()?.catch?.(() => {});
+      return;
+    }
+    document.documentElement.requestFullscreen?.({ navigationUI: 'show' })?.catch?.(() => {});
+  }, [supported]);
+
+  return [supported, active, toggle];
+}
+
 export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncProgress = null, onSwitch, onAdd, onRefresh, onDelete }) {
   const language = useLanguage();
+  const theme = useTheme();
+  const [canFullscreen, fullscreen, requestFullscreen] = useFullscreen();
   const hasWorkspace = Boolean(activeWorkspace);
   const snapshot = activeWorkspace?.snapshot || null;
   const pullPercent = Number.isFinite(syncProgress?.overallPercent) ? Math.round(syncProgress.overallPercent) : null;
@@ -98,6 +130,26 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncPro
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          {canFullscreen && (
+            <button
+              type="button"
+              onClick={requestFullscreen}
+              className="icon-btn h-7 w-7"
+              aria-label={fullscreen ? t('Exit full screen') : t('Enter full screen')}
+              title={fullscreen ? t('Exit full screen') : t('Enter full screen')}
+            >
+              {fullscreen ? <IconCollapse size={14} /> : <IconExpand size={14} />}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="icon-btn h-7 w-7"
+            aria-label={theme === 'light' ? t('Switch to dark theme') : t('Switch to light theme')}
+            title={theme === 'light' ? t('Switch to dark theme') : t('Switch to light theme')}
+          >
+            {theme === 'light' ? <IconMoon size={14} /> : <IconSun size={14} />}
+          </button>
           {syncing && (
             <span className="hidden items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent sm:inline-flex">
               <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-accent" />

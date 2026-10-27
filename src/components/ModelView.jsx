@@ -430,7 +430,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           <div className="mt-1.5 flex flex-wrap gap-1">
             {(terms.stopwords || []).length ? terms.stopwords.map(entry => (
               <span key={entry.term} className="rounded bg-slate-800/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-400" title={`${formatNumber(entry.count)} ${t('kemunculan')}`}>
-                {entry.term} <span className="num opacity-70">{formatNumber(entry.count)}×</span>
+                {entry.term} <span className="count-quiet">{formatNumber(entry.count)}×</span>
               </span>
             )) : <span className="text-[10px] text-slate-400">{t('Belum ada.')}</span>}
           </div>

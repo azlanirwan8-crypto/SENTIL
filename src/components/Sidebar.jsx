@@ -75,7 +75,7 @@ export function MobileNav({ view, onView, snapshot, hasData }) {
             className={`filter-chip ${active ? 'filter-chip-active' : ''} disabled:opacity-40`}
           >
             {t(item.label)}
-            {count != null && <span className="num opacity-60">{formatNumber(count)}</span>}
+            {count != null && <span className="count-quiet">{formatNumber(count)}</span>}
           </button>
         );
       })}

@@ -19,5 +19,20 @@ await build({
   logLevel: 'info',
 });
 
+// Pemuat tema harus tiba sebelum stylesheet sempat menggambar, jadi ia berkas terpisah yang
+// dimuat sinkron di <head>: `script-src 'self'` memblokir skrip inline, dan satu berkas kecil
+// lebih murah daripada satu kedip tema yang salah di setiap muat ulang.
+await build({
+  entryPoints: ['src/theme-bootstrap.js'],
+  bundle: true,
+  minify: true,
+  format: 'iife',
+  target: ['chrome100', 'firefox100', 'safari15'],
+  outfile: 'public/theme.js',
+  legalComments: 'none',
+  charset: 'utf8',
+  logLevel: 'info',
+});
+
 cpSync('index.html', 'public/index.html');
 cpSync('assets', 'public/assets', { recursive: true });

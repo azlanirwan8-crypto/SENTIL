@@ -54,7 +54,7 @@ APIFY_API_TOKEN=...            # menagih biaya actor
 ```bash
 npm install
 cp .env.example .env   # opsional: isi SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY agar data tersimpan di database
-npm run build          # bundel React (esbuild) + Tailwind -> public/app.js, public/styles.css
+npm run build          # bundel React (esbuild) + pemuat tema + Tailwind -> public/app.js, public/theme.js, public/styles.css
 npm start              # build lalu pratinjau lokal di http://localhost:5173
 ```
 
@@ -62,10 +62,10 @@ Tanpa `.env` aplikasi tetap jalan, hanya saja melaporkan bahwa database belum di
 
 | Skrip | Fungsi |
 | --- | --- |
-| `npm run build` | Membangun ke `public/`: `app.js` (esbuild), `styles.css` (Tailwind), salinan `index.html`, dan `assets/`. Hanya isi folder ini yang boleh disajikan publik. |
+| `npm run build` | Membangun ke `public/`: `app.js` (esbuild), `theme.js` (pemuat tema, dimuat sinkron di `<head>`), `styles.css` (Tailwind), salinan `index.html`, dan `assets/`. Hanya isi folder ini yang boleh disajikan publik. |
 | `npm run build:js` / `build:css` | Salah satu tahap build saja. |
 | `npm start` | Build lebih dulu, lalu server statis dari `public/` + meneruskan `/api/sync`; memuat `.env.local` bila ada. |
-| `npm test` | `node --test tests` — 384 pengujian mesin, kolektor, kanal, sinkronisasi (termasuk jalur asinkron dan inkremental), monitor batas, kamus topik domain, deteksi bahasa, frasa keluhan, gerombol label, lapisan analis (fact sheet tanpa angka, bacaan dua bahasa, dan kontrak panelnya), lapisan sinyal, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, kuota per pengunjung, penarikan terjadwal, kontrak skema SQL, arah tabel frasa dua bahasa, kontras/motion/aset tampilan, database, API, dan server. |
+| `npm test` | `node --test tests` — 391 pengujian mesin, kolektor, kanal, sinkronisasi (termasuk jalur asinkron dan inkremental), monitor batas, kamus topik domain, deteksi bahasa, frasa keluhan, gerombol label, lapisan analis (fact sheet tanpa angka, bacaan dua bahasa, dan kontrak panelnya), lapisan sinyal, matriks perbandingan, hitung ulang filter dasbor, jepit tooltip chart, kuota per pengunjung, penarikan terjadwal, kontrak skema SQL, arah tabel frasa dua bahasa, kontras teks pada **kedua** tema, pemuat tema, motion/aset tampilan, database, API, dan server. |
 
 ## API
 
@@ -248,6 +248,17 @@ Bendera di bilah atas mengganti seluruh antarmuka antara Inggris dan Indonesia, 
 - **Kalimat aturan yang datang dari mesin ikut diterjemahkan, datanya tidak.** `painPoints.labelRules`, `signals.rules`, dan catatan parameter lain dikirim server dalam bahasa Indonesia (itu teks yang ditulis mesin, bukan label komponen), jadi tempat menampilkan membungkusnya dengan `t()` dan barisnya hidup di `ID_TO_EN`. Yang tidak pernah masuk tabel: frasa reviewers, nama penulis, `name`/`nameId` kamus topik, dan id versi lapisan — itu isi data, bukan antarmuka.
 - **Dua invarian tabel dijaga `tests/i18n.test.mjs`.** Sebuah baris tidak boleh memakai arah terbalik (`EN_TO_ID` adalah Inggris→Indonesia, `ID_TO_EN` Indonesia→Inggris; yang diperiksa dengan `detectLanguage()` milik mesin sendiri), dan satu literal tidak boleh menjadi kunci di kedua tabel kecuali ia memang kata netral (`cache`, `Status`, nama merek). Pelanggaran pertama yang ditemukan aturan ini: `["cluster","gerombol"]`, `["from","dari"]`, dan `["Reported","Dilaporkan"]` tersimpan di `ID_TO_EN` sehingga mode Inggris menampilkan "GEROMBOL" dan "dari 69.263 rated reviews", sementara padanannya di tabel sebelah membuat mode Indonesia menampilkan "Page"/"term" di panel Metode. Label menu di `Sidebar.jsx` (`label: '…'`) juga ikut diperiksa karena pemetik literal tidak menjangkau nilai dalam array.
 - **Bacaan lapisan analis** (`ai-analyst-v1`) sudah dua bahasa sejak lahir: satu balasan model membawa `en` dan `id` untuk setiap kalimat, jadi memindahkan bendera tidak memicu panggilan tambahan dan tidak pernah meninggalkan potongan Inggris di layar Indonesia. Validasi berjalan per bahasa, jadi kalau hanya satu versi yang lolos (versi lain memuat angka), yang lolos itulah yang dipakai — `bilingual()` menjatuhkan tampilan ke bahasa yang ada, bukan mengarang pengisi.
+
+### Tema (terang/gelap) dan layar penuh
+
+Bilah atas membawa empat pengalih: layar penuh, bendera Inggris, bendera Indonesia, dan tema. Yang berubah hanyalah penyajiannya — tidak ada angka, label, atau teks analisis yang tersentuh.
+
+- **Satu lapis token, bukan dua set kelas.** Warna antarmuka didefinisikan sekali sebagai variabel CSS di `src/index.css` (triplet RGB supaya `bg-slate-800/70` tetap bekerja) dan dipetakan ke palet Tailwind di `tailwind.config.js`; `[data-theme='light']` hanya menukar isinya. Karena itu 587 pemakaian kelas di 43 komponen ikut berpindah tanpa satu pun komponen ditulis ulang, dan `tailwind.config.js` tidak lagi menyimpan hex sama sekali.
+- **Tema terang adalah cermin ramp** — slot 50 (teks paling terang) menjadi tinta paling gelap, slot 950 (latar paling dalam) menjadi kertas — dengan satu pengecualian yang dinyatakan di CSS dan diuji: slot 400, teks peredam. Cermin murni memberinya 7,5:1 dan membuat semua keterangan tampak seperti teks utama, jadi nilainya punya rumus sendiri (5,8:1 di atas kartu).
+- **Warna data punya dua nilai, bukan satu yang dicerminkan.** `pos/neg/neu/accent` dan sembilan warna kanal dipakai sebagai teks angka dan sebagai isi bilah, jadi tiap tema menyetelnya sendiri; di tema terang `neg` = `#BE123C`, `neu` = `#9B4808`, `accent` = `#0C6A84`. Grafik tidak punya salinan warna: `SERIES_COLORS` dan `STORE_COLORS` di `src/components/charts/palette.js` berisi `rgb(var(--…))` sehingga SVG ikut tema lewat mekanisme yang sama dengan kelas.
+- **Kontraknya diukur, bukan dirasakan.** `tests/theme.test.mjs` menghitung rasio WCAG dari token yang benar-benar disajikan (bukan salinan di dalam tes) untuk setiap peran teks di atas tiga permukaan (kartu, halaman, celah) pada **kedua** tema, menuntut ambang 4,5:1 untuk teks kecil dan 3:1 untuk angka besar dan warna kanal, menolak token yang hanya punya satu nilai, dan menolak langkah palet yang dipakai komponen tetapi tidak didefinisikan di kedua tema. Diverifikasi pula di peramban: 357 simpul teks nyata di dasbor korpus 73 ulasan, 0 gagal AA di kedua tema.
+- **Tidak ada kedip tema.** CSP aplikasi ini `script-src 'self'` tanpa `'unsafe-inline'`, jadi pemuat awal bukan skrip inline melainkan berkas `public/theme.js` (dari `src/theme-bootstrap.js`) yang dimuat sinkron di `<head>` dan menempelkan `data-theme` sebelum stylesheet menggambar. Kunci penyimpanan harus sama dengan `src/lib/theme.js` — dijaga tes. Tanpa pilihan tersimpan, preferensi sistem yang menang dan tetap diikuti selama pengunjung belum menekan tombol.
+- **Layar penuh mengikuti keadaan peramban.** Tombolnya membaca `fullscreenchange`, jadi Esc pun memperbarui ikonnya; peramban tanpa `requestFullscreen` tidak menampilkan tombol sama sekali daripada menampilkan tombol mati.
 
 
 

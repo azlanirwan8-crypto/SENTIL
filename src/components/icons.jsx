@@ -164,3 +164,36 @@ export function IconShield({ size = 13, ...props }) {
     </svg>
   );
 }
+
+export function IconSun({ size = 17, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+    </svg>
+  );
+}
+
+export function IconMoon({ size = 17, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2Z" />
+    </svg>
+  );
+}
+
+export function IconExpand({ size = 17, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <path d="M9 4H5a1 1 0 0 0-1 1v4M15 4h4a1 1 0 0 1 1 1v4M9 20H5a1 1 0 0 1-1-1v-4M15 20h4a1 1 0 0 0 1-1v-4" />
+    </svg>
+  );
+}
+
+export function IconCollapse({ size = 17, ...props }) {
+  return (
+    <svg {...base} width={size} height={size} {...props}>
+      <path d="M4 9h4a1 1 0 0 0 1-1V4M20 9h-4a1 1 0 0 1-1-1V4M4 15h4a1 1 0 0 1 1 1v4M20 15h-4a1 1 0 0 0-1 1v4" />
+    </svg>
+  );
+}

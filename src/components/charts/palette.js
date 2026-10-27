@@ -1,15 +1,14 @@
+// Semua nilai adalah variabel CSS, bukan hex: SVG membaca `fill="rgb(var(--pos))"` sama baiknya
+// dengan kelas Tailwind, jadi satu penanda tema mengubah tabel, bilah, dan donat sekaligus.
+// Angka tiap tema hidup di satu tempat — src/index.css.
 export const SERIES_COLORS = {
-  positive: '#34D399',
-  neutral: '#FBBF24',
-  negative: '#FB7185',
-  unclassified: '#64748B',
-  text: '#94A3B8',
-  faint: '#64748B',
-  bright: '#E2E8F0',
-  line: '#1E293B',
-  lineSoft: '#172032',
-  surface: '#0F172A',
-  canvas: '#020617',
+  positive: 'rgb(var(--pos))',
+  neutral: 'rgb(var(--neu))',
+  negative: 'rgb(var(--neg))',
+  unclassified: 'rgb(var(--unk))',
+  line: 'rgb(var(--slate-800))',
+  lineSoft: 'rgb(var(--slate-800) / 0.55)',
+  hoverBand: 'rgb(var(--hover-band) / var(--hover-band-opacity))',
 };
 
 // Warna kanal hanyalah pengelompok, bukan meaning: yang membawa arti tetap tiga warna sentimen di
@@ -20,16 +19,16 @@ export const SERIES_COLORS = {
 // accent, dan setiap warna masih ≥ 4,5:1 di atas kartu karena ia juga dipakai sebagai teks angka.
 // Identitas kanal tidak pernah bergantung pada warna sendirian: setiap baris membawa ikon dan label.
 export const STORE_COLORS = {
-  play: '#72A2CA',
-  appstore: '#AA92D3',
-  youtube: '#D38373',
-  reddit: '#D6A266',
-  news: '#70A9A9',
-  facebook: '#949CD1',
-  instagram: '#D289B7',
-  tiktok: '#C18DCE',
-  x: '#BFC6CF',
-  default: '#94A3B8',
+  play: 'rgb(var(--play))',
+  appstore: 'rgb(var(--appstore))',
+  youtube: 'rgb(var(--youtube))',
+  reddit: 'rgb(var(--reddit))',
+  news: 'rgb(var(--news))',
+  facebook: 'rgb(var(--facebook))',
+  instagram: 'rgb(var(--instagram))',
+  tiktok: 'rgb(var(--tiktok))',
+  x: 'rgb(var(--x))',
+  default: 'rgb(var(--channel-default))',
 };
 
 export const SENTIMENT_SERIES = [

@@ -20,7 +20,7 @@ function Chip({ active, onClick, children, count }) {
       className={`filter-chip ${active ? 'filter-chip-active' : ''}`}
     >
       {children}
-      {count != null && <span className="num opacity-70">{formatNumber(count)}</span>}
+      {count != null && <span className="count-quiet">{formatNumber(count)}</span>}
     </button>
   );
 }

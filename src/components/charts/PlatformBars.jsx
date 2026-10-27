@@ -77,7 +77,7 @@ export function PlatformBars({ platforms, ai = null }) {
                 const active = hovered === platform.id;
                 return (
                   <g key={platform.id}>
-                    {active && <rect x={bandX + 4} y={MARGIN.top - 6} width={band - 8} height={plotHeight + 6} rx="4" fill="#FFFFFF" opacity="0.045" />}
+                    {active && <rect x={bandX + 4} y={MARGIN.top - 6} width={band - 8} height={plotHeight + 6} rx="4" fill={SERIES_COLORS.hoverBand} />}
                     <g className="animate-bar-grow" style={{ transformBox: 'fill-box', transformOrigin: 'bottom', animationDelay: `${index * 60}ms` }}>
                       {SENTIMENT_SERIES.map((series, seriesIndex) => {
                         const value = platform[series.key] || 0;

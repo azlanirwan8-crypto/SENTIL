@@ -44,7 +44,7 @@ const CONTENT_TYPES = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-const EXACT_FILES = new Set(['/index.html', '/app.js', '/styles.css']);
+const EXACT_FILES = new Set(['/index.html', '/app.js', '/styles.css', '/theme.js']);
 
 export function resolveStaticPath(pathname, root = STATIC_ROOT) {
   let decoded;

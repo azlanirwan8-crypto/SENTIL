@@ -100,7 +100,7 @@ export function KpiRow({ dataset }) {
             <span className="metric">{nss == null ? 'N/A' : formatNss(nss)}</span>
             <span className="num text-[10px] text-slate-400">±100</span>
           </div>
-          <div className="relative mt-2 h-1 rounded-full" style={{ background: 'linear-gradient(90deg,#A9636D,#3C4A61 50%,#3C8A72)' }}>
+          <div className="relative mt-2 h-1 rounded-full" style={{ background: 'linear-gradient(90deg,var(--nss-cold),var(--nss-mid) 50%,var(--nss-warm))' }}>
             <span className="absolute left-1/2 top-1/2 h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-600" aria-hidden="true" />
             {nss != null && (
               <span

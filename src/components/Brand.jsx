@@ -49,7 +49,9 @@ export function StoreMark({ store, size = 22, tone = 'solid' }) {
   // Warna diambil palet kanal, bukan ditulis di sini: sebelumnya apa pun yang bukan 'play'
   // dipaksa violet, jadi badge YouTube, Reddit, dan berita tampil dengan warna App Store.
   const color = storeColor(store);
-  const ink = '#020617';
+  // Tinta mengikuti tema, bukan ditulis tetap: di tema gelap kanal memakai warna terang sehingga
+  // glifnya harus gelap, di tema terang warnanya gelap sehingga glifnya harus terang.
+  const ink = 'rgb(var(--slate-950))';
   if (tone === 'quiet') {
     return (
       <span
