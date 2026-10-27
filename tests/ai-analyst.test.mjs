@@ -140,6 +140,13 @@ test('fact sheet tidak membawa satu pun angka hasil ukur', () => {
   assert.equal(sent.includes('1hk udah lbh 1hk'), true, 'frasa verbatim reviewers memang dikirim sebagai bukti');
   assert.match(JSON.stringify(request.systemInstruction), /Never write a digit/);
   assert.match(JSON.stringify(request.systemInstruction), /BOTH languages/);
+  // Kosakata standar operasi produk adalah isi permintaan, bukan hiasan: tanpanya model mengulang
+  // kalimat reviewers, dan panel kembali menjadi potongan frasa.
+  const rules = JSON.stringify(request.systemInstruction);
+  for (const term of ['incident report', 'failed transaction', 'authentication', 'identity verification', 'notification delivery', 'customer support response']) {
+    assert.match(rules, new RegExp(term), `aturan kosakata kehilangan "${term}"`);
+  }
+  assert.match(rules, /never quote or tidy a reviewer sentence/);
 });
 
 test('id asli tidak ikut menyeberang; hanya referensi kabut yang jadi pegangan', () => {
@@ -332,6 +339,31 @@ test('503 dicoba sekali lagi pada model yang sama', async () => {
   assert.equal(result.tried[0].retry, 'once');
   assert.ok(result.reading.narrative.en);
   assert.deepEqual(result.names, {}, 'balasan tanpa nama tetap sah: bacaan panel adalah bagian yang lain');
+});
+
+test('503 yang tidak reda berpindah ke model kandidat', async () => {
+  // Inilah kegagalan yang tercatat di produksi 27 Oktober: satu model menjawab 503 dua kali dan
+  // seluruh lapisan berhenti di situ, sehingga layar menampilkan potongan frasa reviewers apa
+  // adanya padahal dua model cadangan belum pernah diminta.
+  const seen = [];
+  const result = await analyseCorpus(model, {
+    env: { GEMINI_API_KEY: 'k' },
+    sleep: async () => {},
+    fetchImpl: async url => {
+      const called = decodeURIComponent(String(url)).split('/models/')[1].split(':')[0];
+      seen.push(called);
+      if (called === 'gemini-3.8-flash') return { ok: false, status: 503, json: async () => ({}), text: async () => '503 This model is currently experiencing high demand' };
+      return reply({ names: [{ ref: 'c1', category: { en: 'Transfer failure', id: 'Kegagalan transfer' }, subLabel: { en: 'Money debited, credit delayed', id: 'Dana terdebet, penerimaan tertunda' } }] });
+    },
+  });
+  assert.equal(result.status, 'answered', 'model sibuk bukan alasan untuk kehilangan seluruh nama kategori');
+  assert.equal(seen[0], 'gemini-3.8-flash');
+  assert.equal(seen[1], 'gemini-3.8-flash', 'percobaan ulang pertama tetap pada model yang sama');
+  assert.equal(seen[2], 'gemini-flash-latest', 'setelah 503 kedua, kandidat berikut yang diminta');
+  assert.equal(result.model, 'gemini-flash-latest');
+  assert.equal(result.tried.length, 2, 'yang tercatat hanyalah dua penolakan; model yang menjawab bukan kegagalan');
+  assert.deepEqual(result.tried.map(entry => entry.status), [503, 503]);
+  assert.equal(result.names[Object.keys(result.names)[0]].category.en, 'Transfer failure');
 });
 
 test('sisa waktu di bawah reservasi membatalkan percobaan ulang', async () => {

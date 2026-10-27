@@ -47,6 +47,10 @@ function modelOf({ labels = [], pools = { negative: 1000, positive: 800 }, trend
 }
 
 const rendered = new Intl.NumberFormat('en-GB');
+// Register laporan: baris sinyal dibaca manajer sebagai item laporan, jadi gaya percakapan
+// dilarang di judul maupun badannya. Angka tidak ikut dijaga di sini — itu tugas
+// `assertNumbersAreMeasured`.
+const COLLOQUIAL = /\b(?:loudest|getting denser|thinning out|tidier|put words on|prove each other|stay off|refused to close|everywhere else|read it as|being named|bucket)\b/i;
 const render = entry => (entry.unit === 'percent' ? `${(entry.value * 100).toFixed(1)}%`
   : entry.unit === 'ratio' ? entry.value.toFixed(2)
     : entry.unit === 'text' ? String(entry.value)
@@ -254,6 +258,27 @@ describe('lapisan sinyal', () => {
     const model = modelOf({ labels: [labelOf('iklan', { reviewCount: 300, share: 0.3 })] });
     const restored = JSON.parse(JSON.stringify(deriveSignals(model)));
     assert.deepEqual(restored, deriveSignals(model));
+  });
+
+  test('judul sinyal memakai register laporan, bukan register percakapan', () => {
+    const model = modelOf({
+      label: { trimmedLabels: 0, rejectedMerges: 0 },
+      labels: [labelOf('iklan', {
+        reviewCount: 300, share: 0.3, phraseCount: 3, praiseCount: 240, praiseShare: 0.3,
+        early: 10, late: 290, momentum: 29,
+        channels: [{ id: 'play', count: 280, pool: 500 }, { id: 'reddit', count: 20, pool: 500 }],
+      })],
+    });
+    const signals = deriveSignals(model);
+    assert.ok(signals.items.length >= 4, 'korpus ini harus memproduksi beberapa jenis baris');
+    for (const item of signals.items) {
+      assert.equal(COLLOQUIAL.test(`${item.title} ${item.body}`), false, `"${item.title}" masih berbunyi seperti obrolan`);
+    }
+    assert.match(signals.items.find(item => item.kind === 'theme').title, /^Largest complaint theme: /);
+    assert.match(signals.items.find(item => item.kind === 'rise').title, /^Complaint rate rising: /);
+    assert.match(signals.items.find(item => item.kind === 'channel').title, /^Channel concentration: /);
+    assert.match(signals.items.find(item => item.kind === 'shared').title, /^Wording shared with satisfied reviews: /);
+    assert.match(signals.items.find(item => item.id === 'coverage:silent').title, /^300 complaints carry no proven phrase$/);
   });
 
   test('sinyal end-to-end dari korpus nyata menyebut angka yang bisa dihitung ulang', () => {

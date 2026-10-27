@@ -12,7 +12,7 @@ import {
 import { bilingual, bilingualAlias, t, topicAlias, topicLabel } from '../lib/i18n.js';
 import { AnalystBadge, aiText } from './Analyst.jsx';
 import { EmptyState } from './EmptyState.jsx';
-import { Signal } from './Signals.jsx';
+import { Signal, signalAreaLookup } from './Signals.jsx';
 import { Notice } from './Notices.jsx';
 import { StoreMark } from './Brand.jsx';
 import { IconDownload, IconExternal, IconInfo } from './icons.jsx';
@@ -246,6 +246,9 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const labelMetrics = pain.labelMetrics || {};
   const signals = model.signals || null;
   const signalItems = Array.isArray(signals?.items) ? signals.items : [];
+  // Baris sinyal memakai nama area yang sama dengan tabel keluhan di bawahnya: sumber namanya
+  // tetap bertanda, kalimat sinyalnya tetap tulisan mesin pengukuran.
+  const areaForSignal = useMemo(() => signalAreaLookup({ pain, topics, ai }), [pain, topics, ai]);
   const terms = model.terms || {};
   const coverage = model.coverage || {};
   const languages = model.languages || { total: 0, counts: {} };
@@ -350,7 +353,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
         {signalItems.length ? (
           <>
             <ul className="grid items-start gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {signalItems.map(item => <Signal key={item.id} item={item} />)}
+              {signalItems.map(item => <Signal key={item.id} item={item} area={areaForSignal(item)} />)}
             </ul>
             <dl className="mt-3 grid gap-x-4 gap-y-2 border-t border-slate-800/70 pt-2.5 sm:grid-cols-2">
               {Object.entries(signals.rules || {}).map(([key, value]) => (
