@@ -96,6 +96,12 @@ const goodBody = () => ({
 
 const reply = body => ({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(body) }] } }] }) });
 
+// Tangga model dimulai dari satu GET daftar model — ia tidak memakai kuota generasi. Test yang
+// hanya peduli pada tangga generasi menjawab daftar itu dengan kegagalan supaya tangga yang
+// dihafal dipakai apa adanya.
+const isList = url => !String(url).includes(':generateContent');
+const listRefused = () => ({ ok: false, status: 404, json: async () => ({}), text: async () => 'list unavailable' });
+
 const keysOf = (value, found = []) => {
   if (Array.isArray(value)) for (const item of value) keysOf(item, found);
   else if (value && typeof value === 'object') {
@@ -241,7 +247,8 @@ test('satu panggilan menjawab nama dan seluruh bacaan panel', async () => {
   let calls = 0;
   const result = await analyseCorpus(model, {
     env: { GEMINI_API_KEY: 'k' },
-    fetchImpl: async () => {
+    fetchImpl: async url => {
+      if (isList(url)) return listRefused();
       calls += 1;
       return reply(goodBody());
     },
@@ -280,7 +287,8 @@ test('HTTP error dan abort dilaporkan sebagai kegagalan, bukan crash', async () 
   let calls = 0;
   const quota = await analyseCorpus(model, {
     env: { GEMINI_API_KEY: 'k' },
-    fetchImpl: async () => {
+    fetchImpl: async url => {
+      if (isList(url)) return listRefused();
       calls += 1;
       return { ok: false, status: 429, json: async () => ({}), text: async () => 'RESOURCE_EXHAUSTED: quota per minute exceeded' };
     },
@@ -394,6 +402,42 @@ test('percobaan pertama dapat jatah panjang, kandidat berikutnya tetap kecil', a
   assert.equal(result.tried[1].ms, 20_000);
 });
 
+test('daftar model API melebarkan tangga sebelum id yang basi dicoba', async () => {
+  // Satu GET daftar model (tanpa kuota generasi) menjawab id mana yang sungguh ada untuk kunci
+  // ini. Yang tidak ada — dan yang tidak mendukung generateContent — tidak boleh membeli
+  // percobaan sebelum model yang tersedia.
+  const seen = [];
+  const result = await analyseCorpus(model, {
+    env: { GEMINI_API_KEY: 'k' },
+    sleep: async () => {},
+    fetchImpl: async url => {
+      const target = decodeURIComponent(String(url));
+      if (!target.includes(':generateContent')) {
+        return {
+          ok: true,
+          json: async () => ({
+            models: [
+              { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
+              { name: 'models/gemini-3.8-flash-lite', supportedGenerationMethods: ['countTokens', 'generateContent'] },
+              { name: 'models/gemini-3.8-embed', supportedGenerationMethods: ['embedContent'] },
+              { name: 'models/gemini-4-pro', supportedGenerationMethods: ['generateContent'] },
+            ],
+          }),
+        };
+      }
+      const called = target.split('/models/')[1].split(':')[0];
+      seen.push(called);
+      if (called === 'gemini-3.8-flash') return { ok: false, status: 503, json: async () => ({}), text: async () => '503 high demand' };
+      if (called === 'gemini-3.8-flash-lite') return reply({ names: [{ ref: 'c1', category: { en: 'Refund delay', id: 'Keterlambatan pengembalian dana' } }] });
+      return { ok: false, status: 404, json: async () => ({}), text: async () => '404 not found for this key' };
+    },
+  });
+  assert.equal(result.status, 'answered');
+  assert.deepEqual(seen, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash-lite'],
+    'setelah 503 kedua, id hasil daftar yang dicoba — bukan id hafalan yang 404');
+  assert.equal(result.model, 'gemini-3.8-flash-lite');
+});
+
 test('sisa waktu di bawah reservasi membatalkan percobaan ulang', async () => {
   let calls = 0;
   let clock = 0;
@@ -402,7 +446,8 @@ test('sisa waktu di bawah reservasi membatalkan percobaan ulang', async () => {
     timeoutMs: 20_000,
     sleep: async () => {},
     now: () => (clock += 6_500),
-    fetchImpl: async () => {
+    fetchImpl: async url => {
+      if (isList(url)) return listRefused();
       calls += 1;
       return { ok: false, status: 503, json: async () => ({}), text: async () => '503 high demand' };
     },
@@ -505,7 +550,8 @@ test('bacaan bandingkan datang dari satu panggilan dan ditandai modelnya', async
   let calls = 0;
   const result = await analyseComparison(matrix, {
     env: { GEMINI_API_KEY: 'k' },
-    fetchImpl: async () => {
+    fetchImpl: async url => {
+      if (isList(url)) return listRefused();
       calls += 1;
       return reply({ reading: {} });
     },
