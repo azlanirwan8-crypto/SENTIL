@@ -63,7 +63,10 @@ function fakeDb(overrides = {}) {
     async saveSnapshot({ workspace, dataset }) { seen.push(`snap:${workspace.id}:${dataset.reviews.length}`); return { revision: 3, stored: dataset.reviews.length, elapsedMs: 12 }; },
     async logRun(run) { seen.push(`run:${run.status}:${run.reviews}`); },
     async reviewCursor(id) { seen.push(`cursor:${id}`); return null; },
-    async latestRun(id) { seen.push(`job:${id}`); return { id: 9, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null, createdAt: '2026-10-24T00:00:00.000Z' }; },
+    async latestRun(id) {
+      seen.push(`job:${id}`);
+      return overrides.runRow || { id: 9, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null, createdAt: new Date(Date.now() - 5_000).toISOString() };
+    },
     ...overrides,
   };
 }
@@ -78,6 +81,20 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.equal(body.finished, false);
     assert.equal(body.run.status, 'running');
     assert.deepEqual(db.seen, ['job:ws-1']);
+  });
+
+  test('cap running yang umurnya lewat plafon fungsi dilaporkan sebagai pekerjaan yang ditinggalkan', async () => {
+    // Inilah kegagalan yang terukur di produksi: penarikan 50.000+ ulasan dipotong platform
+    // tepat di 300 detik dan cap 'running' tidak pernah ditulis ulang. Tanpa aturan ini,
+    // peramban menunggu selamanya pada penarikan yang sudah mati.
+    const db = fakeDb({ runRow: { id: 10, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null, createdAt: new Date(Date.now() - 400_000).toISOString() } });
+    const handler = createSyncHandler(stubService(), { db });
+    const body = (await run(handler, { action: 'job', workspaceId: 'ws-1' })).json();
+    assert.equal(body.pending, false);
+    assert.equal(body.finished, true);
+    assert.equal(body.abandoned, true);
+    assert.equal(body.run.status, 'abandoned');
+    assert.match(body.run.error, /platform time limit/);
   });
 
   test('job tidak mengirim id project yang bentuknya tidak sah ke database', async () => {
@@ -111,6 +128,20 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.ok(held, 'pekerjaan diserahkan ke waitUntil');
     await held;
     assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'snap:ws-1:1', 'run:ok:1'], 'penanda dibaca, pekerjaan ditandai berjalan, lalu hasil disimpan dan diriwayatkan');
+  });
+
+  test('penarikan diberi batas waktu mutlak agar muat sebelum plafon fungsi', async () => {
+    const db = fakeDb();
+    const service = stubService();
+    const handler = createSyncHandler(service, { db, waitUntil: promise => { promise.catch(() => {}); } });
+    const before = Date.now();
+    await run(handler, { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE });
+    await new Promise(resolve => setImmediate(resolve));
+    const call = service.calls[0];
+    assert.ok(Number.isFinite(call.deadlineAt), 'kanal harus tahu kapan waktu fungsi habis');
+    // 300 dtk plafon dikurangi 12 dtk ruang penutup; tidak boleh lebih dari itu.
+    const room = call.deadlineAt - before;
+    assert.ok(Math.abs(room - 288_000) <= 5_000, `sisa anggaran penarikan ${room}ms menyimpang dari plafon 300 dtk`);
   });
 
   test('penanda inkremental dan baris tersimpan diteruskan ke penarikan', async () => {

@@ -138,7 +138,8 @@ describe('/api/sync', () => {
       },
     }));
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(service.calls[0], {
+    const { deadlineAt, ...forwarded } = service.calls[0];
+    assert.deepEqual(forwarded, {
       action: 'sync',
       entity: 'Aplikasi Tes',
       playAppId: 'com.tes',
@@ -149,6 +150,7 @@ describe('/api/sync', () => {
       since: null,
       carry: null,
     });
+    assert.ok(Number.isFinite(deadlineAt), 'setiap penarikan membawa batas waktu fungsi');
   });
 
   test('kanal sosial saja tetap diterima tanpa identitas toko', async () => {

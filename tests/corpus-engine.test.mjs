@@ -325,3 +325,22 @@ describe('mesin korpus tanpa kamus', () => {
     assert.ok(model.labels.unclassified >= 1);
   });
 });
+
+describe('waktu tahap analisis ikut dilaporkan', () => {
+  test('setiap tahap punya capaian dan jumlahnya tidak mengada-ada', () => {
+    const rows = Array.from({ length: 40 }, (unused, index) => ({
+      id: `r-${index}`,
+      platform: 'play',
+      rating: index % 5 + 1,
+      text: index % 2 ? 'aplikasi eror gagal login terus' : 'mulus cepat dan membantu',
+      publishedAt: '2026-03-05T00:00:00.000Z',
+    }));
+    const { model } = analyzeCorpus(rows);
+    const stages = model.timings?.stages || [];
+    for (const stage of ['tokenize', 'stopwords', 'weights', 'topics', 'phrases', 'rows', 'signals']) {
+      assert.ok(stages.some(entry => entry.stage === stage), `tahap ${stage} tidak diukur`);
+    }
+    assert.ok(stages.every(entry => Number.isInteger(entry.ms) && entry.ms >= 0));
+    assert.equal(model.timings.totalMs, stages.reduce((sum, entry) => sum + entry.ms, 0));
+  });
+});

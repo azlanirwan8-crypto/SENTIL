@@ -59,6 +59,7 @@ async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = J
     return { ok: false, stillRunning: true, reason: 'The pull is still running on the server. What is on screen is still the last complete snapshot — check again in a moment.' };
   }
   if (run.status === 'error') return { ok: false, reason: run.error || 'The pull failed on the server.' };
+  if (run.status === 'abandoned') return { ok: false, reason: run.error || 'The server stopped this pull at its platform time limit. Nothing was written and the stored snapshot is unchanged.' };
   if (run.status === 'unchanged') return { ok: true, unchanged: true, run };
   const loaded = await loadDataset(workspaceId);
   if (loaded.error) return { ok: false, reason: loaded.error };

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { CACHE_TTL_MS, createSyncService, SyncError } from '../lib/sync-core.mjs';
+import { CACHE_TTL_MS, createSyncService, fetchBudgetMs, DEFAULT_PLAY_BUDGET_MS, SyncError } from '../lib/sync-core.mjs';
 
 const playReview = (id, rating, text, date) => ({
   id: `play-${id}`,
@@ -360,5 +360,43 @@ describe('penarikan inkremental', () => {
     assert.equal(result.unchanged, undefined, 'penarikan paksa membangun analisis dari awal lagi');
     assert.equal(result.reviews.length, 1);
     assert.equal(result.model.version, 'corpus-rating-v3');
+  });
+});
+
+describe('anggaran waktu penarikan terhadap plafon fungsi', () => {
+  test('tanpa deadline, kanal memakai anggaran yang dikonfigurasi', () => {
+    assert.equal(fetchBudgetMs({ configured: DEFAULT_PLAY_BUDGET_MS }), DEFAULT_PLAY_BUDGET_MS);
+  });
+
+  test('deadline menyisihkan biaya analisis dan tulis, bukan hanya sisa waktu', async () => {
+    // 288 dtk sisa, dikurangi cadangan tetap 35 dtk = 253 dtk yang boleh dipakai.
+    // Baris yang ditarik pada jendela itu harus dianalisis dan ditulis juga, jadi anggaran
+    // tarik dibagi (1 + 0,6 ms/baris x 900 baris/dtk / 1000) = 1,54.
+    const started = 1_800_000_000_000;
+    const budget = fetchBudgetMs({ deadlineAt: started + 288_000, now: started, configured: DEFAULT_PLAY_BUDGET_MS });
+    assert.ok(budget < DEFAULT_PLAY_BUDGET_MS, `anggaran ${budget}ms harus mengecil saat waktu menipis`);
+    const rows = (budget / 1000) * 900;
+    assert.ok(budget + rows * 0.6 + 35_000 <= 288_000, 'tarik + pasca + cadangan tidak boleh lewat plafon');
+  });
+
+  test('waktu yang sudah habis tetap diberi ruang menulis, bukan nol', () => {
+    const started = 1_800_000_000_000;
+    assert.equal(fetchBudgetMs({ deadlineAt: started - 60_000, now: started, configured: 180_000 }), 10_000);
+  });
+
+  test('kanal menerima anggaran yang sudah disesuaikan deadline', async () => {
+    const seen = [];
+    const { deps } = fakeDeps({
+      fetchGooglePlayReviews: async (appId, candidate, options) => {
+        seen.push(options.budgetMs);
+        return { id: 'play', status: 'success', appId, fetched: 0, reviews: [], app: {}, coverage: {}, message: 'kosong', truncated: true, error: null };
+      },
+    });
+    const service = createSyncService({ deps });
+    const started = Date.now();
+    await service.sync({ entity: 'Aplikasi Tes', playAppId: 'com.tes', deadlineAt: started + 100_000 });
+    assert.equal(seen.length, 1);
+    assert.ok(seen[0] < DEFAULT_PLAY_BUDGET_MS, `anggaran ${seen[0]}ms harus diperkecil oleh deadline 100 dtk`);
+    assert.ok(seen[0] >= 10_000);
   });
 });

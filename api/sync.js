@@ -6,7 +6,7 @@
 // environment fungsi ini.
 export const config = { maxDuration: 300 };
 
-import { SyncError, normalizeSocialTargets, summarizeDataset, syncService } from '../lib/sync-core.mjs';
+import { SyncError, normalizeSocialTargets, summarizeDataset, syncService, ceilingMs, pullDeadline } from '../lib/sync-core.mjs';
 import { database } from '../lib/db.mjs';
 import { buildComparison } from '../lib/compare-engine.mjs';
 import { storeResult } from '../lib/persist.mjs';
@@ -17,6 +17,10 @@ const BODY_LIMIT = 16384;
 // Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset, compare,
 // limits, job) tidak dikenai kuota: murah, dan memblokirnya justru membuat dasbor tidak terbaca.
 const QUOTA_ACTIONS = new Set(['sync', 'discover']);
+// Cap 'running' yang lebih tua dari plafon + margin ini tidak akan pernah ditulis ulang:
+// fungsinya sudah dimatikan platform. Menganggapnya masih hidup membuat peramban menunggu
+// selamanya pada penarikan yang sebenarnya sudah mati.
+const ABANDONED_MARGIN_MS = 60_000;
 // Pull adalah aksi mahal. Di Vercel ia dipindahkan ke latar belakang (waitUntil) sehingga
 // peramban menerima jawaban dalam hitungan milidetik dan menyambungnya lewat polling; di luar
 // Vercel (server lokal, uji) tidak ada waitUntil, jadi penarikan tetap diselesaikan dalam
@@ -159,12 +163,13 @@ export function createSyncHandler(service = syncService, { db = database, quota 
   // satu urutan kerja untuk keduanya.
   async function runPullJob(args, workspace, { jobId = null } = {}) {
     const startedAt = Date.now();
+    const deadlineAt = pullDeadline({ startedAt, env });
     const { since, carry, note: cacheNote } = await readIncremental(db, workspace?.id, args.force);
     // Cap 'running' hanya ditulis kalau pekerjaan ini benar-benar punya project: tanpa identitas,
     // tidak ada yang bisa mem-polling dan baris tanpa workspace_id hanya mengotori riwayat.
     if (workspace?.id) await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: cacheNote, elapsedMs: null });
     try {
-      const result = await service.sync({ ...args, since, carry });
+      const result = await service.sync({ ...args, since, carry, deadlineAt });
       const stored = await storeResult(db, workspace, result);
       return { ...result, stored, jobId, incremental: { ...(result.incremental || {}), note: cacheNote } };
     } catch (error) {
@@ -327,13 +332,23 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           json(response, 200, { action: 'job', db: probe, workspaceId, run: null });
           return;
         }
-        const run = await db.latestRun(workspaceId);
+        const stored = await db.latestRun(workspaceId);
+        const born = Date.parse(stored?.createdAt || '');
+        // Status 'running' yang umurnya sudah lewat plafon fungsi tidak akan pernah selesai:
+        // fungsinya sudah dipotong platform. Ia dilaporkan apa adanya supaya klien berhenti
+        // menunggu dan data lama yang tersimpan tetap terbaca.
+        const abandoned = stored?.status === 'running' && Number.isFinite(born)
+          && Date.now() - born > ceilingMs(env) + ABANDONED_MARGIN_MS;
+        const run = abandoned
+          ? { ...stored, status: 'abandoned', error: 'The server reached its platform time limit while this pull was running, so nothing was written and the stored snapshot was left untouched. Pull again — the pages already cached make the next run shorter.' }
+          : stored;
         json(response, 200, {
           action: 'job',
           db: probe,
           workspaceId,
           pending: run?.status === 'running',
           finished: run ? run.status !== 'running' : false,
+          abandoned,
           run,
         });
         return;
