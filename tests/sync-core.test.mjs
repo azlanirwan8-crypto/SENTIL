@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
-import { CACHE_TTL_MS, createSyncService, fetchBudgetMs, DEFAULT_PLAY_BUDGET_MS, SyncError } from '../lib/sync-core.mjs';
+import { CACHE_TTL_MS, createSyncService, fetchBudgetMs, DEFAULT_PLAY_BUDGET_MS, FIXED_RESERVE_MS, MEASURED_FETCH_ROWS_PER_SECOND, MEASURED_POST_MS_PER_ROW, SyncError } from '../lib/sync-core.mjs';
 
 const playReview = (id, rating, text, date) => ({
   id: `play-${id}`,
@@ -382,9 +382,9 @@ describe('anggaran waktu penarikan terhadap plafon fungsi', () => {
       configured: DEFAULT_PLAY_BUDGET_MS,
       maxRows: Number.POSITIVE_INFINITY,
     });
-    assert.ok(budget < 120_000 - 35_000, `anggaran ${budget}ms harus mengecil saat waktu menipis`);
-    const rows = (budget / 1000) * 900;
-    assert.ok(budget + rows * 0.6 + 35_000 <= 120_000, 'tarik + pasca + cadangan tidak boleh lewat plafon');
+    assert.ok(budget < 120_000 - FIXED_RESERVE_MS, `anggaran ${budget}ms harus mengecil saat waktu menipis`);
+    const rows = (budget / 1000) * MEASURED_FETCH_ROWS_PER_SECOND;
+    assert.ok(budget + rows * MEASURED_POST_MS_PER_ROW + FIXED_RESERVE_MS <= 120_000, 'tarik + pasca + cadangan tidak boleh lewat plafon');
   });
 
   test('waktu yang sudah habis tetap diberi ruang menulis, bukan nol', () => {
