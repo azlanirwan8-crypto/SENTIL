@@ -61,6 +61,7 @@
     --page-from: #0A1220;
     --page-to: #020617;
     --sweep: rgba(148, 163, 184, 0.14);
+    --scrim: rgba(2, 6, 23, 0.72);
     --scroll-thumb: #1E293B;
     --scroll-thumb-hover: #334155;
     --hover-band: #FFFFFF;
@@ -107,6 +108,7 @@
     --page-from: #EDF1F7;
     --page-to: #F8FAFC;
     --sweep: rgba(15, 23, 42, 0.1);
+    --scrim: rgba(15, 23, 42, 0.38);
     --scroll-thumb: #CBD5E1;
     --scroll-thumb-hover: #94A3B8;
     --hover-band: #0F172A;
@@ -223,8 +225,11 @@
     padding: 0 11px;
   }
 
+  /* hover memakai langkah palet yang sama seperti latarnya, bukan `bg-white`: putih adalah
+     nilai tetap, dan di tema terang teks tombol sudah putih — hover akan menenggelamkan labelnya
+     sendiri (kontras 1,06:1). Cermin ramp menjaga geseran ini terlihat di kedua tema. */
   .btn-primary {
-    @apply border-slate-200 bg-slate-100 text-slate-900 hover:bg-white;
+    @apply border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200;
   }
 
   .btn-secondary {
@@ -312,6 +317,12 @@
     background: linear-gradient(90deg, transparent, var(--sweep), transparent);
     transform: translateX(-100%);
     animation: skeleton-sweep 1.5s infinite;
+  }
+
+  /* Kain pembatas dialog ikut tema: hitam 72% cocok di atas bilah gelap, tapi di atas kertas
+     terang ia membaca sebagai lubang, bukan penggelapan halus. Yang berubah hanya kepadatannya. */
+  .scrim {
+    background: var(--scrim);
   }
 
   .scroll-x {

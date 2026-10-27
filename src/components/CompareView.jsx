@@ -236,8 +236,8 @@ function PainHeatmap({ result }) {
                     <td key={column.id} className="py-1 pl-2 text-right">
                       {cell ? (
                         <span
-                          className="num inline-block min-w-[52px] rounded px-1.5 py-0.5 text-[11px] font-semibold text-neg"
-                          style={{ backgroundColor: `rgba(248,113,113,${(0.08 + strength * 0.34).toFixed(3)})` }}
+                          className="num inline-block min-w-[52px] rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-200"
+                          style={{ backgroundColor: `rgb(var(--neg) / ${(0.1 + strength * 0.32).toFixed(3)})` }}
                           title={`${formatNumber(cell.count)} ${t('negative reviews')} · ${t('severity')} ${cell.severity}`}
                         >
                           {(cell.share * 100).toFixed(1)}%

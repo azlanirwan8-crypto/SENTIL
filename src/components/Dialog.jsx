@@ -75,7 +75,7 @@ export function DialogShell({ open, onClose, labelledBy, describedBy, children, 
         if (event.target === event.currentTarget && dismissible) closeRef.current();
       }}
     >
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in" aria-hidden="true" />
+      <div className="scrim absolute inset-0 backdrop-blur-sm animate-fade-in" aria-hidden="true" />
       <div
         ref={dialogRef}
         role="dialog"

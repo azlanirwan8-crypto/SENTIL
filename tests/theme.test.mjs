@@ -204,3 +204,53 @@ test('baris daftar pilihan native ikut token tema', () => {
   assert.ok(checked, 'baris option:checked tidak diberi warna token — baris terpilih akan menabrak bilah atas');
   assert.equal(/option[^{}]*\{[^}]*#[0-9a-f]{3,6}/i.test(CSS), false, 'aturan option menulis hex tetap, bukan token');
 });
+
+// Warna tetap adalah cara tercepat membuat satu tema menenggelamkan temanya sendiri: kelas tidak
+// berubah antar tema, jadi `hover:bg-white` yang benar di bilah gelap menjadi label putih di atas
+// tombol putih di tema terang — dan itu bukan teori, itu tangkapan layar yang dilaporkan.
+const walk = dir => [...readdirSync(new URL(dir, import.meta.url), { withFileTypes: true })].flatMap(entry => {
+  const path = `${dir}/${entry.name}`;
+  return entry.isDirectory() ? walk(path) : (/\.(jsx?|css)$/.test(entry.name) && !entry.name.includes('i18n-phrases') ? [readFileSync(new URL(path, import.meta.url), 'utf8')] : []);
+});
+const ALL = walk('../src').join('\n');
+
+const over = (base, top, alpha) => rgbOf(base).map((channel, index) => Math.round(channel * (1 - alpha) + rgbOf(top)[index] * alpha)).join(' ');
+
+// Baris komentar tidak ikut dinilai: yang dicari adalah kelas dan nilai yang benar-benar dirender.
+const code = text => text.split(/\r?\n/).filter(line => !/^\s*(?:\/\/|\/\*|\*)/.test(line));
+
+describe('warna tetap tidak boleh menenggelamkan tema', () => {
+  test('tidak ada utilitas putih/hitam tanpa token', () => {
+    const offenders = code(ALL).filter(line => /\b(?:bg|text|border|ring|fill|from|to)-(?:white|black)(?:\/\d+)?\b/.test(line));
+    assert.deepEqual(offenders, [], `${offenders.length} baris memakai putih/hitam tetap: ${offenders.map(line => line.trim().slice(0, 60)).join(' | ')}`);
+  });
+
+  test('isi latar inline di komponen tidak menulis warna mentah', () => {
+    const offenders = code(ALL).filter(line => /backgroundColor:/.test(line) && /rgba?\(\s*[\d.#]|#[0-9a-f]{3,8}\b/i.test(line));
+    assert.deepEqual(offenders, [], `${offenders.length} baris mewarnai latar dengan nilai tetap: ${offenders.map(line => line.trim().slice(0, 70)).join(' | ')}`);
+  });
+
+  test('tombol primer terbaca di kedua tema, termasuk keadaan hover-nya', () => {
+    for (const [theme, table] of [['gelap', DARK], ['terang', LIGHT]]) {
+      for (const surface of ['slate-100', 'slate-200']) {
+        const ratio = contrast(table.get('slate-900'), table.get(surface));
+        assert.ok(ratio >= 4.5, `${theme}: teks tombol di atas ${surface} hanya ${ratio.toFixed(2)}:1`);
+      }
+      assert.equal(/\.btn-primary\s*\{[^}]*bg-white/.test(CSS), false, 'hover tombol primer memakai putih tetap');
+    }
+  });
+
+  test('sel panas matriks banding terbaca di atas lapisan warna terkuatnya', () => {
+    // Kekuatan lapisan dibaca dari komponen (0,1 + strength * 0,32 dengan strength <= 1), jadi
+    // ambangnya ikut angka yang benar-benar dirender, bukan angka yang dikarang di tes ini.
+    const formula = /0(\.\d+) \+ strength \* 0(\.\d+)/.exec(ALL);
+    assert.ok(formula, 'rumus lapisan sel panas tidak ditemukan di komponen');
+    const ceiling = Number(`0${formula[1]}`) + Number(`0${formula[2]}`);
+    assert.ok(ceiling > 0.2 && ceiling <= 0.45, `lapisan terkuat ${ceiling} di luar yang bisa diuji`);
+    for (const [theme, table] of [['gelap', DARK], ['terang', LIGHT]]) {
+      const wash = over(table.get('slate-900'), table.get('neg'), ceiling);
+      const ratio = contrast(table.get('slate-200'), wash);
+      assert.ok(ratio >= 4.5, `${theme}: angka matriks di atas lapisan terkuat hanya ${ratio.toFixed(2)}:1`);
+    }
+  });
+});
