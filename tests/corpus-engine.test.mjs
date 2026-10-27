@@ -256,7 +256,7 @@ describe('mesin korpus tanpa kamus', () => {
     assert.ok(qris.listingMentions >= 1);
     // Nama yang dibaca manajer tetap milik kamus, termasuk ketika ulasan cuma menyebut
     // "transaksi qris gagal" — label datang dari domain, bukan dari kata yang dipilih reviewer.
-    assert.deepEqual(model.topics.map(topic => topic.name), ['[App Crash & Errors]', '[QRIS Payments]']);
+    assert.deepEqual(model.topics.map(topic => topic.name), ['App Crash & Errors', 'QRIS Payments']);
     assert.equal(model.topics.find(topic => topic.id === 'qris_payment').low, 30);
     assert.equal(model.topics.find(topic => topic.id === 'app_crash').low, 30);
   });

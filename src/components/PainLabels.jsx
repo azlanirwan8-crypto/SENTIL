@@ -87,7 +87,7 @@ export function PainLabels({ pain, filtered = false }) {
   const clusters = metrics.clusters || labels.length;
   const meta = `${labels.length === clusters ? `${formatNumber(clusters)} clusters` : `${labels.length} of ${formatNumber(clusters)} clusters`} · ${formatNumber(pool)} 1–2★ reviews${filtered ? ' · whole corpus' : ''}`;
   const singletons = metrics.singletons || 0;
-  const named = metrics.namedFromTerm || 0;
+  const headed = metrics.headed || 0;
   // Kategori punya dua sumber yang keduanya ditandai di barisnya: nama dari model bahasa
   // (interpretasi atas frasa yang sudah diukur) dan istilah halaman toko yang lolos uji
   // kepadatan. Satu baris dihitung satu kali — istilah toko yang namanya tertutup nama model
@@ -111,12 +111,12 @@ export function PainLabels({ pain, filtered = false }) {
       <div className="min-h-0 flex-1 overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">
-            Complaint labels found by the corpus engine: theme name, an optional category naming, supporting phrases, distinct 1–2 star reviews, share of the complaint pool, 4–5 star reviews using the same wording, direction of the daily rate, and severity.
+            Complaint labels found by the corpus engine: an area named by the domain dictionary or by the language model, the reviewer wording that evidences it, supporting phrases, distinct 1–2 star reviews, share of the complaint pool, 4–5 star reviews using the same wording, direction of the daily rate, and severity.
           </caption>
           <thead>
             <tr className="border-b border-slate-800">
-              <Header>Label</Header>
-              <Header className="w-[132px]">Category</Header>
+              <Header>Complaint</Header>
+              <Header className="w-[132px]">Named by</Header>
               <Header className="w-[54px] text-right">Phrases</Header>
               <Header className="w-[54px] text-right">1–2★</Header>
               <Header className="w-[48px] text-right">Share</Header>
@@ -131,6 +131,12 @@ export function PainLabels({ pain, filtered = false }) {
               const width = Math.max(2, (entry.reviewCount / ceiling) * 100);
               const ai = aiNames?.[entry.id]?.category ? aiNames[entry.id] : null;
               const store = entry.category;
+              // Baris pertama judul adalah AREA (nama kamus, atau interpretasi model atas frasa
+              // yang sama); baris kedua adalah kalimat reviewers apa adanya. Tidak ada satu pun
+              // kata di kolom ini yang berasal dari kepala: kamus domain, klaim model yang
+              // ditandai, atau teks korpus.
+              const area = ai ? ai.category : store ? store.name : null;
+              const areaSource = ai ? 'ai' : store ? 'dictionary' : 'corpus';
               return (
                 <tr key={entry.id} className={`border-b border-slate-800/50 last:border-0 ${active ? 'bg-slate-800/40' : ''}`}>
                   <th scope="row" className="min-w-[212px] py-1.5 pr-3 text-left font-normal">
@@ -139,7 +145,7 @@ export function PainLabels({ pain, filtered = false }) {
                       onClick={() => setOpen(active ? null : entry.id)}
                       aria-expanded={active}
                       aria-controls={`label-detail-${index}`}
-                      aria-label={`${entry.name}: ${formatNumber(entry.reviewCount)} of ${formatNumber(pool)} 1–2 star reviews, ${formatNumber(entry.phraseCount)} supporting phrase${entry.phraseCount === 1 ? '' : 's'}.`}
+                      aria-label={`${area ? `${area}, evidenced by` : 'Reviewer wording'}: ${entry.evidence}. ${formatNumber(entry.reviewCount)} of ${formatNumber(pool)} 1–2 star reviews, ${formatNumber(entry.phraseCount)} supporting phrase${entry.phraseCount === 1 ? '' : 's'}.`}
                       className="group flex w-full items-center gap-2 text-left"
                     >
                       {/* Bilahnya lebar tetap, nama fleksibel. Sebelumnya bilah ikut tumbuh sampai
@@ -147,8 +153,16 @@ export function PainLabels({ pain, filtered = false }) {
                       <span className="relative h-3 w-[56px] shrink-0 overflow-hidden rounded-[2px] bg-slate-800/50">
                         <span className="absolute inset-y-0 left-0 rounded-[2px] bg-neg/70" style={{ width: `${width}%` }} />
                       </span>
-                      <span title={entry.name} className={`min-w-0 flex-1 truncate text-[11px] font-semibold ${entry.nameSource === 'term' ? 'capitalize' : 'font-mono'} ${active ? 'text-slate-50' : 'text-slate-200 group-hover:text-slate-50'}`}>
-                        {entry.name}
+                      <span className="min-w-0 flex-1">
+                        <span
+                          title={area || entry.evidence}
+                          className={`block truncate text-[11px] font-semibold ${areaSource === 'corpus' ? 'font-mono' : 'capitalize'} ${active ? 'text-slate-50' : 'text-slate-200 group-hover:text-slate-50'}`}
+                        >
+                          {area || entry.evidence}
+                        </span>
+                        <span title={entry.evidence} className="block truncate font-mono text-[10px] leading-tight text-slate-400">
+                          {area ? entry.evidence : `reviewers wrote: ${entry.evidence}`}
+                        </span>
                       </span>
                       {entry.phraseCount > 1 ? (
                         <span className="shrink-0 rounded border border-slate-700/70 px-1 text-[9px] uppercase tracking-wider text-slate-400">cluster</span>
@@ -157,7 +171,7 @@ export function PainLabels({ pain, filtered = false }) {
                       )}
                     </button>
                     {active ? (
-                      <div id={`label-detail-${index}`} role="group" aria-label={`Phrases inside the label named ${entry.name}`} className="mt-1 rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5">
+                      <div id={`label-detail-${index}`} role="group" aria-label={`Phrases inside the complaint area ${area || entry.evidence}`} className="mt-1 rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5">
                         <p className="label-sm">Phrases in this cluster · {formatNumber(entry.phraseCount)}</p>
                         <ul className="mt-1 space-y-0.5">
                           {entry.phrases.map(phrase => (
@@ -173,25 +187,31 @@ export function PainLabels({ pain, filtered = false }) {
                         <p className="mt-1 border-t border-slate-800/70 pt-1 text-[10px] leading-relaxed text-slate-400">
                           {formatNumber(entry.reviewCount)} distinct reviews mention at least one of these phrases. Counting each phrase
                           separately would report {formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))} findings from the same people.
-                          {entry.nameSource === 'term' ? ' The name is the anchor word these phrases agree on; the full wording is listed above.' : ''}
+                          {entry.nameSource === 'term' ? ` The engine's short name for this cluster is ${entry.name} — the anchor word these phrases agree on; the full wording is listed above.` : ''}
                         </p>
                       </div>
                     ) : null}
                   </th>
                   <td className="py-1.5 pr-3 align-top text-[11px]">
-                    {ai ? (
-                      <span title={`Category named by ${naming.model} from the phrases in this row; every number here is measured`}>
-                        <span className="font-semibold text-slate-200">{ai.category}</span>
-                        <span className="block truncate text-[10px] text-slate-400">{ai.subLabel || 'AI-named'}</span>
+                    <span
+                      className="tag-quiet"
+                      title={areaSource === 'ai'
+                        ? `Area named by ${naming?.model || 'the language model'} from the phrases in this row; every number in this row is measured by the corpus engine`
+                        : areaSource === 'dictionary'
+                          ? 'Area is the domain-dictionary topic carried by this cluster more densely than by other complaints'
+                          : 'No naming cleared the evidence test, so this row shows reviewer wording only'}
+                    >
+                      {areaSource === 'ai' ? `AI · ${naming?.model || 'model'}` : areaSource === 'dictionary' ? 'domain dictionary' : 'reviewer wording'}
+                    </span>
+                    {ai && store ? (
+                      <span
+                        title={`Measured density: ${formatNumber(store.inside)} of ${formatNumber(entry.reviewCount)} reviews in this cluster carry the dictionary term ${store.name}, denser than among other complaints`}
+                        className="mt-1 block truncate text-[10px] text-slate-400"
+                      >
+                        measured: {store.name}
                       </span>
-                    ) : store ? (
-                      <span title={`Store term carried by ${formatNumber(store.inside)} of ${formatNumber(entry.reviewCount)} reviews in this cluster, denser than among other complaints`}>
-                        <span className="font-semibold text-slate-300">{store.name}</span>
-                        <span className="block text-[10px] text-slate-400">store term</span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-400" title="No naming cleared the evidence test for this cluster">—</span>
-                    )}
+                    ) : null}
+                    {ai?.subLabel ? <span className="block truncate text-[10px] text-slate-400">{ai.subLabel}</span> : null}
                   </td>
                   <td className="num py-1.5 pr-3 text-right text-[11px] text-slate-400">{formatNumber(entry.phraseCount)}</td>
                   <td className="num py-1.5 pr-3 text-right text-[12px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
@@ -208,8 +228,10 @@ export function PainLabels({ pain, filtered = false }) {
         </table>
       </div>
       <p className="mt-2 shrink-0 text-[10px] leading-relaxed text-slate-400">
-        The label itself is reviewer wording: each row groups phrases real reviewers wrote, and the
-        name is the word those phrases agree on {named ? <span className="num">({formatNumber(named)} of {formatNumber(labels.length)} named this way)</span> : null}. Two phrases are grouped only
+        The first line of a row is its area: the domain-dictionary topic this cluster carries more
+        densely than other complaints, or a category named by {naming?.model || 'the language model'} when the AI layer answered. The
+        second line is always the reviewers' own wording, so every row can be traced to the text it
+        came from {headed ? <span className="num">({formatNumber(headed)} of {formatNumber(labels.length)} rows carry a dictionary area)</span> : null}. Two phrases are grouped only
         when more reviews carry both than chance explains. Trend is the daily rate of the second
         half of the observed period against the first. {formatNumber(singletons)} {singletons === 1 ? 'label is' : 'labels are'} {singletons === 1 ? 'a single phrase' : 'single phrases'};{' '}
         {metrics.trimmedLabels
@@ -218,13 +240,13 @@ export function PainLabels({ pain, filtered = false }) {
         {filtered ? ' Counts cover the whole corpus, not the active filter.' : ''}
       </p>
       <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-        The Category column is the one interpreted part, and its state is reported as it is:
+        The Named by column is the one interpreted part, and its state is reported as it is:
         {' '}{naming?.status === 'named'
-          ? <>it ran with <span className="font-semibold text-slate-400">{naming.model}</span> over {formatNumber(naming.clusters || 0)} clusters and {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : 'no'} of the rows shown {aiCount === 1 ? 'carries' : 'carry'} its name{termCount ? <>, {formatNumber(termCount)} carry a domain topic name denser inside this cluster than among other complaints</> : null}{maskedTermCount ? <>, {formatNumber(maskedTermCount)} further topic name{maskedTermCount === 1 ? '' : 's'} measured here but hidden behind a model name</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} returned name{orphanNames === 1 ? '' : 's'} matched no row on this table and {orphanNames === 1 ? 'was' : 'were'} ignored</> : null}.</>
+          ? <>it ran with <span className="font-semibold text-slate-400">{naming.model}</span> over {formatNumber(naming.clusters || 0)} clusters and {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : 'no'} of the rows shown {aiCount === 1 ? 'carries' : 'carry'} its name{termCount ? <>, {formatNumber(termCount)} carry a domain topic name denser inside this cluster than among other complaints</> : null}{maskedTermCount ? <>, {formatNumber(maskedTermCount)} further topic name{maskedTermCount === 1 ? '' : 's'} measured here but shown under the model name</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} returned name{orphanNames === 1 ? '' : 's'} matched no row on this table and {orphanNames === 1 ? 'was' : 'were'} ignored</> : null}.</>
           : naming?.status === 'skipped'
-            ? <>it did not run — {naming.reason || 'the naming layer was not configured'} — so any category below comes from the domain dictionary or is empty.</>
+            ? <>it did not run — {naming.reason || 'the naming layer was not configured'} — so every area below comes from the domain dictionary, or the row shows reviewer wording only.</>
             : naming?.status === 'failed'
-              ? <>it ran and failed — {naming.reason || 'no usable names came back'}{naming.detail ? <>, source said: {naming.detail}</> : null}{Array.isArray(naming.tried) && naming.tried.length > 1 ? <>, models tried: <span className="font-mono">{naming.tried.map(entry => `${entry.model} (${entry.status ?? 'no answer'})`).join(', ')}</span></> : null} — so any category below comes from the domain dictionary or is empty.</>
+              ? <>it ran and failed — {naming.reason || 'no usable names came back'}{naming.detail ? <>, source said: {naming.detail}</> : null}{Array.isArray(naming.tried) && naming.tried.length > 1 ? <>, models tried: <span className="font-mono">{naming.tried.map(entry => `${entry.model} (${entry.status ?? 'no answer'})`).join(', ')}</span></> : null} — so every area below comes from the domain dictionary, or the row shows reviewer wording only.</>
               : 'this snapshot has no naming record at all; it was pulled before the naming layer existed, or nothing was clustered to name.'}
         {' '}No number in the table comes from naming — counts, shares and trend are measured.
       </p>

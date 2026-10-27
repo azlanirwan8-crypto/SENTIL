@@ -11,6 +11,7 @@ import { database } from '../lib/db.mjs';
 import { buildComparison } from '../lib/compare-engine.mjs';
 import { storeResult } from '../lib/persist.mjs';
 import { projectDataset } from '../lib/dataset-view.mjs';
+import { NAMING_VERSION, nameClusters } from '../lib/label-naming.mjs';
 import { createQuota } from '../lib/rate-limit.mjs';
 import { analyzeCorpus, ENGINE_VERSION } from '../lib/corpus-engine.mjs';
 
@@ -224,6 +225,16 @@ export function createSyncHandler(service = syncService, { db = database, quota 
     const startedAt = Date.now();
     const raw = stored.reviews.map(({ analysis, ...rest }) => rest);
     const { rows, model } = analyzeCorpus(raw, { generatedAt: stored.fetchedAt || new Date().toISOString(), listing, entity: stored.entity || workspace.entity || '' });
+    // Hitung ulang juga menjalankan lapisan penamaan, supaya "Re-run analysis" bisa mengganti
+    // nama label tanpa menyentuh sumber mana pun. State-nya selalu dicatat — termasuk "tidak ada
+    // yang bisa dinamai" — supaya panel tidak pernah bilang snapshot ini tidak punya catatan.
+    // Tanpa kunci atau saat panggilan gagal, nama kamus tetap dipakai dan hasil hitung ulang tidak
+    // pernah bergantung padanya.
+    const naming = await nameClusters(
+      (model.painPoints?.labels || []).map(label => ({ id: label.id, phrases: label.phrases.map(entry => entry.text) })),
+      { env },
+    );
+    model.painPoints.naming = { version: NAMING_VERSION, at: model.generatedAt || new Date().toISOString(), ...naming };
     // Korpus 69.000 baris dipegang tiga kali pada titik ini (bahan mentah, hasil analisis, dan
     // salinan penyimpanan). Salinan mentah tidak dibutuhkan lagi setelah model terbentuk, jadi
     // dilepas sebelum tulisan dimulai — fungsi serverless punya langit-langit memori, dan

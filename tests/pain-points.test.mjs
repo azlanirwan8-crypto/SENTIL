@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { analyzeCorpus } from '../lib/corpus-engine.mjs';
+import { isJunkTerm } from '../lib/domain-taxonomy.mjs';
 import { PAIN_VERSION, derivePainPoints } from '../lib/pain-points.mjs';
 
 // Daftar kata struktur di bawah hanya alat ukur untuk tes ini. Di produksi daftar yang sama
@@ -319,7 +320,23 @@ describe('lapisan frasa di dalam model korpus', () => {
     assert.equal(pain.labelMetrics.clusters >= pain.labelMetrics.reportedLabels, true);
     assert.equal(pain.labelMetrics.reportedLabels, pain.labels.length, 'pemangkasan harus dilaporkan, bukan diam-diam');
     assert.ok(pain.labelMetrics.namedFromTerm <= pain.labels.length);
-    assert.deepEqual(Object.keys(pain.labelRules).sort(), ['category', 'closure', 'link', 'maxLabels', 'naming', 'sharedReviews', 'support', 'trend']);
+    // Judul yang dibaca manajer: nama kamus + kalimat reviewers, atau kalimat reviewers saja kalau
+    // tidak ada topik yang lolos uji kepadatan. Tidak ada bentuk lain.
+    for (const label of pain.labels) {
+      if (label.category) {
+        assert.equal(label.headingSource, 'dictionary', 'kategori kamus selalu dipakai sebagai judul');
+        assert.equal(label.heading, `${label.category.name}: ${label.evidence}`);
+        assert.ok(label.category.nameId, 'kategori kamus juga punya nama Indonesia untuk jalur baca');
+      } else {
+        assert.equal(label.headingSource, 'phrase');
+        assert.equal(label.heading, label.evidence);
+      }
+      if (label.nameSource === 'term') {
+        assert.equal(isJunkTerm(label.name), false, `judul satu kata tidak boleh kata tugas: ${label.name}`);
+      }
+    }
+    assert.equal(pain.labelMetrics.headed, pain.labels.filter(label => label.headingSource === 'dictionary').length);
+    assert.deepEqual(Object.keys(pain.labelRules).sort(), ['category', 'closure', 'heading', 'link', 'maxLabels', 'naming', 'sharedReviews', 'support', 'trend']);
     assert.equal(pain.labelMetrics.trend.firstDay, '2026-01-05');
   });
 

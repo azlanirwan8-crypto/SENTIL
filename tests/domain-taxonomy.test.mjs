@@ -22,8 +22,8 @@ describe('kamus topik domain dua bahasa', () => {
     for (const topic of TOPICS) {
       assert.ok(!ids.has(topic.id), `id topik ganda: ${topic.id}`);
       ids.add(topic.id);
-      assert.match(topic.label, /^\[[^\d\]]{3,}\]$/, `${topic.id}: nama tampilannya kurung siku tanpa angka`);
-      assert.match(topic.labelId, /^\[[^\d\]]{3,}\]$/, `${topic.id}: nama Indonesia juga kurung siku`);
+      assert.match(topic.label, /^[A-Z][^\]\d]{2,}$/, `${topic.id}: nama Inggris dibaca sebagai judul, tanpa kurung dan tanpa angka`);
+      assert.match(topic.labelId, /^[A-Z][^\]\d]{2,}$/, `${topic.id}: nama Indonesia mengikuti bentuk yang sama`);
       assert.ok(DOMAIN_CLUSTERS[topic.cluster], `${topic.id}: klaster harus ada`);
       assert.equal(isJunkTerm(topic.label), false, `${topic.id}: nama tidak boleh kata tugas`);
       assert.equal(isJunkTerm(topic.labelId), false, `${topic.id}: nama Indonesia tidak boleh kata tugas`);
@@ -60,10 +60,12 @@ describe('kamus topik domain dua bahasa', () => {
   });
 
   test('kata tugas dan nama berangka selalu ditolak', () => {
-    for (const junk of ['harus', 'pake', 'tdk', 'dan', 'yang', 'the', 'my', 'untuk', 'banget', 'sekali', 'transaksinya', 'apun', '12 ulasan', 'login 2x', '']) {
+    // kata pertama di bawah ini adalah judul label yang BENAR-BENAR dihasilkan korpus produksi
+    // (project GoPay 51.532 ulasan) sebelum gerbang ini diperlebar — itulah buktinya.
+    for (const junk of ['harus', 'pake', 'tdk', 'dan', 'yang', 'the', 'my', 'untuk', 'banget', 'sekali', 'transaksinya', 'apun', '12 ulasan', 'login 2x', '', 'padahal', 'tidak ada', 'sudah ada', 'memang', 'cuma itu']) {
       assert.equal(isJunkTerm(junk), true, `"${junk}" harus ditolak sebagai nama kategori`);
     }
-    for (const real of ['QRIS Payments', 'mutasi rekening', 'Login & Session Access', 'saldo tidak muncul']) {
+    for (const real of ['QRIS Payments', 'mutasi rekening', 'Login & Session Access', 'saldo tidak muncul', 'masuk', 'saldo']) {
       assert.equal(isJunkTerm(real), false, `"${real}" adalah istilah fitur`);
     }
   });
@@ -87,7 +89,7 @@ describe('kamus topik domain dua bahasa', () => {
     const [a, b, c] = rows;
     assert.deepEqual(a.analysis.topics, ['biometric_login', 'login_access', 'update_regression']);
     assert.equal(a.analysis.primaryTopic, 'biometric_login');
-    assert.equal(a.analysis.topicNames[0], '[Biometric Login]');
+    assert.equal(a.analysis.topicNames[0], 'Biometric Login');
     assert.deepEqual(a.analysis.topicClusters, ['authentication', 'reliability']);
     assert.deepEqual(a.analysis.topicTriggers.biometric_login, ['sidik jari']);
     assert.ok(b.analysis.topics.includes('statement_report'), 'laporan dikenali');

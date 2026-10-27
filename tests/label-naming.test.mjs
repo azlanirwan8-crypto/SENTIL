@@ -25,7 +25,7 @@ test('tanpa kunci, penamaan di-skip dan tidak ada nama yang dibuat', async () =>
 });
 
 test('konfigurasi membaca GEMINI_API_KEY dan model bisa diganti lewat env', () => {
-  assert.deepEqual(namingConfiguration({ GEMINI_API_KEY: ' abc ' }), { enabled: true, key: 'abc', model: 'gemini-2.0-flash' });
+  assert.deepEqual(namingConfiguration({ GEMINI_API_KEY: ' abc ' }), { enabled: true, key: 'abc', model: 'gemini-3.8-flash' });
   assert.equal(namingConfiguration({ GEMINI_MODEL: 'gemini-1.5-flash' }).model, 'gemini-1.5-flash');
   assert.equal(namingConfiguration({}).enabled, false);
 });
@@ -119,6 +119,69 @@ test('HTTP error dan abort dilaporkan sebagai kegagalan, bukan crash', async () 
   assert.match(aborted.reason, /timed out/);
 });
 
+test('503 dicoba sekali lagi karena API menyebutnya sementara', async () => {
+  const seen = [];
+  const noWait = async () => {};
+  const result = await nameClusters(clusters, {
+    env: { GEMINI_API_KEY: 'k' },
+    sleep: noWait,
+    fetchImpl: async (url) => {
+      const model = decodeURIComponent(String(url)).split('/models/')[1].split(':')[0];
+      seen.push(model);
+      if (seen.length === 1) {
+        return { ok: false, status: 503, json: async () => ({}), text: async () => '503 UNAVAILABLE: This model is currently experiencing high demand' };
+      }
+      return geminiReply([{ ref: 'c1', category: 'Payout timing', subLabel: 'Business days' }]);
+    },
+  });
+  assert.equal(result.status, 'named');
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], seen[1], 'percobaan ulang memakai model yang sama, bukan melompat ke kandidat lain');
+  assert.equal(result.tried[0].status, 503);
+  assert.equal(result.tried[0].retry, 'once');
+  assert.equal(result.names['1hk udah lbh 1hk'].category, 'Payout timing');
+});
+
+test('503 kedua tidak dicoba lagi — penarikan tidak boleh menunggu selamanya', async () => {
+  let calls = 0;
+  const result = await nameClusters(clusters, {
+    env: { GEMINI_API_KEY: 'k', GEMINI_MODEL: 'model-karangan' },
+    sleep: async () => {},
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: false, status: 503, json: async () => ({}), text: async () => '503 high demand' };
+    },
+  });
+  assert.equal(result.status, 'failed');
+  // 503 bukan salah id model, jadi ia tidak dilompati ke model lain: satu permintaan, satu
+  // percobaan ulang, lalu selesai. Yang membakar kuota dan yang sibuk diperlakukan berbeda.
+  assert.equal(calls, 2);
+  assert.equal(result.tried.filter(entry => entry.retry === 'once').length, 1, 'satu percobaan ulang, tidak lebih');
+  assert.deepEqual(result.tried.map(entry => entry.model), ['model-karangan', 'model-karangan']);
+});
+
+test('sisa waktu di bawah reservasi membatalkan percobaan ulang', async () => {
+  let calls = 0;
+  // Jam dipinjam supaya deterministik: tiap panggilan memakan 6,5 detik, jadi setelah 503
+  // pertama sisa anggaran sudah di bawah reservasi 9 detik dan permintaan kedua tidak dibeli.
+  let clock = 0;
+  const result = await nameClusters(clusters, {
+    env: { GEMINI_API_KEY: 'k' },
+    timeoutMs: 20_000,
+    sleep: async () => {},
+    now: () => (clock += 6_500),
+    fetchImpl: async () => {
+      calls += 1;
+      return { ok: false, status: 503, json: async () => ({}), text: async () => '503 high demand' };
+    },
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(calls, 1, '503 tanpa sisa waktu untuk menunggu hanya dibayar satu permintaan');
+  assert.equal(result.tried.length, 1);
+  assert.equal(result.tried[0].retry, undefined);
+  assert.match(result.tried[0].reason, /503 high demand/);
+});
+
 test('model yang tidak dikenal dicobakan ke kandidat berikutnya, bukan dibiarkan mati', async () => {
   const seen = [];
   const reply = await nameClusters(clusters, {
@@ -126,7 +189,7 @@ test('model yang tidak dikenal dicobakan ke kandidat berikutnya, bukan dibiarkan
     fetchImpl: async (url) => {
       const model = decodeURIComponent(String(url)).split('/models/')[1].split(':')[0];
       seen.push(model);
-      if (model === 'gemini-2.0-flash') return { ok: false, status: 404, json: async () => ({}), text: async () => '404 FOUND: models/gemini-2.0-flash is not found for API version v1beta' };
+      if (model === 'gemini-3.8-flash') return { ok: false, status: 404, json: async () => ({}), text: async () => '404 FOUND: models/gemini-3.8-flash is not found for API version v1beta' };
       return geminiReply([{ ref: 'c1', category: 'Autentikasi', subLabel: 'login dan verifikasi' }]);
     },
   });

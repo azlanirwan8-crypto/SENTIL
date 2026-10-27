@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
 import { createSyncHandler } from '../api/sync.js';
+import { TOPICS } from '../lib/domain-taxonomy.mjs';
+
+const dictionaryLabels = new Set(TOPICS.flatMap(topic => [topic.label, topic.labelId]));
 
 function fakeRequest(body) {
   const chunks = [Buffer.from(JSON.stringify(body))];
@@ -205,6 +208,7 @@ describe('hitung ulang dari baris tersimpan', () => {
   ];
 
   test('menganalisis ulang tanpa menghubungi sumber dan membuang label lama', async () => {
+    const saved = [];
     const db = fakeDb({
       async loadDataset() {
         return {
@@ -217,9 +221,14 @@ describe('hitung ulang dari baris tersimpan', () => {
           summary: {},
         };
       },
+      async saveSnapshot({ dataset }) {
+        this.seen.push(`snap:${dataset.entity ? 'ws-1' : '?'}:${dataset.reviews.length}`);
+        saved.push(dataset);
+        return { revision: 4, stored: dataset.reviews.length, elapsedMs: 9 };
+      },
     });
     const service = stubService();
-    const handler = createSyncHandler(service, { db });
+    const handler = createSyncHandler(service, { db, env: {} });
     const body = (await run(handler, { action: 'recompute', workspaceId: 'ws-1' })).json();
     assert.equal(body.ok, true);
     assert.equal(body.recomputed, true);
@@ -227,10 +236,20 @@ describe('hitung ulang dari baris tersimpan', () => {
     assert.equal(body.engine.version, 'corpus-rating-v3');
     assert.equal(service.calls.length, 0, 'hitung ulang tidak menarik apa pun dari internet');
     assert.ok(body.topics.length > 0, 'korpus ini punya istilah domain');
-    assert.ok(body.topics.every(topic => topic.name.startsWith('[')), 'nama topik hasil hitung ulang adalah label kamus');
+    assert.ok(body.topics.every(topic => dictionaryLabels.has(topic.name)), 'nama topik hasil hitung ulang adalah label kamus, bukan kata dari ulasan');
     assert.equal(db.seen.includes('snap:ws-1:4'), true);
     assert.equal(db.seen.includes('run:recomputed:4'), true);
     assert.equal(body.message.includes('No source was contacted'), true);
+    // Lapisan penamaan ikut dijalankan saat hitung ulang, dan tanpa apa pun yang bisa dinamai ia
+    // mengaku apa adanya — bukan menghilang, bukan pura-pura bernama.
+    const pain = saved[0].model.painPoints;
+    assert.equal(pain.naming.version, 'label-naming-v1');
+    assert.equal(pain.naming.status, 'skipped');
+    assert.match(pain.naming.reason, /no clusters to name|GEMINI_API_KEY/);
+    for (const label of pain.labels) {
+      assert.equal(label.heading.includes(label.evidence), true, 'judul label memuat kalimat reviewers');
+      if (label.category) assert.equal(label.heading, `${label.category.name}: ${label.evidence}`);
+    }
   });
 
   test('project tanpa baris tersimpan ditolak dengan jujur', async () => {
