@@ -1,0 +1,12 @@
+# Hasil build dibuat ulang oleh `npm run build` di mesin Vercel, jadi tidak perlu terunggah.
+# public/ juga berisi satu berkas yang sedang digembok proses lain di mesin ini, dan daftar
+# berkas yang tidak bisa dibaca membuat seluruh deployment gagal.
+public/
+.scratch/
+*.tmp
+
+# Kredensial dan salinan data lokal tidak pernah naik ke platform.
+.env
+.env.local
+.env.*.local
+online-data.json
