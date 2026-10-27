@@ -366,6 +366,34 @@ test('503 yang tidak reda berpindah ke model kandidat', async () => {
   assert.equal(result.names[Object.keys(result.names)[0]].category.en, 'Transfer failure');
 });
 
+test('percobaan pertama dapat jatah panjang, kandidat berikutnya tetap kecil', async () => {
+  // Terukur di produksi 28 Oktober: `gemini-3.8-flash` dan `gemini-flash-latest` dua-duanya
+  // diputus pada jatah 20 detik tanpa satu byte pun kembali, dan anggaran habis sebelum ada
+  // yang menjawab. Yang boleh panjang hanyalah jatah model pertama — model yang justru
+  // direkomendasikan API — supaya satu model yang diam tidak membeli seluruh lapisan.
+  let clock = 0;
+  const seen = [];
+  const result = await analyseCorpus(model, {
+    env: { GEMINI_API_KEY: 'k' },
+    timeoutMs: 120_000,
+    now: () => clock,
+    fetchImpl: async url => {
+      const called = decodeURIComponent(String(url)).split('/models/')[1].split(':')[0];
+      seen.push(called);
+      clock += called === 'gemini-3.8-flash' ? 90_000 : 20_000;
+      const error = new Error('This operation was aborted');
+      error.name = 'AbortError';
+      throw error;
+    },
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(seen[0], 'gemini-3.8-flash', 'model yang direkomendasikan API diminta lebih dulu');
+  assert.equal(result.tried[0].reason, 'no answer within 90s', 'jatah percobaan pertama yang panjang');
+  assert.equal(result.tried[0].ms, 90_000, 'jejak percobaan menyebut lama yang sungguh terjadi');
+  assert.equal(result.tried[1].reason, 'no answer within 20s', 'kandidat cadangan tetap berjatah kecil');
+  assert.equal(result.tried[1].ms, 20_000);
+});
+
 test('sisa waktu di bawah reservasi membatalkan percobaan ulang', async () => {
   let calls = 0;
   let clock = 0;
