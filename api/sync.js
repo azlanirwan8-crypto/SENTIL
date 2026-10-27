@@ -34,7 +34,7 @@ const PENDING_STATUSES = new Set(['running', 'storing']);
 // Fase terakhir yang bisa dibaca dari cap status saja, untuk polling yang tidak menemukan catatan
 // progres (kolom progress belum dipasang di database, atau penarikan dimulai sebelum catatan itu
 // ada). Cap status itu nyata, jadi fasenya nyata — persennya tidak, dan karena itu tidak dikirim.
-const STATUS_PHASE = { running: 'fetch', storing: 'write', ok: 'done', empty: 'done', unchanged: 'done', error: 'failed', abandoned: 'failed' };
+const STATUS_PHASE = { running: 'fetch', storing: 'write', ok: 'done', empty: 'done', unchanged: 'done', recomputed: 'done', error: 'failed', abandoned: 'failed' };
 
 // Catatan progres minimum dari cap status saja. Persennya dihitung oleh fungsi yang sama seperti
 // catatan hidup, jadi aturan yang sama berlaku: tanpa penyebut yang terukur, tidak ada angka yang
@@ -191,7 +191,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
   // Satu pekerjaan penarikan: baca penanda inkremental, tarik, analisis, simpan. Dipakai baik
   // oleh jalur latar belakang (Vercel) maupun jalur inline (server lokal / uji), jadi hanya ada
   // satu urutan kerja untuk keduanya.
-  async function runPullJob(args, workspace, { jobId = null } = {}) {
+  async function runPullJob(args, workspace, { jobId = null, runId = null } = {}) {
     const startedAt = Date.now();
     const deadlineAt = pullDeadline({ startedAt, env });
     const { since, carry, note: cacheNote } = await readIncremental(db, workspace?.id, args.force);
@@ -199,7 +199,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
     // project tidak punya dua penarikan yang berjalan bersamaan.
     const progressKey = workspace?.id || jobId || `inline:${startedAt}`;
     pullProgress.begin(progressKey, { workspaceId: workspace?.id || null, entity: args.entity });
-    let runRowId = null;
+    let runRowId = typeof runId === 'number' ? runId : null;
     let lastFlush = 0;
     // Progres ditulis ke baris riwayat yang sama supaya instance lain bisa menjawab polling.
     // Ditahap 2 detik: 51.000 baris punya puluhan peristiwa, dan tiap peristiwa tidak perlu jadi
@@ -239,9 +239,12 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       lastFlush = 0;
       flush();
     };
-    // Cap 'running' hanya ditulis kalau pekerjaan ini benar-benar punya project: tanpa identitas,
-    // tidak ada yang bisa mem-polling dan baris tanpa workspace_id hanya mengotori riwayat.
-    if (workspace?.id) runRowId = await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: cacheNote, elapsedMs: null });
+    // Cap 'running' ditulis di sini kalau belum ditulis oleh permintaan yang menjawab 202.
+    // Tanpa identitas project tidak ada yang bisa mem-polling, jadi baris tanpa workspace_id
+    // hanya mengotori riwayat. Catatan cache pindah ke cap 'storing' kalau baris 'running'
+    // sudah lebih dulu ditulis (saat itu penanda inkrementalnya belum terbaca).
+    const claimed = runRowId !== null;
+    if (workspace?.id && !claimed) runRowId = await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: cacheNote, elapsedMs: null });
     try {
       const result = await service.sync({ ...args, since, carry, deadlineAt, onProgress });
       if (workspace?.id) {
@@ -251,7 +254,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           status: 'storing',
           reviews: Array.isArray(result.reviews) ? result.reviews.length : result.incremental?.carried ?? null,
           channels: Array.isArray(result.channels) ? result.channels.map(channel => ({ id: channel.id, status: channel.status, fetched: channel.fetched })) : null,
-          error: null,
+          error: claimed ? cacheNote : null,
           elapsedMs: Date.now() - startedAt,
         });
       }
@@ -411,7 +414,15 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           // Jawaban keluar dulu, pekerjaan jalan di belakang. Peramban menyambungkan statusnya
           // lewat aksi "job" — tidak ada lagi permintaan HTTP yang menggantung 90+ detik.
           const jobId = `${workspace?.id || 'anonymous'}:${Date.now()}`;
-          hold(runPullJob(args, workspace, { jobId }).catch(error => {
+          // Cap 'running' ditulis sebelum jawaban 202 meninggalkan fungsi. Kalau tidak, polling
+          // pertama (2 detik kemudian) masih menemukan baris penarikan SEBELUMNYA — dan kalau
+          // baris lama itu berstatus abandoned atau error, peramban berhenti menunggu padahal
+          // penarikannya baru saja mulai. Dengan baris yang lebih dulu ada, baris terbaru selalu
+          // milik pekerjaan ini, dan layar progres punya sesuatu yang jujur untuk dibaca.
+          const runId = workspace?.id
+            ? await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: null, elapsedMs: null })
+            : null;
+          hold(runPullJob(args, workspace, { jobId, runId }).catch(error => {
             if (error instanceof SyncError || Number.isInteger(error?.status)) return;
             console.error('[api/sync] kegagalan pekerjaan latar belakang:', error);
           }));
@@ -442,9 +453,15 @@ export function createSyncHandler(service = syncService, { db = database, quota 
         // berhenti menunggu dan data lama yang tersimpan tetap terbaca.
         const abandoned = PENDING_STATUSES.has(stored?.status) && Number.isFinite(born)
           && Date.now() - born > ceilingMs(env) + ABANDONED_MARGIN_MS;
-        const run = abandoned
-          ? { ...stored, status: 'abandoned', error: 'The server reached its platform time limit while this pull was running, so nothing was written and the stored snapshot was left untouched. Pull again — the pages already read make the next run shorter.' }
-          : stored;
+        // Jawaban 202 membawa jobId `<project>:<epoch fungsi>`. Baris riwayat yang lahir sebelum
+        // epoch itu bukan milik pekerjaan ini — biasanya cap penarikan sebelumnya. Melaporkannya
+        // sebagai selesai membuat peramban berhenti menunggu penarikan yang baru saja mulai, jadi
+        // baris asing itu dibaca sebagai "belum ada kabar" dan polling terus berjalan.
+        const jobBorn = Number.parseInt(String(payload.jobId || '').split(':').pop(), 10);
+        const foreign = Number.isFinite(jobBorn) && Number.isFinite(born) && born < jobBorn - 5_000;
+        const run = foreign ? null : (abandoned
+          ? { ...stored, status: 'abandoned', error: 'The server stopped before this pull could record that it finished, so its result cannot be read from here. What is on screen is still the last snapshot that did finish. Pull again — the pages already read make the next run shorter.' }
+          : stored);
         // Progres dibaca dari memori instance ini kalau ada; kalau polling mendarat di instance
         // lain, yang dipakai adalah snapshot terakhir yang tersimpan di baris riwayat. Tanpa
         // keduanya, klien tetap mendapat status fase dari riwayat — tanpa persen, bukan dengan
@@ -459,9 +476,9 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           action: 'job',
           db: probe,
           workspaceId,
-          pending: PENDING_STATUSES.has(run?.status),
-          finished: run ? !PENDING_STATUSES.has(run.status) : false,
-          abandoned,
+          pending: foreign || PENDING_STATUSES.has(run?.status),
+          finished: foreign ? false : (run ? !PENDING_STATUSES.has(run.status) : false),
+          abandoned: foreign ? false : abandoned,
           progress,
           run,
         });

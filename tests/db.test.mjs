@@ -165,7 +165,7 @@ describe('tulis snapshot', () => {
     assert.equal(seen.every(chunk => chunk.rows === 2500), true, 'jumlah baris ikut dilaporkan supaya persen bisa dicocokkan');
   });
 
-  test('riwayat mengembalikan id barisnya dan progres ditambal ke baris itu', async () => {
+  test('riwayat mengembalikan id barisnya dan progres hanya ditambal lewat PATCH', async () => {
     const { calls, fetchImpl } = recorder(({ url, method }) => {
       if (method === 'POST' && url.pathname.endsWith('sentil_sync_run')) return ok([{ id: 77 }]);
       return noContent();
@@ -175,7 +175,7 @@ describe('tulis snapshot', () => {
     assert.equal(runId, 77, 'id diperlukan supaya instance lain bisa menjawab polling');
     const insert = calls[0];
     assert.equal(insert.prefer.includes('return=representation'), true, 'tanpa representation tidak ada id yang kembali');
-    assert.equal(insert.body[0].progress.phase, 'fetch');
+    assert.equal('progress' in insert.body[0], false, 'kolom progres belum ada di instalasi lama: insert yang memuat key asing ditolak PostgREST, dan riwayat penarikan hilang seluruhnya');
     const patched = await db.updateRunProgress(runId, { phase: 'write', chunks: { done: 2, total: 5 }, overallPercent: 84.2 });
     assert.equal(patched, true);
     const patch = calls.find(call => call.method === 'PATCH');

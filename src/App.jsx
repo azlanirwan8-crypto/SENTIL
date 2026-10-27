@@ -41,19 +41,21 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Menyambungkan penarikan yang berjalan di latar belakang: tunggu status selesai, lalu baca
 // kembali dataset yang baru disimpan. Yang dikembalikan berbentuk sama seperti jawaban penarikan
 // biasa, jadi sisa halaman tidak perlu tahu ada dua jalur.
-async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = JOB_BUDGET_MS, onProgress = null } = {}) {
+async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = JOB_BUDGET_MS, jobId = null, onProgress = null } = {}) {
   const startedAt = Date.now();
   let run = null;
   while (Date.now() - startedAt < budgetMs) {
     await sleep(pollingMs);
     let state;
     try {
-      state = await fetchJob(workspaceId);
+      // jobId dikirim supaya server tahu baris riwayat mana yang milik penarikan ini; tanpa itu
+      // polling pertama bisa membaca cap penarikan sebelumnya dan melaporkannya sebagai selesai.
+      state = await fetchJob(workspaceId, jobId);
     } catch (error) {
       return { ok: false, reason: error.message || 'The pull status could not be read.' };
     }
     if (state.run) run = state.run;
-    if (typeof onProgress === 'function') onProgress(state.progress || null, run);
+    if (state.progress && typeof onProgress === 'function') onProgress(state.progress, run);
     if (state.finished) break;
   }
   if (!run || run.status === 'running' || run.status === 'storing') {
@@ -233,7 +235,7 @@ export default function App() {
         // Jawaban pertama hanya berisi "pekerjaan diterima". Data datang setelah pekerjaan di
         // server selesai, dibaca ulang dari database lewat status pekerjaan.
         pushToast('The pull is running on the server. Keep browsing; this screen updates when it finishes.', 'info', 'Pull moved to the background');
-        const awaited = await awaitPullJob(workspace.id, { pollingMs: data.pollingMs, onProgress: setSyncProgress });
+        const awaited = await awaitPullJob(workspace.id, { pollingMs: data.pollingMs, jobId: data.jobId, onProgress: setSyncProgress });
         if (!awaited.ok) {
           setSyncError(awaited.reason);
           pushToast(awaited.reason, awaited.stillRunning ? 'warning' : 'error', awaited.stillRunning ? 'Still running' : 'Pull did not complete');
