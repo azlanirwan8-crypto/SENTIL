@@ -356,7 +356,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               {Object.entries(signals.rules || {}).map(([key, value]) => (
                 <div key={key}>
                   <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t(RULE_LABELS[key] || key)}</dt>
-                  <dd className="mt-0.5 text-[10px] leading-relaxed text-slate-400">{typeof value === 'number' ? formatNumber(value) : String(value)}</dd>
+                  <dd className="mt-0.5 text-[10px] leading-relaxed text-slate-400">{typeof value === 'number' ? formatNumber(value) : t(String(value))}</dd>
                 </div>
               ))}
             </dl>
@@ -570,12 +570,12 @@ export function ModelView({ dataset, workspace, db, onExport }) {
                 ? `${formatNumber(labelMetrics.trimmedLabels)} ${t('gerombol di luar anggaran tampil tetap dihitung dan dilaporkan di angka ini.')}`
                 : t('Seluruh gerombol muat di anggaran tampil.')}{' '}
               {formatNumber(labelMetrics.namedFromTerm || 0)} {t('dari')} {formatNumber(painLabels.length)} {t('nama label adalah kata jangkar yang dijagokan lebih dari satu anggotanya; sisanya memakai frasa utuh apa adanya.')}{' '}
-              {pain.labelRules?.heading || t('Judul adalah nama topik ditambah frasa anggota yang paling informatif, selalu teks asli reviewers.')}{' '}
-              {pain.labelRules?.link || t('Dua frasa digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan.')}{' '}
-              {pain.labelRules?.closure || t('Gabungan diterima hanya kalau seluruh silangan anggotanya lolos uji, jadi gerombol tidak menyatu karena rantai.')}{' '}
+              {t(pain.labelRules?.heading || 'Judul adalah nama topik ditambah frasa anggota yang paling informatif, selalu teks asli reviewers.')}{' '}
+              {t(pain.labelRules?.link || 'Dua frasa digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan.')}{' '}
+              {t(pain.labelRules?.closure || 'Gabungan diterima hanya kalau seluruh silangan anggotanya lolos uji, jadi gerombol tidak menyatu karena rantai.')}{' '}
               {t('Arah dihitung dari')} {pain.labelMetrics?.trend ? `${t('rentang')} ${pain.labelMetrics.trend.firstDay} ${t('sampai')} ${pain.labelMetrics.trend.lastDay}` : t('rentang tanggal yang tidak tersedia')}.{' '}
               {t('Kolom')} <span className="font-semibold text-slate-300">{t('Kanal')}</span> {t('adalah kanal yang paling banyak memuat label itu, dibaca sebagai porsi keluhan kanal tersebut.')}{' '}
-              {t('Kolom')} <span className="font-semibold text-slate-300">{t('Kategori')}</span> {t('punya dua sumber dan keduanya ditulis di barisnya: nama topik kamus domain yang lolos uji kepadatan')} ({pain.labelRules?.category || t('lebih dari satu ulasan gerombol memuatnya, dan porsinya beda nyata dari keluhan lain')}), {t('atau nama yang diberi model bahasa')}{' '}
+              {t('Kolom')} <span className="font-semibold text-slate-300">{t('Kategori')}</span> {t('punya dua sumber dan keduanya ditulis di barisnya: nama topik kamus domain yang lolos uji kepadatan')} ({t(pain.labelRules?.category || 'lebih dari satu ulasan gerombol memuatnya, dan porsinya beda nyata dari keluhan lain')}), {t('atau nama yang diberi model bahasa')}{' '}
               ({ai?.status === 'answered' ? `${ai.model} ${t('atas')} ${formatNumber(ai.clusters || 0)} ${t('gerombol')}, ${formatNumber(painLabels.filter(entry => ai.names?.[entry.id]?.category).length)} ${t('baris tampil bernama model')}` : `${t('lapisan analis berstatus')} ${ai?.status || t('belum ada di snapshot ini')}${ai?.reason ? ` — ${ai.reason}` : ''}`}).
               {' '}{t('Yang tidak pernah terjadi: angka ikut menamai atau ikut dinamai — seluruh kolom jumlah, porsi, pujian, arah, dan kanal tetap pengukuran mesin.')}
             </p>

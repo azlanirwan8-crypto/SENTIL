@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import { EN_TO_ID, ID_TO_EN } from '../src/lib/i18n-phrases.js';
+import { detectLanguage } from '../lib/language.mjs';
 import { bilingual, bilingualAlias, getLanguage, setLanguage, t, topicAlias, topicLabel } from '../src/lib/i18n.js';
 
 const SRC = fileURLToPath(new URL('../src', import.meta.url));
@@ -231,4 +232,48 @@ test('pengalih bendera terpasang di bilah atas dengan nama yang bisa dibaca', ()
   assert.match(topBar, /aria-label=\{t\('Switch to English'\)\}/);
   assert.match(topBar, /aria-label=\{t\('Switch to Indonesian'\)\}/);
   assert.match(topBar, /aria-pressed=\{language === 'id'\}/, 'status aktif harus terbaca oleh screen reader, bukan hanya warna border');
+});
+
+// Dua aturan yang menjaga tabel dari kebalikannya sendiri. Baris [Inggris, Indonesia] yang
+// tersimpan di tabel Indonesia→Inggris membuat mode Inggris menampilkan kata Indonesia
+// ("dari", "Dilaporkan", "GEROMBOL"), dan kebalikannya membuat Metode berbahasa Indonesia
+// menampilkan kata Inggris. Keduanya tidak terlihat dari pengujian satu bahasa saja.
+test('tak ada baris tabel yang memakai arah terbalik atau kunci yang bertabrakan', () => {
+  const en = new Map(EN_TO_ID);
+  const id = new Map(ID_TO_EN);
+  const langOf = value => {
+    const { language } = detectLanguage(value);
+    return language === 'id' || language === 'en' ? language : null;
+  };
+  for (const [name, table, want] of [['EN_TO_ID', EN_TO_ID, ['en', 'id']], ['ID_TO_EN', ID_TO_EN, ['id', 'en']]]) {
+    const reversed = table.filter(([key, value]) => key !== value && langOf(key) === want[1] && langOf(value) !== want[1]);
+    assert.deepEqual(reversed, [], `${name} memuat baris dengan arah terbalik: ${JSON.stringify(reversed.slice(0, 3))}`);
+  }
+  const clash = [...id.keys()].filter(key => en.has(key) && !(en.get(key) === key && id.get(key) === key));
+  assert.deepEqual(clash, [], `satu literal tidak boleh jadi kunci di kedua tabel: ${JSON.stringify(clash.slice(0, 5))}`);
+});
+
+// Nilai `label:` di dalam array tidak melewati t('...') di tempatnya ditulis, jadi pemetikan
+// literal tidak menjangkaunya. Menu adalah bagian UI yang paling sering dilihat: kalau salah
+// satunya tidak punya pasangan, mode Indonesia diam-diam menampilkan satu menu bahasa Inggris.
+test('setiap label menu punya pasangan dua arah', () => {
+  const sidebar = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8');
+  const labels = [...sidebar.matchAll(/label: '([^']+)'/g)].map(match => match[1]);
+  assert.equal(labels.length, 5, 'lima menu: Dashboard, Review, Platform, Compare, Metode');
+  const en = new Map(EN_TO_ID);
+  const id = new Map(ID_TO_EN);
+  for (const label of labels) {
+    const changesInId = en.has(label) && en.get(label) !== label;
+    const changesInEn = id.has(label) && id.get(label) !== label;
+    assert.ok(changesInId || changesInEn, `menu ${label} tidak pernah berganti bahasa`);
+  }
+  for (const lang of ['en', 'id']) {
+    setLanguage(lang);
+    const rendered = labels.map(label => t(label));
+    assert.equal(new Set(rendered).size, rendered.length, `${lang}: label menu tidak boleh bentrok setelah diterjemahkan`);
+    for (const text of rendered) {
+      assert.match(text, lang === 'id' ? /[a-zà-ÿ]/ : /[A-Za-z]/, `${lang}: menu "${text}" kosong`);
+    }
+  }
+  setLanguage('en');
 });
