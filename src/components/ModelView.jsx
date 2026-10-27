@@ -58,7 +58,7 @@ function Panel({ title, meta, action, children, className = '' }) {
 
 function Step({ index, title, detail, metric }) {
   return (
-    <div className="min-w-0 border-slate-800/70 p-3">
+    <div className="min-w-0 border-slate-800/70 px-3.5 py-3.5">
       <div className="flex items-baseline gap-2">
         <span className="font-mono text-[10px] font-bold text-accent">{index}</span>
         <p className="truncate text-[11px] font-bold text-slate-200">{title}</p>

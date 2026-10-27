@@ -109,3 +109,56 @@ describe('gerakan dan tabel', () => {
     assert.deepEqual(inline, [], 'bilah progres tidak boleh ditulis ulang per komponen');
   });
 });
+
+describe('warna data tidak dipinjam dari warna interaksi', () => {
+  // accent adalah warna status dan navigasi. Ketika ia juga dipakai untuk memwarnai badge
+  // di baris data, satu layar punya dua arti untuk satu warna — dan badge itu berdiri
+  // bersebelahan dengan pill sentimen yang hue-nya berdekatan.
+  test('baris data dan panel sinyal tidak memakai accent sebagai warna badge', () => {
+    for (const name of ['ReviewsView.jsx', 'Signals.jsx', 'PainLabels.jsx', 'KpiRow.jsx', 'charts/TopicMap.jsx']) {
+      const source = readFileSync(new URL(`../src/components/${name}`, import.meta.url), 'utf8');
+      assert.equal(/bg-accent\/\d+/.test(source), false, `${name} mewarnai baris data dengan warna interaksi`);
+    }
+  });
+
+  test('satu primitif badge dipakai bersama, bukan ditulis ulang per komponen', () => {
+    const reviews = readFileSync(new URL('../src/components/ReviewsView.jsx', import.meta.url), 'utf8');
+    assert.match(reviews, /className="tag[ "]/, '.tag harus dipakai, bukan kombinasi bg-accent yang diulang');
+    assert.match(reviews, /tag-quiet/);
+    for (const name of COMPONENTS) {
+      const source = readFileSync(new URL(`../src/components/${name}`, import.meta.url), 'utf8');
+      assert.equal(/rounded bg-accent\/\d+/.test(source), false, `${name} menulis ulang badge accent`);
+    }
+  });
+});
+
+describe('chart tidak boleh memotong atau menindih', () => {
+  test('kolom nama Complaint Map cukup lebar untuk isi kamus', () => {
+    const topic = readFileSync(new URL('../src/components/charts/TopicMap.jsx', import.meta.url), 'utf8');
+    const width = Number(/const LABEL_WIDTH = (\d+)/.exec(topic)?.[1] || 0);
+    assert.ok(width >= 150, `LABEL_WIDTH ${width} memotong nama topik terpanjang yang diukur di korpus nyata`);
+    // Dua segmen harus punya jarak; tanpa jeda, keluhan dan pujian dibaca satu blok.
+    assert.match(topic, /left: `calc\(\$\{complaintWidth\}% \+ 2px\)`/);
+  });
+
+  test('nama label keluhan tidak bisa ditekan sampai 0px oleh bilahnya', () => {
+    const pain = readFileSync(new URL('../src/components/PainLabels.jsx', import.meta.url), 'utf8');
+    assert.match(pain, /min-w-\[\d{3}px\]/, 'kolom nama butuh lebar minimum supaya teks tidak hilang');
+    assert.equal(pain.includes('w-full max-w-[110px]'), false, 'bilah yang tumbuh menekan nama sampai 0px');
+  });
+
+  test('segmen donut memakai cap rata', () => {
+    const donut = readFileSync(new URL('../src/components/charts/ChannelDonut.jsx', import.meta.url), 'utf8');
+    assert.match(donut, /strokeLinecap="butt"/, 'ujung bulat memanjang setengah lebar garis dan menindih tetangga');
+    assert.equal(donut.includes('strokeLinecap="round"'), false);
+  });
+
+  test('satu kebijakan opasitas untuk semua batang, dipakai bersama', () => {
+    const palette = readFileSync(new URL('../src/components/charts/palette.js', import.meta.url), 'utf8');
+    assert.match(palette, /export const BAR_OPACITY = \{ dimmed: [\d.]+, idle: [\d.]+, active: 1 \}/);
+    for (const name of ['DailyTrend.jsx', 'PlatformBars.jsx', 'TopicMap.jsx']) {
+      const source = readFileSync(new URL(`../src/components/charts/${name}`, import.meta.url), 'utf8');
+      assert.match(source, /BAR_OPACITY/, `${name} menulis angka opasitasnya sendiri`);
+    }
+  });
+});

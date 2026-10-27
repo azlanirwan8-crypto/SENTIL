@@ -133,7 +133,7 @@ export function PainLabels({ pain, filtered = false }) {
               const store = entry.category;
               return (
                 <tr key={entry.id} className={`border-b border-slate-800/50 last:border-0 ${active ? 'bg-slate-800/40' : ''}`}>
-                  <th scope="row" className="py-1.5 pr-3 text-left font-normal">
+                  <th scope="row" className="min-w-[212px] py-1.5 pr-3 text-left font-normal">
                     <button
                       type="button"
                       onClick={() => setOpen(active ? null : entry.id)}
@@ -142,10 +142,12 @@ export function PainLabels({ pain, filtered = false }) {
                       aria-label={`${entry.name}: ${formatNumber(entry.reviewCount)} of ${formatNumber(pool)} 1–2 star reviews, ${formatNumber(entry.phraseCount)} supporting phrase${entry.phraseCount === 1 ? '' : 's'}.`}
                       className="group flex w-full items-center gap-2 text-left"
                     >
-                      <span className="relative h-3 w-full max-w-[110px] shrink-0 overflow-hidden rounded-[2px] bg-slate-800/50">
+                      {/* Bilahnya lebar tetap, nama fleksibel. Sebelumnya bilah ikut tumbuh sampai
+                          110px dan menekan nama sampai 0px: di lebar 440px teksnya hilang seluruhnya. */}
+                      <span className="relative h-3 w-[56px] shrink-0 overflow-hidden rounded-[2px] bg-slate-800/50">
                         <span className="absolute inset-y-0 left-0 rounded-[2px] bg-neg/70" style={{ width: `${width}%` }} />
                       </span>
-                      <span className={`min-w-0 truncate text-[11px] font-semibold ${entry.nameSource === 'term' ? 'capitalize' : 'font-mono'} ${active ? 'text-slate-50' : 'text-slate-200 group-hover:text-slate-50'}`}>
+                      <span title={entry.name} className={`min-w-0 flex-1 truncate text-[11px] font-semibold ${entry.nameSource === 'term' ? 'capitalize' : 'font-mono'} ${active ? 'text-slate-50' : 'text-slate-200 group-hover:text-slate-50'}`}>
                         {entry.name}
                       </span>
                       {entry.phraseCount > 1 ? (

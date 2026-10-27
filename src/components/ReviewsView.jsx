@@ -61,7 +61,7 @@ function ReviewRow({ review, topicLabels }) {
   const primary = topicLabels[0] || null;
 
   return (
-    <li className="card relative overflow-hidden p-3 pl-3.5">
+    <li className="card relative overflow-hidden p-3.5 pl-4">
       <span className="absolute inset-y-0 left-0 w-[2px]" style={{ backgroundColor: SENTIMENT_COLOR[sentiment] }} aria-hidden="true" />
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <StoreMark store={review.platform} size={18} tone="quiet" />
@@ -154,6 +154,7 @@ export function ReviewsView({ dataset }) {
   const [topic, setTopic] = useState('all');
   const [rating, setRating] = useState('all');
   const [sort, setSort] = useState('newest');
+  const [allTopics, setAllTopics] = useState(false);
   const [visible, setVisible] = useState(PAGE);
   const reviews = Array.isArray(dataset.reviews) ? dataset.reviews : [];
   const topics = Array.isArray(dataset.model?.topics) ? dataset.model.topics : [];
@@ -207,6 +208,14 @@ export function ReviewsView({ dataset }) {
   }, [reviews, platform, sentiment, topic, rating, deferredQuery, sort]);
 
   const shown = filtered.slice(0, visible);
+  // Topik terpilih harus tetap tampil walau daftar ditutup; kalau tidak, filter berjalan tanpa
+  // ada satu pun badge yang menunjukkannya.
+  const shownTopics = useMemo(() => {
+    if (allTopics || topics.length <= 8) return topics;
+    const head = topics.slice(0, 8);
+    const selected = topics.find(item => item.id === topic);
+    return selected && !head.some(item => item.id === selected.id) ? [...head, selected] : head;
+  }, [allTopics, topics, topic]);
   const activeFilters = platform !== 'all' || sentiment !== 'all' || topic !== 'all' || rating !== 'all' || Boolean(query.trim());
 
   function resetFilters() {
@@ -226,8 +235,8 @@ export function ReviewsView({ dataset }) {
 
   return (
     <div className="space-y-3">
-      <section className="card p-3" aria-label="Review filters">
-        <div className="flex flex-wrap items-center gap-2">
+      <section className="card px-4 py-3" aria-label="Review filters">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
           <div className="relative min-w-[180px] flex-1 sm:max-w-[280px]">
             <label htmlFor="review-search" className="sr-only">Search text, title, or reviewer name</label>
             <IconSearch size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -275,8 +284,8 @@ export function ReviewsView({ dataset }) {
           )}
         </div>
 
-        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-slate-800/70 pt-2.5">
-          <div role="group" aria-label="Channel filter" className="flex flex-wrap items-center gap-1.5">
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-800/70 pt-2.5">
+          <div role="group" aria-label="Channel filter" className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <button type="button" onClick={() => change(setPlatform, 'all')} aria-pressed={platform === 'all'} className={`filter-chip ${platform === 'all' ? 'filter-chip-active' : ''}`}>
               All channels <span className="num">{formatNumber(reviews.length)}</span>
             </button>
@@ -287,7 +296,7 @@ export function ReviewsView({ dataset }) {
             ))}
           </div>
           <span className="mx-1 hidden h-4 w-px bg-slate-800 sm:block" />
-          <div role="group" aria-label="Sentiment label filter" className="flex flex-wrap items-center gap-1.5">
+          <div role="group" aria-label="Sentiment label filter" className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             {SENTIMENTS.map(option => (
               <button
                 key={option.id}
@@ -304,12 +313,12 @@ export function ReviewsView({ dataset }) {
         </div>
 
         {topics.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-slate-800/70 pt-2.5" role="group" aria-label="Complaint topic filter">
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-800/70 pt-2.5" role="group" aria-label="Complaint topic filter">
             <span className="label-sm mr-0.5">Topics</span>
             <button type="button" onClick={() => change(setTopic, 'all')} aria-pressed={topic === 'all'} className={`filter-chip ${topic === 'all' ? 'filter-chip-active' : ''}`}>
               All topics <span className="num">{formatNumber(reviews.length)}</span>
             </button>
-            {topics.map(item => (
+            {shownTopics.map(item => (
               <button
                 key={item.id}
                 type="button"
@@ -321,6 +330,16 @@ export function ReviewsView({ dataset }) {
                 {item.name} <span className="num">{formatNumber(item.total)}</span>
               </button>
             ))}
+            {topics.length > 8 && (
+              <button
+                type="button"
+                onClick={() => setAllTopics(value => !value)}
+                aria-expanded={allTopics}
+                className="link-quiet text-[10px] font-semibold"
+              >
+                {allTopics ? 'Show fewer' : `Show all ${topics.length} topics`}
+              </button>
+            )}
           </div>
         )}
       </section>
