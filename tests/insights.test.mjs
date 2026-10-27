@@ -61,18 +61,25 @@ const render = entry => (entry.unit === 'percent' ? `${(entry.value * 100).toFix
 // di kalimatnya. Tanggal diterima apa adanya karena itu memang teks hasil ukur.
 function assertNumbersAreMeasured(item, label) {
   const texts = item.facts.map(render);
-  const withoutDates = item.body.replace(/\d{4}-\d{2}-\d{2}/g, ' ');
-  const tokens = withoutDates.match(/\d[\d.,]*/g) || [];
-  for (const token of tokens) {
-    const clean = token.replace(/[.,]$/, '');
-    assert.ok(
-      texts.some(text => text === clean || text.startsWith(clean) || clean.startsWith(text)),
-      `${label}: angka "${clean}" ada di kalimat tapi bukan hasil ukur (${JSON.stringify(texts)})`,
-    );
+  // Kedua bahasa diuji: mesin menulis dua kalimat dari `facts` yang sama, jadi tidak boleh ada
+  // satu angka pun yang hanya muncul di salah satunya — angka adalah hasil ukur, bukan gaya.
+  for (const field of ['title', 'body', 'titleId', 'bodyId']) {
+    assert.equal(typeof item[field], 'string', `${label}: ${field} hilang — bahasa kedua bukan pilihan`);
+    const withoutDates = item[field].replace(/\d{4}-\d{2}-\d{2}/g, ' ');
+    for (const token of withoutDates.match(/\d[\d.,]*/g) || []) {
+      const clean = token.replace(/[.,]$/, '');
+      assert.ok(
+        texts.some(text => text === clean || text.startsWith(clean) || clean.startsWith(text)),
+        `${label}: angka "${clean}" ada di ${field} tapi bukan hasil ukur (${JSON.stringify(texts)})`,
+      );
+    }
   }
+  // Setiap hasil ukur harus tertulis di kalimatnya, di kedua bahasa. Judul boleh memikul angka
+  // yang tidak diulang di badan kalimat — asal di kedua bahasa memikulnya hal yang sama.
   for (const entry of item.facts) {
     const text = render(entry);
-    assert.ok(item.body.includes(text) || item.title.includes(text), `${label}: facts.${entry.key} (${text}) tidak tertulis di kalimatnya`);
+    assert.ok(item.body.includes(text) || item.title.includes(text), `${label}: facts.${entry.key} (${text}) tidak tertulis di body/title`);
+    assert.ok(item.bodyId.includes(text) || item.titleId.includes(text), `${label}: facts.${entry.key} (${text}) tidak tertulis di bodyId/titleId`);
   }
 }
 

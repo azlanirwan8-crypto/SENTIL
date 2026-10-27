@@ -364,7 +364,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               ))}
             </dl>
             <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-              {t("Teks sinyal memakai bahasa Inggris karena ia bagian dari data yang dihitung di server, sama seperti nama kanal dan frasa reviewers.")}{' '}
+              {t("Kalimat sinyal ditulis mesin dalam dua bahasa dari angka yang sama, jadi memindahkan bendera tidak mengubah klaimnya. Snapshot lama hanya punya bahasa Inggris, dan itu yang ditampilkan — tidak ada terjemahan yang dikarang.")}{' '}
               {signals.metrics?.trimmed
                 ? `${formatNumber(signals.metrics.trimmed)} ${t('kandidat di luar anggaran tampil tetap dihitung di angka kandidat.')}`
                 : t('Tidak ada kandidat yang dipangkas.')}{' '}

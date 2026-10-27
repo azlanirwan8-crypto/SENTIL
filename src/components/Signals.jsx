@@ -1,5 +1,5 @@
 import { formatDecimal, formatNumber } from '../lib/format.js';
-import { t, topicLabel } from '../lib/i18n.js';
+import { getLanguage, t, topicLabel } from '../lib/i18n.js';
 import { AnalystBadge, aiText } from './Analyst.jsx';
 import { ChartFrame } from './charts/ChartFrame.jsx';
 import { EmptyState } from './EmptyState.jsx';
@@ -52,14 +52,20 @@ function factValue(entry) {
 
 export function Signal({ item, area = null }) {
   const kind = KINDS[item.kind] || { label: item.kind, tone: 'text-slate-300 border-slate-700' };
+  // Mesin menulis kedua bahasa dari angka yang sama, jadi berpindah bahasa tidak memicu
+  // perhitungan ulang dan tidak pernah menghasilkan kalimat yang berbeda klaimnya. Snapshot
+  // lama (sebelum `titleId`/`bodyId`) tetap menampilkan bahasa Inggris, bukan terjemahan karangan.
+  const both = getLanguage() === 'id';
+  const title = (both && item.titleId) || item.title;
+  const body = (both && item.bodyId) || item.body;
   return (
     <li className="break-inside-avoid rounded border border-slate-800/70 bg-slate-900/40 px-2.5 py-2">
       <div className="flex items-baseline gap-2">
         <span className={`shrink-0 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-wider ${kind.tone}`}>
           {t(kind.label)}
         </span>
-        {/* judul dan badan kalimat ditulis mesin di server: keduanya data, tidak diterjemahkan */}
-        <p className="min-w-0 text-[12px] font-bold leading-snug text-slate-100">{item.title}</p>
+        {/* judul dan badan kalimat ditulis mesin di server: keduanya data hasil ukur */}
+        <p className="min-w-0 text-[12px] font-bold leading-snug text-slate-100">{title}</p>
       </div>
       {area ? (
         <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
@@ -68,11 +74,11 @@ export function Signal({ item, area = null }) {
           <span className="tag-quiet" title={t('the same source that named this row in Complaint labels')}>{area.source}</span>
         </p>
       ) : null}
-      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{item.body}</p>
-      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1.5" aria-label={`${t('Measurements behind')}: ${item.title}`}>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{body}</p>
+      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1.5" aria-label={`${t('Measurements behind')}: ${title}`}>
         {item.facts.map(entry => (
           <li key={entry.key} className="flex items-baseline gap-1">
-            <span className="text-[9px] uppercase tracking-wider text-slate-400">{entry.label}</span>
+            <span className="text-[9px] uppercase tracking-wider text-slate-400">{t(entry.label)}</span>
             <span className="num text-[11px] font-semibold text-slate-200">{factValue(entry)}</span>
           </li>
         ))}
