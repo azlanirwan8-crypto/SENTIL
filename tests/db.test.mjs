@@ -169,22 +169,42 @@ describe('tulis snapshot', () => {
 
 describe('baca snapshot', () => {
   test('halaman ulasan dirangkai sampai halaman terakhir habis', async () => {
-    const first = Array.from({ length: 2000 }, (_, index) => ({ payload: reviewOf(index) }));
-    const second = Array.from({ length: 400 }, (_, index) => ({ payload: reviewOf(2000 + index) }));
+    const first = Array.from({ length: 1000 }, (_, index) => ({ payload: reviewOf(index) }));
+    const second = Array.from({ length: 400 }, (_, index) => ({ payload: reviewOf(1000 + index) }));
     const { calls, fetchImpl } = recorder(({ url }) => {
-      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 2400, entity: 'aud', model: {}, summary: {} }]);
+      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 1400, entity: 'aud', model: {}, summary: {} }]);
       const offset = Number(url.searchParams.get('offset'));
       if (offset === 0) return ok(first);
-      if (offset === 2000) return ok(second);
+      if (offset === 1000) return ok(second);
       return ok([]);
     });
     const db = createDatabase({ env: ENV, fetchImpl });
     const dataset = await db.loadDataset('ws-1');
-    assert.equal(dataset.reviews.length, 2400);
-    assert.equal(dataset.reviews[2399].id, 'r-2399');
+    assert.equal(dataset.reviews.length, 1400);
+    assert.equal(dataset.reviews[1399].id, 'r-1399');
     assert.equal(dataset.stored.revision, 7);
     assert.equal(calls.filter(call => call.path.startsWith('/rest/v1/sentil_review')).length, 2, 'halaman pendek menghentikan paging tanpa permintaan tambahan');
     assert.equal(calls[1].path.includes('revision=eq.7'), true, 'hanya revisi aktif yang dibaca');
+  });
+
+  test('pembacaan yang berhenti di tengah korpus dihentikan, bukan disimpan sebagai analisis baru', async () => {
+    // Regresi produksi: halaman minta 2.000 baris tetapi PostgREST mengembalikan plafon 1.000,
+    // dan halaman pendek itu dibaca sebagai "selesai" — satu hitung ulang lalu menulis 1.000 baris
+    // sebagai pengganti 69.356. Kepala dataset tahu berapa banyak yang seharusnya ada.
+    const first = Array.from({ length: 1000 }, (_, index) => ({ payload: reviewOf(index) }));
+    const { calls, fetchImpl } = recorder(({ url }) => {
+      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 69356, entity: 'aud', model: {}, summary: {} }]);
+      const offset = Number(url.searchParams.get('offset'));
+      if (offset === 0) return ok(first);
+      return ok([]);
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    await assert.rejects(() => db.loadDataset('ws-1'), error => {
+      assert.equal(error.code, 'db_incomplete_read');
+      assert.match(error.message, /holds 69356 reviews but only 1000 could be read/);
+      return true;
+    });
+    assert.equal(calls.filter(call => call.method === 'POST').length, 0, 'pembacaan cacat tidak boleh menulis apa pun');
   });
 
   test('halaman yang gugur karena waktu dicoba ulang, bukan menjatuhkan seluruh pembacaan', async () => {
