@@ -80,6 +80,16 @@ alter table public.sentil_sync_run add column if not exists progress jsonb;
 create index if not exists sentil_sync_run_workspace_idx
   on public.sentil_sync_run (workspace_id, created_at desc);
 
+-- Catatan timezone (terukur 27 Oktober di instalasi ini): `created_at` terkirim ke klien sebagai
+-- "2026-10-27T03:51:36+00:00" ketika UTC sedang 11:51 — sesi Postgres membaca zona waktunya delapan
+-- jam di belakang UTC, dan offsetnya ikut dilabeli +00:00. Aplikasi sudah tidak membandingkan
+-- kolom ini dengan jam function (aturan umur baris riwayat dihapus karena membuat penarikan yang
+-- baru mulai dinyatakan mati di plafon platform), tapi siapa pun yang membaca riwayat dari SQL
+-- harus tahu angkanya tidak UTC. Untuk memulihkan:
+--   alter database postgres set timezone = 'UTC';   -- lalu restart koneksi/instance Supabase
+-- (Kolomnya sendiri sudah `timestamptz`; yang salah hanya zona waktu sesi tempat nilainya
+-- dirender, bukan jam internal Postgres.)
+
 -- Pemakai yang menyedot kuota tidak punya akun di proyek ini (keputusan pemilik), jadi
 -- yang dihitung adalah pengunjung x jendela waktu x aksi. `scope` sudah di-hash di
 -- server (aksi:hash-ip) sehingga tabel ini bukan log alamat IP. `bucket` adalah awal

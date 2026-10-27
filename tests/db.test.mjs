@@ -124,10 +124,10 @@ describe('tulis snapshot', () => {
     assert.equal(saved.revision, 5, 'revisi berikutnya dari penanda yang ada');
     assert.equal(saved.stored, 2500);
     const writes = calls.filter(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_review'));
-    assert.deepEqual(writes.map(call => call.body.length), [1000, 1000, 500], 'batch terduga tanpa kehilangan baris');
+    assert.deepEqual(writes.map(call => call.body.length), Array.from({ length: 10 }, () => 250), 'potongan 250 baris, tanpa kehilangan satu baris pun');
     assert.equal(writes.every(call => call.body.every(row => row.revision === 5)), true);
     assert.deepEqual(writes[0].body.map(row => row.ordinal).slice(0, 3), [0, 1, 2]);
-    assert.deepEqual(writes[2].body[0].payload, reviewOf(2000), 'payload disimpan utuh seperti hasil mesin');
+    assert.deepEqual(writes[9].body[0].payload, reviewOf(2250), 'payload disimpan utuh seperti hasil mesin');
 
     const head = calls.find(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_dataset'));
     assert.equal(JSON.parse(`"${head.body[0].workspace_id}"`), 'ws-1');
@@ -145,7 +145,7 @@ describe('tulis snapshot', () => {
     assert.ok(headIndex < calls.indexOf(sweeps[1]));
   });
 
-  test('pelapor potongan menerima hitungan yang benar walau empat penulis bersamaan', async () => {
+  test('pelapor potongan menerima hitungan yang benar walau banyak penulis bersamaan', async () => {
     const reviews = Array.from({ length: 2500 }, (_, index) => reviewOf(index));
     const seen = [];
     const { fetchImpl } = recorder(({ url, method }) => {
@@ -159,9 +159,9 @@ describe('tulis snapshot', () => {
       onChunk: chunk => seen.push(chunk),
     });
     assert.equal(saved.stored, 2500);
-    assert.equal(seen.length, 3, 'satu laporan per potongan yang benar-benar diterima server');
-    assert.deepEqual([...seen.map(chunk => chunk.done)].sort((a, b) => a - b), [1, 2, 3], 'nomor potongannya lengkap, apa pun urutan penulisnya');
-    assert.equal(seen.every(chunk => chunk.total === 3), true);
+    assert.equal(seen.length, 10, 'satu laporan per potongan yang benar-benar diterima server');
+    assert.deepEqual([...seen.map(chunk => chunk.done)].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'nomor potongannya lengkap, apa pun urutan penulisnya');
+    assert.equal(seen.every(chunk => chunk.total === 10), true);
     assert.equal(seen.every(chunk => chunk.rows === 2500), true, 'jumlah baris ikut dilaporkan supaya persen bisa dicocokkan');
   });
 

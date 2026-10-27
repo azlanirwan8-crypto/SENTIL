@@ -320,13 +320,15 @@ describe('lapisan frasa di dalam model korpus', () => {
     assert.equal(pain.labelMetrics.clusters >= pain.labelMetrics.reportedLabels, true);
     assert.equal(pain.labelMetrics.reportedLabels, pain.labels.length, 'pemangkasan harus dilaporkan, bukan diam-diam');
     assert.ok(pain.labelMetrics.namedFromTerm <= pain.labels.length);
-    // Judul yang dibaca manajer: nama kamus + kalimat reviewers, atau kalimat reviewers saja kalau
-    // tidak ada topik yang lolos uji kepadatan. Tidak ada bentuk lain.
+    // Judul yang dibaca manajer: nama topik + kalimat reviewers, atau kalimat reviewers saja kalau
+    // tidak ada topik yang bisa ditautkan. Topiknya sendiri punya dua lantai yang dibedakan lewat
+    // `category.source`: uji kepadatan ('density') atau mayoritas anggota gerombol ('majority').
     for (const label of pain.labels) {
       if (label.category) {
-        assert.equal(label.headingSource, 'dictionary', 'kategori kamus selalu dipakai sebagai judul');
+        assert.ok(['density', 'majority'].includes(label.category.source), `sumber kategori tidak dikenal: ${label.category.source}`);
+        assert.equal(label.headingSource, label.category.source, 'sumber judul mengikuti lantai kategori yang dipakai');
         assert.equal(label.heading, `${label.category.name}: ${label.evidence}`);
-        assert.ok(label.category.nameId, 'kategori kamus juga punya nama Indonesia untuk jalur baca');
+        assert.ok(label.category.nameId, 'kategori juga punya nama Indonesia untuk jalur baca');
       } else {
         assert.equal(label.headingSource, 'phrase');
         assert.equal(label.heading, label.evidence);
@@ -335,7 +337,7 @@ describe('lapisan frasa di dalam model korpus', () => {
         assert.equal(isJunkTerm(label.name), false, `judul satu kata tidak boleh kata tugas: ${label.name}`);
       }
     }
-    assert.equal(pain.labelMetrics.headed, pain.labels.filter(label => label.headingSource === 'dictionary').length);
+    assert.equal(pain.labelMetrics.headed, pain.labels.filter(label => label.headingSource !== 'phrase').length, 'headline terhitung selama topiknya bisa ditautkan, dari lantai mana pun');
     assert.deepEqual(Object.keys(pain.labelRules).sort(), ['category', 'closure', 'heading', 'link', 'maxLabels', 'naming', 'sharedReviews', 'support', 'trend']);
     assert.equal(pain.labelMetrics.trend.firstDay, '2026-01-05');
   });
