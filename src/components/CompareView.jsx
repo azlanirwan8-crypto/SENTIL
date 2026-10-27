@@ -11,7 +11,7 @@ const MAX_COLUMNS = 12;
 function Panel({ title, meta, action, children, className = '' }) {
   return (
     <section className={`card flex min-w-0 flex-col ${className}`} aria-label={title}>
-      <header className="flex min-h-[34px] flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
+      <header className="flex min-h-[36px] flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2 className="label">{title}</h2>
           {meta ? <span className="num truncate text-[10px] text-slate-400">{meta}</span> : null}

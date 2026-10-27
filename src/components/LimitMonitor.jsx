@@ -96,7 +96,7 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
   return (
     <div className="space-y-3">
       <section className="card overflow-hidden">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
           <div className="flex min-w-0 items-center gap-2">
             <IconShield size={13} className="shrink-0 text-slate-400" />
             <h2 className="label">Source limits</h2>
@@ -221,14 +221,14 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
         )}
 
         {monitor?.hint && (
-          <footer className="border-t border-slate-800/70 bg-slate-950/40 px-3 py-1.5">
+          <footer className="border-t border-slate-800/70 bg-slate-950/40 px-4 py-2">
             <p className="num text-[10px] leading-snug text-slate-400">{monitor.hint}</p>
           </footer>
         )}
       </section>
 
       <section className="card overflow-hidden">
-        <header className="flex items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
+        <header className="flex items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
           <h2 className="label">Attempt log</h2>
           <span className="num text-[10px] text-slate-400">{formatNumber(history.length)} entries · max 24 per channel</span>
         </header>

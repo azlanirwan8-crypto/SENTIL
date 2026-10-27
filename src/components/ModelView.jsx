@@ -44,14 +44,14 @@ function formatBytes(bytes) {
 function Panel({ title, meta, action, children, className = '' }) {
   return (
     <section className={`card flex min-w-0 flex-col ${className}`} aria-label={title}>
-      <header className="flex min-h-[34px] flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
+      <header className="flex min-h-[36px] flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2 className="label">{title}</h2>
           {meta && <span className="num truncate text-[10px] text-slate-400">{meta}</span>}
         </div>
         {action}
       </header>
-      <div className="min-h-0 flex-1 p-3">{children}</div>
+      <div className="min-h-0 flex-1 p-3.5">{children}</div>
     </section>
   );
 }
@@ -267,7 +267,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
       )}
 
       <section className="card overflow-hidden" aria-label="Pipeline mesin">
-        <header className="flex min-h-[34px] flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
+        <header className="flex min-h-[36px] flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
           <div className="flex items-baseline gap-2">
             <h2 className="label">Pipeline mesin</h2>
             <span className="text-[10px] text-slate-400">otonom · bobot dipelajari dari korpus · nama topik dari kamus domain bilingual</span>
@@ -432,38 +432,38 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               <caption className="sr-only">Topik keluhan: nama kamus Indonesia dan Inggris, klaster fitur, kata yang benar-benar ditulis reviewers, jumlah ulasan 1–2 bintang, porsi dari pool keluhan, jumlah ulasan 4–5 bintang yang menyebut kata sama, dan berapa persen seluruh sebutan topik itu berupa keluhan</caption>
               <thead>
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">#</th>
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">Topik</th>
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">Klaster</th>
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">Kata yang ditulis reviewers</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Keluhan</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Porsi</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Pujian</th>
-                  <th scope="col" className="pb-1.5 text-right font-bold">Keluhan / sebutan</th>
+                  <th scope="col" className="pb-2 pr-2 font-bold">#</th>
+                  <th scope="col" className="pb-2 pr-2 font-bold">Topik</th>
+                  <th scope="col" className="pb-2 pr-2 font-bold">Klaster</th>
+                  <th scope="col" className="pb-2 pr-2 font-bold">Kata yang ditulis reviewers</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Keluhan</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Porsi</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Pujian</th>
+                  <th scope="col" className="pb-2 text-right font-bold">Keluhan / sebutan</th>
                 </tr>
               </thead>
               <tbody>
                 {topics.map((topic, index) => (
                   <tr key={topic.id} className="border-t border-slate-800/60">
-                    <td className="num py-1.5 pr-2 text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</td>
-                    <td className="py-1.5 pr-2">
-                      <span className="rounded bg-slate-800/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">{topic.name}</span>
+                    <td className="num py-2 pr-2 text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</td>
+                    <td className="py-2 pr-2">
+                      <span className="tag font-mono">{topic.name}</span>
                       <span className="block truncate text-[10px] text-slate-400" title="Nama Indonesia dari kamus yang sama">{topic.nameId}</span>
                     </td>
-                    <td className="py-1.5 pr-2 align-top text-[10px] text-slate-300">
+                    <td className="py-2 pr-2 align-top text-[10px] text-slate-300">
                       {topic.clusterName?.en || 'N/A'}
                       <span className="block text-slate-400">{topic.clusterName?.id || ''}</span>
                     </td>
-                    <td className="py-1.5 pr-2 align-top">
+                    <td className="py-2 pr-2 align-top">
                       <span className="block truncate font-mono text-[10px] text-slate-400" title={(topic.matchedTerms || []).map(entry => `${entry.term} ×${entry.count}`).join(' · ')}>
                         {(topic.matchedTerms || []).slice(0, 4).map(entry => entry.term).join(', ') || 'N/A'}
                         {(topic.matchedTerms || []).length > 4 ? ` · +${(topic.matchedTerms || []).length - 4} lagi` : ''}
                       </span>
                     </td>
-                    <td className="num py-1.5 pr-2 text-right text-[11px] font-bold text-slate-200">{formatNumber(topic.low)}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatPercent(topic.share, 100)}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(topic.high)}</td>
-                    <td className="num py-1.5 text-right text-[10px] text-slate-400">
+                    <td className="num py-2 pr-2 text-right text-[11px] font-bold text-slate-200">{formatNumber(topic.low)}</td>
+                    <td className="num py-2 pr-2 text-right text-[10px] text-slate-400">{formatPercent(topic.share, 100)}</td>
+                    <td className="num py-2 pr-2 text-right text-[10px] text-slate-400">{formatNumber(topic.high)}</td>
+                    <td className="num py-2 text-right text-[10px] text-slate-400">
                       {isNumber(topic.complaintRate) ? `${Math.round(toNumber(topic.complaintRate))}%` : 'N/A'}
                     </td>
                   </tr>
@@ -496,47 +496,47 @@ export function ModelView({ dataset, workspace, db, onExport }) {
               <caption className="sr-only">Gerombol label keluhan: nama yang dipilih mesin dari kata jangkar anggota, frasa bukti, jumlah frasa anggota, jumlah mention, jumlah ulasan berbeda, porsi dari pool 1–2 bintang, pujian 4–5 bintang yang menyebut frasa yang sama, arah laju harian paruh kedua terhadap paruh pertama, dan kanal yang paling banyak memuat label itu</caption>
               <thead>
                 <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">#</th>
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">Label</th>
-                  <th scope="col" className="pb-1.5 pr-2 font-bold">Kategori</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Frasa</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Mention</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Ulasan beda</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Porsi</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Pujian</th>
-                  <th scope="col" className="pb-1.5 pr-2 text-right font-bold">Arah</th>
-                  <th scope="col" className="pb-1.5 text-right font-bold">Kanal</th>
+                  <th scope="col" className="pb-2 pr-2 font-bold">#</th>
+                  <th scope="col" className="pb-2 pr-2 font-bold">Label</th>
+                  <th scope="col" className="pb-2 pr-2 font-bold">Kategori</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Frasa</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Mention</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Ulasan beda</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Porsi</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Pujian</th>
+                  <th scope="col" className="pb-2 pr-2 text-right font-bold">Arah</th>
+                  <th scope="col" className="pb-2 text-right font-bold">Kanal</th>
                 </tr>
               </thead>
               <tbody>
                 {painLabels.map((entry, index) => (
                   <tr key={entry.id} className="border-t border-slate-800/60">
-                    <td className="num py-1.5 pr-2 text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</td>
-                    <td className="py-1.5 pr-2">
-                      <span className={`rounded bg-slate-800/70 px-1.5 py-0.5 text-[10px] text-slate-200 ${entry.nameSource === 'term' ? 'capitalize' : 'font-mono'}`}>{entry.name}</span>
+                    <td className="num py-2 pr-2 text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</td>
+                    <td className="py-2 pr-2">
+                      <span className={`tag ${entry.nameSource === 'term' ? 'capitalize' : 'font-mono'}`}>{entry.name}</span>
                       <p className="mt-0.5 truncate text-[10px] text-slate-400" title={entry.phrases.map(phrase => phrase.text).join(' · ')}>
                         {entry.phrases.slice(0, 3).map(phrase => phrase.text).join(' · ')}
                         {entry.phrases.length > 3 ? ` · +${entry.phrases.length - 3} lagi` : ''}
                       </p>
                     </td>
-                    <td className="py-1.5 pr-2 align-top text-[10px]">
+                    <td className="py-2 pr-2 align-top text-[10px]">
                       {aiNames?.[entry.id]?.category
                         ? <span title={`Kategori diberi nama oleh ${pain.naming.model} berdasar frasa di baris ini; seluruh angka di baris ini tetap pengukuran mesin`}><span className="font-semibold text-slate-200">{aiNames[entry.id].category}</span><span className="block truncate text-slate-400">{aiNames[entry.id].subLabel || 'nama model'}</span></span>
                         : entry.category
                           ? <span title={`Nama topik kamus domain yang lebih padat di gerombol ini daripada di keluhan lain (${formatNumber(entry.category.inside)} dari ${formatNumber(entry.reviewCount)} ulasan gerombol)`}><span className="font-semibold text-slate-300">{entry.category.name}</span><span className="block text-slate-400">dari kamus domain</span></span>
                           : <span className="text-slate-400" title="Belum ada penamaan yang lolos uji bukti untuk gerombol ini">N/A</span>}
                     </td>
-                    <td className="num py-1.5 pr-2 text-right text-[11px] text-slate-200">{formatNumber(entry.phraseCount)}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[11px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{formatPercent(entry.reviewCount, pain.pools?.negative || 0)}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-400">{entry.praiseCount == null ? 'N/A' : formatNumber(entry.praiseCount)}</td>
-                    <td className="num py-1.5 pr-2 text-right text-[10px] text-slate-300">
+                    <td className="num py-2 pr-2 text-right text-[11px] text-slate-200">{formatNumber(entry.phraseCount)}</td>
+                    <td className="num py-2 pr-2 text-right text-[10px] text-slate-400">{formatNumber(entry.phrases.reduce((sum, phrase) => sum + phrase.dfNegative, 0))}</td>
+                    <td className="num py-2 pr-2 text-right text-[11px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
+                    <td className="num py-2 pr-2 text-right text-[10px] text-slate-400">{formatPercent(entry.reviewCount, pain.pools?.negative || 0)}</td>
+                    <td className="num py-2 pr-2 text-right text-[10px] text-slate-400">{entry.praiseCount == null ? 'N/A' : formatNumber(entry.praiseCount)}</td>
+                    <td className="num py-2 pr-2 text-right text-[10px] text-slate-300">
                       {Number.isFinite(entry.momentum)
                         ? <span title={`${formatNumber(entry.late)} ulasan di paruh kedua vs ${formatNumber(entry.early)} di paruh pertama`}>{entry.momentum.toFixed(2)}×/hari</span>
                         : 'N/A'}
                     </td>
-                    <td className="num py-1.5 text-right text-[10px] text-slate-300">
+                    <td className="num py-2 text-right text-[10px] text-slate-300">
                       {entry.channels?.length
                         ? (
                           <span title={`${formatNumber(entry.channels[0].count)} dari ${formatNumber(entry.channels[0].pool)} keluhan ${platformLabel(entry.channels[0].id)}`}>
@@ -580,7 +580,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
       </Panel>
 
       <section className="card overflow-hidden" aria-label="Audit kanal">
-        <header className="flex min-h-[34px] items-center justify-between gap-2 border-b border-slate-800/70 px-3 py-1.5">
+        <header className="flex min-h-[36px] items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
           <h2 className="label">Audit kanal &amp; cache</h2>
           <span className="num text-[10px] text-slate-400">cache {formatNumber((dataset.cache?.ttlMs || 0) / 60000)} menit · penarikan berikutnya berhenti di ulasan yang sudah tersimpan</span>
         </header>

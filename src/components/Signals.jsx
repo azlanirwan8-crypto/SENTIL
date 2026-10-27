@@ -7,13 +7,16 @@ import { IconAlert, IconGauge } from './icons.jsx';
 // hasil ukur plus satu kalimat yang angkanya ada di dalam `facts`. Tugas klien hanya memformat
 // ulang angka itu, tidak menafsir atau menambahkan klaim.
 
+// Hanya arah yang boleh berwarna. Enam warna kategori pada baris sedekat ini membaca sebagai
+// permen, bukan sebagai temuan: theme/channel/structure hanyalah pengelompok, jadi mereka netral,
+// dan accent ditinggalkan untuk status interaksi. rose/emerald tetap berarti memburuk/membaik.
 const KINDS = {
-  theme: { label: 'theme', tone: 'text-neg border-neg/40' },
+  theme: { label: 'theme', tone: 'text-slate-200 border-slate-700' },
   rise: { label: 'rising', tone: 'text-neg border-neg/40' },
   fall: { label: 'easing', tone: 'text-pos border-pos/40' },
-  channel: { label: 'channel', tone: 'text-neu border-neu/40' },
-  shared: { label: 'counter-read', tone: 'text-slate-300 border-slate-600' },
-  structure: { label: 'structure', tone: 'text-accent border-accent/40' },
+  channel: { label: 'channel', tone: 'text-slate-200 border-slate-700' },
+  shared: { label: 'counter-read', tone: 'text-slate-200 border-slate-700' },
+  structure: { label: 'structure', tone: 'text-slate-200 border-slate-700' },
   coverage: { label: 'limit', tone: 'text-slate-400 border-slate-700' },
 };
 
@@ -27,15 +30,15 @@ function factValue(entry) {
 export function Signal({ item }) {
   const kind = KINDS[item.kind] || { label: item.kind, tone: 'text-slate-300 border-slate-700' };
   return (
-    <li className="break-inside-avoid rounded border border-slate-800/70 bg-slate-900/40 px-2 py-1.5">
-      <div className="flex items-baseline gap-1.5">
-        <span className={`shrink-0 rounded border px-1 py-px text-[9px] font-bold uppercase tracking-wider ${kind.tone}`}>
+    <li className="break-inside-avoid rounded border border-slate-800/70 bg-slate-900/40 px-2.5 py-2">
+      <div className="flex items-baseline gap-2">
+        <span className={`shrink-0 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-wider ${kind.tone}`}>
           {kind.label}
         </span>
         <p className="min-w-0 text-[12px] font-bold leading-snug text-slate-100">{item.title}</p>
       </div>
-      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{item.body}</p>
-      <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1" aria-label={`Measurements behind: ${item.title}`}>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{item.body}</p>
+      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1.5" aria-label={`Measurements behind: ${item.title}`}>
         {item.facts.map(entry => (
           <li key={entry.key} className="flex items-baseline gap-1">
             <span className="text-[9px] uppercase tracking-wider text-slate-400">{entry.label}</span>

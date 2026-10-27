@@ -12,8 +12,8 @@ const STATUS_STYLES = {
 function Stat({ label, value }) {
   return (
     <div className="min-w-0">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className="num mt-0.5 truncate text-[12px] font-bold text-slate-200">{value}</p>
+      <p className="label-sm">{label}</p>
+      <p className="num mt-1 truncate text-[12px] font-bold text-slate-200">{value}</p>
     </div>
   );
 }
@@ -34,7 +34,7 @@ function ChannelRow({ channel, store, workspaceStore, fetchedAt }) {
   const noteTone = channel?.status === 'error' ? 'text-neg' : 'text-neu';
 
   return (
-    <div className="min-w-0 p-3">
+    <div className="min-w-0 px-4 py-3.5">
       <div className="flex items-start gap-2.5">
         <StoreMark store={store} size={26} tone="quiet" />
         <div className="min-w-0 flex-1">
@@ -58,7 +58,7 @@ function ChannelRow({ channel, store, workspaceStore, fetchedAt }) {
       </div>
 
       {selected && (
-        <div className="mt-2.5 grid grid-cols-4 gap-2 border-t border-slate-800/70 pt-2.5">
+        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5 border-t border-slate-800/70 pt-3 sm:grid-cols-4">
           <Stat label="Score" value={isNumber(app?.score) ? formatDecimal(app.score, 2) : 'N/A'} />
           <Stat label="Ratings" value={formatNumber(storeRatings)} />
           <Stat label="Read" value={formatNumber(channel?.fetched)} />
@@ -88,7 +88,7 @@ export function ChannelStrip({ dataset, workspace }) {
   const byId = new Map(channels.map(channel => [channel.id, channel]));
   return (
     <section aria-labelledby="sumber-title" className="card overflow-hidden">
-      <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-3 py-1.5">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-4 py-2">
         <h2 id="sumber-title" className="label">Sources</h2>
         <p className="text-[10px] text-slate-400">Store figures shown as published, never forced to match what was read</p>
       </header>

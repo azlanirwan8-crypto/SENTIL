@@ -3,9 +3,12 @@ import { formatNumber, formatPercent, isNumber, toNumber } from '../../lib/forma
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
 import { ChartFrame } from './ChartFrame.jsx';
-import { SERIES_COLORS } from './palette.js';
+import { BAR_OPACITY, SERIES_COLORS } from './palette.js';
 
-const LABEL_WIDTH = 132;
+// Di korpus nyata, nama topik terpanjang yang dihasilkan kamus digambar pada 150px; bingkai 132px
+// memotong tiga dari 23 baris dan menyisakan "Payment Settlem…". 156px cukup untuk seluruh isi
+// kamus, jadi elipsis hanya muncul bila seseorang menambahkan definisi yang lebih panjang.
+const LABEL_WIDTH = 156;
 
 const wordsOf = topic => (Array.isArray(topic.matchedTerms) ? topic.matchedTerms.slice(0, 4).map(entry => entry.term) : []);
 
@@ -48,7 +51,7 @@ export function TopicMap({ topics, filtered = false }) {
       className="h-full"
       bodyClassName="flex flex-col"
     >
-      <div role="group" aria-label="Complaint topics named by the domain dictionary" className="flex flex-1 flex-col justify-between gap-0.5 py-0.5">
+      <div role="group" aria-label="Complaint topics named by the domain dictionary" className="flex flex-1 flex-col justify-between gap-1 py-1">
         {data.map(topic => {
           const activeRow = selected === topic.id;
           const complaintWidth = Math.max(1.5, (topic.low / max) * 100);
@@ -62,14 +65,15 @@ export function TopicMap({ topics, filtered = false }) {
               aria-pressed={activeRow}
               aria-label={`${topic.name}: ${formatNumber(topic.low)} 1–2 star reviews, ${formatPercent(topic.share, 100)} of the complaint pool, ${formatNumber(topic.high)} 4–5 star reviews.`}
               title={words.length ? `Reviewers wrote: ${words.join(', ')}` : 'Named by the domain dictionary'}
-              className={`flex w-full items-center gap-2 rounded px-1 py-[3px] text-left transition ${activeRow ? 'bg-slate-800/70' : 'hover:bg-slate-800/40'}`}
+              className={`flex w-full items-center gap-2.5 rounded px-1.5 py-1 text-left transition ${activeRow ? 'bg-slate-800/70' : 'hover:bg-slate-800/40'}`}
             >
               <span className={`shrink-0 truncate text-[10px] font-semibold ${activeRow ? 'text-slate-50' : 'text-slate-300'}`} style={{ width: LABEL_WIDTH }}>
                 {topic.name}
               </span>
+              {/* Dua segmen dipisah 2px agar keluhan dan pujian tidak dibaca sebagai satu blok dua warna. */}
               <span className="relative h-3 min-w-0 flex-1 overflow-hidden rounded-[2px] bg-slate-800/50">
-                <span className="absolute inset-y-0 left-0 rounded-[2px]" style={{ width: `${complaintWidth}%`, backgroundColor: SERIES_COLORS.negative, opacity: activeRow ? 1 : 0.82 }} />
-                {praiseWidth > 0 && <span className="absolute inset-y-0" style={{ left: `${complaintWidth}%`, width: `${praiseWidth}%`, backgroundColor: SERIES_COLORS.positive, opacity: 0.5 }} />}
+                <span className="absolute inset-y-0 left-0 rounded-[2px]" style={{ width: `${complaintWidth}%`, backgroundColor: SERIES_COLORS.negative, opacity: activeRow ? BAR_OPACITY.active : BAR_OPACITY.idle }} />
+                {praiseWidth > 0 && <span className="absolute inset-y-0 rounded-[2px]" style={{ left: `calc(${complaintWidth}% + 2px)`, width: `${Math.max(0, praiseWidth - 1)}%`, backgroundColor: SERIES_COLORS.positive, opacity: activeRow ? 0.72 : 0.45 }} />}
               </span>
               <span className="num w-[74px] shrink-0 text-right text-[11px] font-bold leading-none text-slate-100">
                 {formatNumber(topic.low)}
@@ -80,13 +84,13 @@ export function TopicMap({ topics, filtered = false }) {
         })}
       </div>
 
-      <div className="mt-2 min-h-[34px] rounded border border-slate-800/80 bg-slate-950/50 px-2.5 py-1.5">
+      <div className="mt-2.5 min-h-[36px] rounded border border-slate-800/80 bg-slate-950/40 px-3 py-2">
         {active ? (
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <span className="text-[11px] font-bold text-slate-100">{active.name}</span>
             {active.nameId && <span className="text-[10px] text-slate-400">{active.nameId}</span>}
             {active.clusterName && (
-              <span className="rounded bg-slate-800/70 px-1.5 py-0.5 text-[10px] text-slate-200">{active.clusterName.en}</span>
+              <span className="tag">{active.clusterName.en}</span>
             )}
             <span className="num text-[10px] text-slate-400">
               {formatNumber(active.low)} complaints · {formatNumber(active.mid)} neutral · {formatNumber(active.high)} praise

@@ -15,14 +15,14 @@ export function ChartFrame({ label, meta, legend, children, className = '', body
   const id = `chart-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
   return (
     <section className={`card flex min-w-0 flex-col ${className}`} aria-labelledby={id}>
-      <header className="flex min-h-[34px] flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-800/70 px-3 py-1.5">
+      <header className="flex min-h-[36px] flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-800/70 px-4 py-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <h3 id={id} className="label truncate">{label}</h3>
           {meta && <span className="num truncate text-[10px] text-slate-400">{meta}</span>}
         </div>
         {legend && <div className="shrink-0">{legend}</div>}
       </header>
-      <div className={`min-h-0 flex-1 p-3 ${bodyClassName}`}>{children}</div>
+      <div className={`min-h-0 flex-1 p-3.5 ${bodyClassName}`}>{children}</div>
     </section>
   );
 }

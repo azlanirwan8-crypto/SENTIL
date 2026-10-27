@@ -4,12 +4,17 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Dua sumber, satu kenyataan: angka di sini harus sama dengan SERIES_COLORS dan
+        // STORE_COLORS di src/components/channels palette — yang satu dipakai kelas Tailwind,
+        // yang satu dipakai atribut SVG. Kanal yang jarang muncul (youtube, reddit, sosial) tidak
+        // punya kelas karena tidak pernah diwarnai lewat kelas.
         pos: '#34D399',
         neg: '#FB7185',
         neu: '#FBBF24',
         unk: '#64748B',
-        play: '#38BDF8',
-        appstore: '#A78BFA',
+        play: '#72A2CA',
+        appstore: '#AA92D3',
+        // Accent adalah warna interaksi (fokus, navigasi aktif, status langsung), bukan warna data.
         accent: '#22D3EE',
       },
       fontFamily: {

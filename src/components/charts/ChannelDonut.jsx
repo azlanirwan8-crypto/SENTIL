@@ -51,7 +51,7 @@ export function ChannelDonut({ platforms }) {
 
   return (
     <ChartFrame label="Channel split" meta={`${data.length} channels`} className="h-full">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-5">
         <div className="relative shrink-0" style={{ width: SIZE, height: SIZE }}>
           <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} role="group" aria-label={`Split across ${data.length} channels, ${formatNumber(total)} reviews in total.`}>
             <title>Review split per channel</title>
@@ -61,7 +61,7 @@ export function ChannelDonut({ platforms }) {
               const shared = {
                 fill: 'none',
                 stroke: segment.color,
-                strokeWidth: isActive ? STROKE + 4 : STROKE,
+                strokeWidth: isActive ? STROKE + 3 : STROKE,
                 tabIndex: 0,
                 role: 'img',
                 'aria-label': `${platformLabel(segment.id)}: ${formatNumber(segment.total)} reviews (${formatPercent(segment.total, total, 1)})`,
@@ -69,11 +69,13 @@ export function ChannelDonut({ platforms }) {
                 onMouseLeave: () => setHovered(current => (current === segment.id ? null : current)),
                 onFocus: () => setHovered(segment.id),
                 onBlur: () => setHovered(current => (current === segment.id ? null : current)),
-                opacity: hovered == null || isActive ? 1 : 0.35,
+                opacity: hovered == null || isActive ? 1 : 0.55,
               };
+              // Cap rata, bukan bulat: ujung bulat memanjang setengah lebar garis (8,5px) sementara
+              // celah antar segmen hanya 3,3px, jadi segmen selalu saling menindih.
               return segments.length === 1
                 ? <circle key={segment.id} cx={center} cy={center} r={radius} {...shared} className="chart-hit transition-all duration-150" />
-                : <path key={segment.id} d={arcPath(center, center, radius, segment.start, segment.end)} strokeLinecap="round" {...shared} className="chart-hit transition-all duration-150" />;
+                : <path key={segment.id} d={arcPath(center, center, radius, segment.start, segment.end)} strokeLinecap="butt" {...shared} className="chart-hit transition-all duration-150" />;
             })}
           </svg>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
@@ -90,7 +92,7 @@ export function ChannelDonut({ platforms }) {
               key={segment.id}
               onMouseEnter={() => setHovered(segment.id)}
               onMouseLeave={() => setHovered(current => (current === segment.id ? null : current))}
-              className={`rounded border px-2 py-1.5 transition ${hovered === segment.id ? 'border-slate-700 bg-slate-800/60' : 'border-transparent bg-slate-900/40'}`}
+              className={`rounded border px-2.5 py-2 transition ${hovered === segment.id ? 'border-slate-700 bg-slate-800/60' : 'border-transparent bg-slate-900/40'}`}
             >
               <div className="flex items-center gap-2">
                 <StoreMark store={segment.id} size={18} tone="quiet" />

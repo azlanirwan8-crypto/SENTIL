@@ -23,11 +23,11 @@
 
   body {
     @apply min-h-screen bg-slate-950 font-sans text-slate-300 antialiased;
-    background-image:
-      linear-gradient(to bottom, rgba(34, 211, 238, 0.05), transparent 320px),
-      linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
-    background-size: auto, 44px 44px, 44px 44px;
+    /* Kisi 44px dan sapuan cyan di kepala halaman dihapus. Di belakang kartu rapat dan tabel
+       berbaris 4px, dua lapisan itu membaca sebagai moiré di sela-sela — dan sapuan cyan adalah
+       warna interaksi yang dipakai sebagai dekorasi, jadi ia bersaing dengan warna data. Yang
+       tersisa satu gradasi vertikal tenang yang memisahkan kepala dari isi. */
+    background-image: linear-gradient(180deg, #0A1220 0, #020617 340px);
   }
 
   ::selection {
@@ -150,6 +150,18 @@
 
   .pill {
     @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold;
+  }
+
+  /* Satu primitif label untuk semua badge yang menempel pada satu baris data (topik per ulasan,
+     penanda bahasa, label sekunder). Sebelumnya tiap komponen menulis ulang kombinasi
+     bg-accent/15 + text-accent, jadi setiap baris punya tiga warna jenuh sekaligus yang
+     berdekatan hue dengan pill sentimen di sebelahnya. */
+  .tag {
+    @apply inline-flex max-w-full items-center gap-1.5 rounded border border-slate-700/80 bg-slate-800/70 px-1.5 py-0.5 text-[10px] font-semibold text-slate-200;
+  }
+
+  .tag-quiet {
+    @apply inline-flex max-w-full items-center gap-1.5 rounded border border-slate-800 bg-slate-900/60 px-1.5 py-0.5 text-[10px] font-medium text-slate-400;
   }
 
   .nav-item {

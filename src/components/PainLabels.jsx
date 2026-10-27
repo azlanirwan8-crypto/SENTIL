@@ -12,7 +12,7 @@ import { IconLayers } from './icons.jsx';
 // setiap baris (lihat `namingStatus` dan catatan kaki di bawah tabel).
 
 function Header({ children, className = '' }) {
-  return <th scope="col" className={`label py-1 pr-3 text-left font-semibold ${className}`}>{children}</th>;
+  return <th scope="col" className={`label py-1.5 pr-3 text-left font-semibold ${className}`}>{children}</th>;
 }
 
 // Arah dibaca dari momentum (paruh kedua per hari terhadap paruh pertama). 1 berarti laju yang
@@ -133,7 +133,7 @@ export function PainLabels({ pain, filtered = false }) {
               const store = entry.category;
               return (
                 <tr key={entry.id} className={`border-b border-slate-800/50 last:border-0 ${active ? 'bg-slate-800/40' : ''}`}>
-                  <th scope="row" className="py-1 pr-3 text-left font-normal">
+                  <th scope="row" className="py-1.5 pr-3 text-left font-normal">
                     <button
                       type="button"
                       onClick={() => setOpen(active ? null : entry.id)}
@@ -176,7 +176,7 @@ export function PainLabels({ pain, filtered = false }) {
                       </div>
                     ) : null}
                   </th>
-                  <td className="py-1 pr-3 align-top text-[11px]">
+                  <td className="py-1.5 pr-3 align-top text-[11px]">
                     {ai ? (
                       <span title={`Category named by ${naming.model} from the phrases in this row; every number here is measured`}>
                         <span className="font-semibold text-slate-200">{ai.category}</span>
@@ -191,14 +191,14 @@ export function PainLabels({ pain, filtered = false }) {
                       <span className="text-slate-400" title="No naming cleared the evidence test for this cluster">—</span>
                     )}
                   </td>
-                  <td className="num py-1 pr-3 text-right text-[11px] text-slate-400">{formatNumber(entry.phraseCount)}</td>
-                  <td className="num py-1 pr-3 text-right text-[12px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
-                  <td className="num py-1 pr-3 text-right text-[11px] text-neg">{formatPercent(entry.reviewCount, pool)}</td>
-                  <td className="num py-1 pr-3 text-right text-[11px] text-slate-400">
+                  <td className="num py-1.5 pr-3 text-right text-[11px] text-slate-400">{formatNumber(entry.phraseCount)}</td>
+                  <td className="num py-1.5 pr-3 text-right text-[12px] font-bold text-slate-100">{formatNumber(entry.reviewCount)}</td>
+                  <td className="num py-1.5 pr-3 text-right text-[11px] text-neg">{formatPercent(entry.reviewCount, pool)}</td>
+                  <td className="num py-1.5 pr-3 text-right text-[11px] text-slate-400">
                     {entry.praiseCount == null ? '—' : formatNumber(entry.praiseCount)}
                   </td>
-                  <td className="py-1 pr-3 text-right"><Trend entry={entry} /></td>
-                  <td className="num py-1 pr-3 text-right text-[11px] text-slate-400">{entry.severity == null ? '—' : entry.severity.toFixed(2)}</td>
+                  <td className="py-1.5 pr-3 text-right"><Trend entry={entry} /></td>
+                  <td className="num py-1.5 pr-3 text-right text-[11px] text-slate-400">{entry.severity == null ? '—' : entry.severity.toFixed(2)}</td>
                 </tr>
               );
             })}

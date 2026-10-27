@@ -7,7 +7,7 @@ import { ChartFrame, Legend } from './ChartFrame.jsx';
 import { ChartTooltip } from './ChartTooltip.jsx';
 import { formatTick, niceScale } from './chart-utils.js';
 import { useMeasure } from './useMeasure.js';
-import { SENTIMENT_SERIES, SERIES_COLORS, storeColor } from './palette.js';
+import { SENTIMENT_SERIES, SERIES_COLORS, BAR_OPACITY, storeColor } from './palette.js';
 
 const HEIGHT = 208;
 const MARGIN = { top: 14, right: 8, bottom: 34, left: 28 };
@@ -84,7 +84,7 @@ export function PlatformBars({ platforms }) {
                             height={Math.max(1, barHeight - 0.5)}
                             rx="1.5"
                             fill={series.color}
-                            opacity={hovered == null || active ? 1 : 0.4}
+                            opacity={active ? BAR_OPACITY.active : (hovered == null ? BAR_OPACITY.idle : BAR_OPACITY.dimmed)}
                           />
                         );
                       })}
@@ -138,7 +138,7 @@ export function PlatformBars({ platforms }) {
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      <div className="mt-2.5 flex flex-wrap gap-x-2 gap-y-1.5">
         {data.map(platform => {
           const nss = platformNss(platform);
           return (

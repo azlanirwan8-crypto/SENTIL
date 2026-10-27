@@ -27,9 +27,9 @@ function Chip({ active, onClick, children, count }) {
 function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, matched, total, onReset }) {
   if (!options.platforms.length && !options.topics.length) return null;
   return (
-    <section className="card flex flex-wrap items-center gap-x-3 gap-y-1.5 p-3" aria-label="Dashboard filters">
+    <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" aria-label="Dashboard filters">
       {options.platforms.length > 1 && (
-        <div role="group" aria-label="Channel filter" className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <div role="group" aria-label="Channel filter" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
           <span className="label-sm shrink-0">Channel</span>
           <Chip active={platform === 'all'} onClick={() => onPlatform('all')} count={total}>All</Chip>
           {options.platforms.map(entry => (
@@ -41,7 +41,7 @@ function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, ma
       )}
 
       {options.topics.length > 0 && (
-        <div role="group" aria-label="Topic filter" className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <div role="group" aria-label="Topic filter" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
           <span className="label-sm shrink-0">Topic</span>
           <Chip active={topic === 'all'} onClick={() => onTopic('all')} count={total}>All</Chip>
           {options.topics.map(entry => (

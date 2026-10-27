@@ -2,10 +2,10 @@ import { formatDecimal, formatNumber, formatNss, formatPercent, isNumber, platfo
 import { IconStar } from './icons.jsx';
 import { storeColor } from './charts/palette.js';
 
-function Cell({ label, children, accent }) {
+function Cell({ label, children }) {
   return (
-    <div className="flex min-w-0 flex-col justify-between gap-2 border-b border-slate-800/70 p-3 odd:border-r xl:border-b-0 xl:odd:border-r-0 xl:border-l xl:first:border-l-0">
-      <p className={`label ${accent ? 'text-accent' : ''}`}>{label}</p>
+    <div className="flex min-w-0 flex-col justify-between gap-2 border-b border-slate-800/70 p-3.5 odd:border-r xl:border-b-0 xl:odd:border-r-0 xl:border-l xl:first:border-l-0">
+      <p className="label">{label}</p>
       {children}
     </div>
   );
@@ -93,13 +93,14 @@ export function KpiRow({ dataset }) {
         </div>
       </Cell>
 
-      <Cell label="NSS · weak labels" accent>
+      <Cell label="NSS · weak labels">
         <div>
           <div className="flex items-baseline gap-1.5">
-            <span className="metric text-accent">{nss == null ? 'N/A' : formatNss(nss)}</span>
-            <span className="text-[10px] text-slate-400">±100</span>
+            <span className="metric">{nss == null ? 'N/A' : formatNss(nss)}</span>
+            <span className="num text-[10px] text-slate-400">±100</span>
           </div>
-          <div className="relative mt-2 h-1 rounded-full" style={{ background: 'linear-gradient(90deg,#FB7185,#475569 50%,#34D399)' }}>
+          <div className="relative mt-2 h-1 rounded-full" style={{ background: 'linear-gradient(90deg,#A9636D,#3C4A61 50%,#3C8A72)' }}>
+            <span className="absolute left-1/2 top-1/2 h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-slate-600" aria-hidden="true" />
             {nss != null && (
               <span
                 className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-950 bg-slate-100"

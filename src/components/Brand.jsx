@@ -1,3 +1,5 @@
+import { SERIES_COLORS, storeColor } from './charts/palette.js';
+
 export function LogoMark({ size = 24 }) {
   return (
     <span
@@ -6,9 +8,9 @@ export function LogoMark({ size = 24 }) {
       aria-hidden="true"
     >
       <svg width={size * 0.6} height={size * 0.6} viewBox="0 0 24 24" fill="none">
-        <rect x="3" y="14" width="4.5" height="7" rx="1.2" fill="#FB7185" />
-        <rect x="9.8" y="9" width="4.5" height="12" rx="1.2" fill="#FBBF24" />
-        <rect x="16.6" y="3" width="4.5" height="18" rx="1.2" fill="#34D399" />
+        <rect x="3" y="14" width="4.5" height="7" rx="1.2" fill={SERIES_COLORS.negative} />
+        <rect x="9.8" y="9" width="4.5" height="12" rx="1.2" fill={SERIES_COLORS.neutral} />
+        <rect x="16.6" y="3" width="4.5" height="18" rx="1.2" fill={SERIES_COLORS.positive} />
       </svg>
     </span>
   );
@@ -44,8 +46,10 @@ export function StoreGlyph({ store, size = 14 }) {
 }
 
 export function StoreMark({ store, size = 22, tone = 'solid' }) {
-  const play = store === 'play';
-  const color = play ? '#38BDF8' : '#A78BFA';
+  // Warna diambil palet kanal, bukan ditulis di sini: sebelumnya apa pun yang bukan 'play'
+  // dipaksa violet, jadi badge YouTube, Reddit, dan berita tampil dengan warna App Store.
+  const color = storeColor(store);
+  const ink = '#020617';
   if (tone === 'quiet') {
     return (
       <span
@@ -60,7 +64,7 @@ export function StoreMark({ store, size = 22, tone = 'solid' }) {
   return (
     <span
       className="inline-flex shrink-0 items-center justify-center rounded"
-      style={{ width: size, height: size, color: '#020617', background: color }}
+      style={{ width: size, height: size, color: ink, background: color }}
       aria-hidden="true"
     >
       <StoreGlyph store={store} size={size * 0.55} />

@@ -6,7 +6,7 @@ import { ChartFrame, Legend } from './ChartFrame.jsx';
 import { ChartTooltip } from './ChartTooltip.jsx';
 import { clamp, formatTick, niceScale } from './chart-utils.js';
 import { useMeasure } from './useMeasure.js';
-import { SENTIMENT_SERIES, SERIES_COLORS } from './palette.js';
+import { SENTIMENT_SERIES, SERIES_COLORS, BAR_OPACITY } from './palette.js';
 
 const SERIES = [...SENTIMENT_SERIES].reverse();
 const MARGIN = { top: 10, right: 8, bottom: 22, left: 28 };
@@ -79,10 +79,10 @@ export function DailyTrend({ daily }) {
                             x={x}
                             y={cursor}
                             width={barWidth}
-                            height={Math.max(1, height - 0.5)}
+                            height={Math.max(1, height - 1)}
                             rx={barWidth > 6 ? 1.5 : 0.5}
                             fill={series.color}
-                            opacity={active ? 1 : 0.82}
+                            opacity={active ? BAR_OPACITY.active : (hovered == null ? BAR_OPACITY.idle : BAR_OPACITY.dimmed)}
                           />
                         );
                       })}
