@@ -201,6 +201,12 @@ export function createSyncHandler(service = syncService, { db = database, quota 
     const startedAt = Date.now();
     const raw = stored.reviews.map(({ analysis, ...rest }) => rest);
     const { rows, model } = analyzeCorpus(raw, { generatedAt: stored.fetchedAt || new Date().toISOString(), listing, entity: stored.entity || workspace.entity || '' });
+    // Korpus 69.000 baris dipegang tiga kali pada titik ini (bahan mentah, hasil analisis, dan
+    // salinan penyimpanan). Salinan mentah tidak dibutuhkan lagi setelah model terbentuk, jadi
+    // dilepas sebelum tulisan dimulai — fungsi serverless punya langit-langit memori, dan
+    // menghitung ulang bukan alasan untuk memakainya dua kali lebih besar.
+    raw.length = 0;
+    stored.reviews = [];
     const rebuilt = {
       ...stored,
       engine: {
@@ -424,11 +430,13 @@ export function createSyncHandler(service = syncService, { db = database, quota 
         return;
       }
       console.error('[api/sync] kegagalan tak terduga:', error);
-      // Kode saja, bukan pesan internal: log runtime tidak selalu bisa dibaca dari luar,
-      // dan detail database tidak boleh keluar ke peramban.
+      // Tahap dan alasannya ikut dikirim supaya yang memasang tahu apa yang harus disetel;
+      // isi jawaban database (yang bisa memuat isi baris) tetap tidak keluar ke peramban.
       json(response, 500, {
         error: 'internal_error',
         code: typeof error?.code === 'string' ? error.code : null,
+        stage: typeof error?.stage === 'string' ? error.stage : null,
+        reason: typeof error?.message === 'string' ? error.message.slice(0, 240) : null,
         message: 'The server could not complete this request. Nothing was changed and no stored data was removed; please try again.',
       });
     }

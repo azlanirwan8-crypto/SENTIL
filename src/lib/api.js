@@ -28,12 +28,13 @@ async function post(payload) {
   }
 
   if (!response.ok) {
-    throw new ApiError(
-      body && typeof body.message === 'string'
-        ? body.message
-        : `The request failed with status ${response.status}.`,
-      { status: response.status, code: body && typeof body.error === 'string' ? body.error : 'request_failed' },
-    );
+    // Server mengirim tahap dan alasannya terpisah (tanpa isi jawaban database): tanpa itu,
+    // "the server could not complete this request" tidak memberi tahu apa yang harus disetel.
+    const detail = [body?.stage, body?.reason].filter(part => typeof part === 'string' && part.length).join(' · ');
+    const message = body && typeof body.message === 'string'
+      ? (detail ? `${body.message} (${detail})` : body.message)
+      : `The request failed with status ${response.status}.`;
+    throw new ApiError(message, { status: response.status, code: body && typeof body.error === 'string' ? body.error : 'request_failed' });
   }
 
   if (!body || typeof body !== 'object') {

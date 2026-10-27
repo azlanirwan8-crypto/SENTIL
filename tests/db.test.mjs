@@ -187,6 +187,61 @@ describe('baca snapshot', () => {
     assert.equal(calls[1].path.includes('revision=eq.7'), true, 'hanya revisi aktif yang dibaca');
   });
 
+  test('halaman yang gugur karena waktu dicoba ulang, bukan menjatuhkan seluruh pembacaan', async () => {
+    // Regresi produksi: enam pembacaan payload penuh serentak membuat satu halaman lewat dari
+    // anggaran 20 detik, dan seluruh hitung ulang 69.356 ulasan gugur dengan db_unreachable.
+    const first = Array.from({ length: 1000 }, (_, index) => ({ payload: reviewOf(index) }));
+    let attempts = 0;
+    const { fetchImpl } = recorder(({ url }) => {
+      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 1000, entity: 'aud', model: {}, summary: {} }]);
+      const offset = Number(url.searchParams.get('offset'));
+      if (offset === 0) {
+        attempts += 1;
+        if (attempts === 1) return Promise.reject(Object.assign(new Error('aborted'), { name: 'TimeoutError' }));
+        return ok(first);
+      }
+      return ok([]);
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const dataset = await db.loadDataset('ws-1');
+    assert.equal(attempts, 2, 'halaman yang lambat hanya boleh gugur setelah percobaan keduanya');
+    assert.equal(dataset.reviews.length, 1000);
+  });
+
+  test('potongan tulis dikirim sebagai upsert pada kunci revisi agar percobaan ulang tidak menduplikasi baris', async () => {
+    const { calls, fetchImpl } = recorder(({ url, method }) => {
+      if (method === 'GET') {
+        if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 3, review_count: 2 }]);
+        return ok([]);
+      }
+      return noContent();
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const saved = await db.saveSnapshot({
+      workspace: { id: 'ws-1', entity: 'aud' },
+      dataset: { reviews: [reviewOf(0), reviewOf(1)], model: {}, summary: {} },
+    });
+    assert.equal(saved.stored, 2);
+    const chunk = calls.find(call => call.method === 'POST' && call.path.startsWith('/rest/v1/sentil_review'));
+    assert.ok(chunk, 'potongan baris harus tertulis');
+    assert.equal(chunk.path.includes('on_conflict=workspace_id%2Crevision%2Cordinal'), true, 'kunci upsert haruslah kunci primer revisi');
+    assert.match(chunk.prefer, /resolution=merge-duplicates/);
+  });
+
+  test('halaman yang gugur karena waktu memakai anggaran bulk, bukan anggaran satu baris kepala', async () => {
+    const { fetchImpl } = recorder(({ url }) => {
+      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 1000 }]);
+      return Promise.reject(Object.assign(new Error('aborted'), { name: 'TimeoutError' }));
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    await assert.rejects(() => db.loadDataset('ws-1'), error => {
+      assert.equal(error.code, 'db_unreachable');
+      assert.match(error.message, /attempt 2 of 2, 60s budget/, 'pembacaan 1.000 payload diberi anggaran sendiri');
+      assert.match(error.message, /read reviews at 0/, 'kesalahannya menyebut tahap mana yang gugur');
+      return true;
+    });
+  });
+
   test('workspace tanpa snapshot mengembalikan null, bukan data kosong yang mengira berhasil', async () => {
     const { fetchImpl } = recorder(() => ok([]));
     const db = createDatabase({ env: ENV, fetchImpl });
