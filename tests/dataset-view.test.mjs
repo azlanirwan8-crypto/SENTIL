@@ -94,7 +94,7 @@ describe('proyeksi baca dataset', () => {
     assert.equal(row.title, null, 'bidang yang hilang menjadi null, bukan hilang, supaya kunci baris seragam');
   });
 
-  test('satu url per kanal, bukan per baris', () => {
+  test('kanal yang url-nya sama di setiap baris dipromosikan ke peta kanal', () => {
     const projected = projectDataset(datasetWith([
       { ...FULL_ROW, id: 'play-1' },
       { ...FULL_ROW, id: 'play-2' },
@@ -105,6 +105,33 @@ describe('proyeksi baca dataset', () => {
       play: 'https://play.google.com/store/apps/details?id=com.tes',
       appstore: 'https://apps.apple.com/id/app/id12345',
     });
+    assert.deepEqual(projected.reviews.map(row => 'sourceUrl' in row), [false, false, false, false]);
+  });
+
+  test('kanal dengan url berbeda per baris menyimpan url-nya sendiri', () => {
+    const projected = projectDataset(datasetWith([
+      { ...FULL_ROW, id: 'n-1', platform: 'news', sourceUrl: 'https://koran.example/a' },
+      { ...FULL_ROW, id: 'n-2', platform: 'news', sourceUrl: 'https://koran.example/b' },
+      { ...FULL_ROW, id: 'y-1', platform: 'youtube', sourceUrl: 'https://youtu.be/x?lc=c1' },
+      { ...FULL_ROW, id: 'y-2', platform: 'youtube', sourceUrl: 'https://youtu.be/x?lc=c2' },
+    ]));
+    assert.deepEqual(projected.sourceUrls, {}, 'kanal yang bervariasi tidak boleh diringkas jadi satu link');
+    assert.deepEqual(projected.reviews.map(row => row.sourceUrl), [
+      'https://koran.example/a',
+      'https://koran.example/b',
+      'https://youtu.be/x?lc=c1',
+      'https://youtu.be/x?lc=c2',
+    ], 'setiap baris tetap menunjuk ke sumber aslinya sendiri');
+  });
+
+  test('campuran ber-url dan tanpa-url tidak diringkas', () => {
+    const projected = projectDataset(datasetWith([
+      { ...FULL_ROW, id: 'p-1', platform: 'news', sourceUrl: 'https://koran.example/a' },
+      { ...FULL_ROW, id: 'p-2', platform: 'news', sourceUrl: null },
+    ]));
+    assert.deepEqual(projected.sourceUrls, {});
+    assert.equal(projected.reviews[0].sourceUrl, 'https://koran.example/a');
+    assert.equal(projected.reviews[1].sourceUrl, null, 'baris tanpa sumber tidak mewarisi sumber baris lain');
   });
 
   test('bidang di luar reviews dikirim apa adanya', () => {
