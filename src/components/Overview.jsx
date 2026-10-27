@@ -97,7 +97,7 @@ export function Overview({ dataset, workspace }) {
         <>
           <KpiRow dataset={view} />
 
-          <div className="grid gap-3 xl:grid-cols-12">
+          <div className="reveal-group grid gap-3 xl:grid-cols-12">
             <div className="min-w-0 xl:col-span-12">
               <Signals signals={dataset.model?.signals} ai={dataset.model?.ai} filtered={scoped.filtered} />
             </div>

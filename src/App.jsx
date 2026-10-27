@@ -110,7 +110,6 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   // Project yang barisnya sedang dituliskan ke database, sebelum penarikan pertamanya dimulai.
   // Tanpa penanda ini layar sempat menampilkan "belum ada snapshot" di tengah dua permintaan —
   // padahal yang sedang terjadi hanyalah penyimpanan project baru.
@@ -383,45 +382,48 @@ export default function App() {
   async function handleDelete() {
     const target = activeIdRef.current;
     if (!target || deletingRef.current) return;
-    const kept = workspacesRef.current.filter(workspace => workspace.id !== target);
+    const previous = workspacesRef.current;
+    const kept = previous.filter(workspace => workspace.id !== target);
     const nextActive = kept[0]?.id || null;
     deletingRef.current = true;
-    setDeleting(true);
-    // Pembacaan project berikutnya dimulai bersamaan dengan permintaan hapus, bukan sesudahnya.
-    // Yang membuat layar terasa lama saat menghapus bukan penghapusan barisnya — cascade database
-    // hanya membuang beberapa baris kepala plus baris ulasan project itu — melainkan pembacaan
-    // korpus project berikutnya, puluhan detik pada puluhan ribu ulasan. Permintaan ini murni
-    // baca dan tidak menyentuh project yang sedang dihapus, jadi hasilnya siap dipakai begitu
-    // server mengonfirmasi.
+    // Layar pindah SEKETIKA dan permintaan hapus berjalan di latar. Yang memakan waktu pada aksi
+    // ini adalah cascade baris ulasan (puluhan ribu baris) plus bolak-balik ke fungsi server, dan
+    // menunggu jawabannya membuat layar terlihat macet padahal tidak ada yang berubah. Yang belum
+    // terkonfirmasi tidak dibuang: kalau server menolak, daftar dikembalikan apa adanya dan
+    // kesalahannya dilaporkan.
+    const request = deleteWorkspace(target);
+    // Korpus project berikutnya ikut dibaca sejak detik ini, bukan setelah hapus dikonfirmasi.
     const nextLoad = nextActive ? loadDataset(nextActive) : null;
-    const result = await deleteWorkspace(target);
-    deletingRef.current = false;
-    setDeleting(false);
-    if (!result.deleted) {
-      // Konfirmasi tetap terbuka dan tombol kembali bisa dipakai: yang gagal adalah permintaan ke
-      // server, jadi tidak ada yang boleh hilang dari layar.
-      pushToast(result.error, 'error', t('Delete not confirmed'));
-      return;
-    }
-    pushToast(t('This workspace and its stored reviews were deleted from the database.'), 'success', t('Analysis deleted'));
     applyWorkspaces(kept);
     setConfirmOpen(false);
-    // Orang bisa berpindah project selama permintaan hapus berjalan; yang boleh dipindahkan
-    // hanyalah yang masih duduk di project yang baru dihapus.
-    if (activeIdRef.current !== target) return;
-    applyActive(nextActive);
-    applyDataset(null);
-    setDatasetError(null);
     setSyncError(null);
-    setView('dashboard');
-    if (!nextLoad) return;
-    setLoadingDataset(true);
-    const loaded = await nextLoad;
-    setLoadingDataset(false);
-    if (activeIdRef.current !== nextActive) return;
-    if (loaded.db) setDbStatus(loaded.db);
-    applyDataset(loaded.dataset);
-    setDatasetError(loaded.error);
+    setDatasetError(null);
+    applyActive(nextActive);
+    if (nextLoad) {
+      applyDataset(null);
+      setView('dashboard');
+      setLoadingDataset(true);
+      // Kerangka loading dilepas begitu bacaannya sampai, walau konfirmasi hapus masih di jalan:
+      // orang tidak perlu menunggu cascade untuk bisa membaca project yang berikutnya.
+      void nextLoad.then(loaded => {
+        setLoadingDataset(false);
+        if (activeIdRef.current !== nextActive) return;
+        if (loaded.db) setDbStatus(loaded.db);
+        applyDataset(loaded.dataset);
+        setDatasetError(loaded.error);
+      });
+    }
+    const result = await request;
+    deletingRef.current = false;
+    if (result.deleted) {
+      pushToast(t('This workspace and its stored reviews were deleted from the database.'), 'success', t('Analysis deleted'));
+      return;
+    }
+    pushToast(result.error, 'error', t('Delete not confirmed'));
+    applyWorkspaces(previous);
+    // Hapus yang gagal berarti project itu masih ada dan isinya utuh. Kalau tidak ada project
+    // lain untuk berpindah, orang dikembalikan ke sana dan snapshotnya dibaca ulang.
+    if (!activeIdRef.current) void switchWorkspace(target);
   }
 
   function handleExport() {
@@ -568,7 +570,12 @@ export default function App() {
           {activeWorkspace && <WorkspaceHeader workspace={activeWorkspace} dataset={dataset} view={view} onView={setView} syncing={activeSyncing} syncStartedAt={syncing?.startedAt || null} />}
           {notices.length > 0 && <div className="pb-3">{notices}</div>}
           {activeWorkspace && (
-            <div id={`panel-${view}`} tabIndex={-1} className="min-w-0 outline-none">
+            <div
+              key={view}
+              id={`panel-${view}`}
+              tabIndex={-1}
+              className="min-w-0 animate-fade-in outline-none"
+            >
               <div className="space-y-3">{content}</div>
             </div>
           )}
@@ -586,7 +593,6 @@ export default function App() {
       <ConfirmDeleteDialog
         open={confirmOpen}
         workspace={activeWorkspace}
-        busy={deleting}
         onClose={() => setConfirmOpen(false)}
         onConfirm={handleDelete}
       />

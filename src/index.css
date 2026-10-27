@@ -319,6 +319,35 @@
     padding-bottom: 4px;
   }
 
+  /* Dasbor tidak muncul sebagai dinding angka yang serentak. Blok yang berganti menu atau
+     project dibuka beriringan mengikuti urutan baca (filter → indikator → sinyal → chart),
+     dan iringan itu dibaca dari urutan anak sehingga komponen yang menata letak tidak perlu
+     tahu-menahu soal gerak. Aturan prefers-reduced-motion di atas meredam durasinya sampai
+     hilang: isinya tetap utuh, hanya kemunculannya yang tidak lagi bergerak. */
+  .reveal-group > * {
+    animation: reveal-in .3s cubic-bezier(.2, .7, .2, 1) both;
+  }
+
+  .reveal-group>*:nth-child(2) {
+    animation-delay: 45ms;
+  }
+
+  .reveal-group>*:nth-child(3) {
+    animation-delay: 90ms;
+  }
+
+  .reveal-group>*:nth-child(4) {
+    animation-delay: 135ms;
+  }
+
+  .reveal-group>*:nth-child(5) {
+    animation-delay: 180ms;
+  }
+
+  .reveal-group>*:nth-child(n+6) {
+    animation-delay: 225ms;
+  }
+
   .skip-link {
     @apply fixed left-3 top-3 z-[100] -translate-y-24 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-900 transition focus:translate-y-0;
   }
@@ -344,6 +373,18 @@
 
 @keyframes skeleton-sweep {
   100% { transform: translateX(100%); }
+}
+
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes progress-slide {

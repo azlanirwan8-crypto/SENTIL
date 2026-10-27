@@ -129,7 +129,6 @@ export const EN_TO_ID = [
   ["Delete permanently", "Hapus permanen"],
   ["Delete this analysis", "Hapus analisis ini"],
   ["Delete this analysis?", "Hapus analisis ini?"],
-  ["Deleting…", "Menghapus…"],
   ["Deteksi bahasa", "Language detection"],
   ["dianalisis", "analyzed"],
   ["Dibuang", "Dropped"],

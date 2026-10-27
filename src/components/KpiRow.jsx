@@ -39,7 +39,7 @@ export function KpiRow({ dataset }) {
   const maxRatingCount = Math.max(1, ...ratingCounts.map(entry => entry.count));
 
   return (
-    <section aria-label={t('Headline indicators')} className="card grid grid-cols-2 overflow-hidden xl:grid-cols-4">
+    <section aria-label={t('Headline indicators')} className="card reveal-group grid grid-cols-2 overflow-hidden xl:grid-cols-4">
       <Cell label={t('Reviews read')}>
         <div>
           <div className="flex items-baseline gap-1.5">
