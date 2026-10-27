@@ -169,19 +169,19 @@ describe('tulis snapshot', () => {
 
 describe('baca snapshot', () => {
   test('halaman ulasan dirangkai sampai halaman terakhir habis', async () => {
-    const first = Array.from({ length: 1000 }, (_, index) => ({ payload: reviewOf(index) }));
-    const second = Array.from({ length: 400 }, (_, index) => ({ payload: reviewOf(1000 + index) }));
+    const first = Array.from({ length: 2000 }, (_, index) => ({ payload: reviewOf(index) }));
+    const second = Array.from({ length: 400 }, (_, index) => ({ payload: reviewOf(2000 + index) }));
     const { calls, fetchImpl } = recorder(({ url }) => {
-      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 1400, entity: 'aud', model: {}, summary: {} }]);
+      if (url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 7, review_count: 2400, entity: 'aud', model: {}, summary: {} }]);
       const offset = Number(url.searchParams.get('offset'));
       if (offset === 0) return ok(first);
-      if (offset === 1000) return ok(second);
+      if (offset === 2000) return ok(second);
       return ok([]);
     });
     const db = createDatabase({ env: ENV, fetchImpl });
     const dataset = await db.loadDataset('ws-1');
-    assert.equal(dataset.reviews.length, 1400);
-    assert.equal(dataset.reviews[1399].id, 'r-1399');
+    assert.equal(dataset.reviews.length, 2400);
+    assert.equal(dataset.reviews[2399].id, 'r-2399');
     assert.equal(dataset.stored.revision, 7);
     assert.equal(calls.filter(call => call.path.startsWith('/rest/v1/sentil_review')).length, 2, 'halaman pendek menghentikan paging tanpa permintaan tambahan');
     assert.equal(calls[1].path.includes('revision=eq.7'), true, 'hanya revisi aktif yang dibaca');
