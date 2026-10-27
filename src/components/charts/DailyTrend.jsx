@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { formatDay, formatNumber, formatNss } from '../../lib/format.js';
+import { t } from '../../lib/i18n.js';
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
 import { ChartFrame, Legend } from './ChartFrame.jsx';
@@ -32,23 +33,23 @@ export function DailyTrend({ daily }) {
   const tickStep = Math.max(1, Math.ceil(data.length / 6));
   const totalReviews = data.reduce((sum, day) => sum + day.total, 0);
 
-  const legend = <Legend items={SENTIMENT_SERIES.map(item => ({ key: item.key, label: item.label, color: item.color }))} />;
+  const legend = <Legend items={SENTIMENT_SERIES.map(item => ({ key: item.key, label: t(item.label), color: item.color }))} />;
 
   if (!data.length) {
     return (
-      <ChartFrame label="Daily trend" legend={legend}>
-        <EmptyState compact icon={IconGrid} title="No publication date" body="The daily trend needs a date column on the source reviews." />
+      <ChartFrame label={t('Daily trend')} legend={legend}>
+        <EmptyState compact icon={IconGrid} title={t('No publication date')} body={t('The daily trend needs a date column on the source reviews.')} />
       </ChartFrame>
     );
   }
 
   return (
-    <ChartFrame label="Daily trend" meta={`${data.length} days · ${formatNumber(totalReviews)} reviews`} legend={legend} className="h-full">
+    <ChartFrame label={t('Daily trend')} meta={`${data.length} ${t('days')} · ${formatNumber(totalReviews)} ${t('reviews')}`} legend={legend} className="h-full">
       <div ref={measureRef} className="relative w-full min-w-0">
         <div ref={scrollRef} className="scroll-x min-w-0" onScroll={() => { if (hovered != null) bumpScroll(value => value + 1); }}>
           <div className="relative" style={{ width: chartWidth }}>
-            <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`Daily trend over ${data.length} days, ${formatNumber(totalReviews)} reviews.`} className="block max-w-none">
-              <title>Daily sentiment trend</title>
+            <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`${t('Daily trend over')} ${data.length} ${t('days')}, ${formatNumber(totalReviews)} ${t('reviews')}.`} className="block max-w-none">
+              <title>{t('Daily sentiment trend')}</title>
               {scale.ticks.map(tick => {
                 const y = MARGIN.top + plotHeight - (tick / scale.max) * plotHeight;
                 return (
@@ -95,7 +96,7 @@ export function DailyTrend({ daily }) {
                       fill="transparent"
                       tabIndex={0}
                       role="img"
-                      aria-label={`${formatDay(day.date, { long: true })}: ${day.total} reviews, ${day.positive} positive, ${day.negative} negative, ${day.neutral} neutral, ${day.unclassified} unclassified.`}
+                      aria-label={`${formatDay(day.date, { long: true })}: ${day.total} ${t('reviews')}, ${day.positive} ${t('positive')}, ${day.negative} ${t('negative')}, ${day.neutral} ${t('neutral')}, ${day.unclassified} ${t('unclassified')}.`}
                       onMouseEnter={() => setHovered(index)}
                       onMouseLeave={() => setHovered(current => (current === index ? null : current))}
                       onFocus={() => setHovered(index)}
@@ -126,8 +127,8 @@ export function DailyTrend({ daily }) {
                   viewWidth={measuredWidth}
                   title={formatDay(day.date, { long: true })}
                   rows={[
-                    { label: 'Total', value: formatNumber(day.total) },
-                    ...SENTIMENT_SERIES.map(series => ({ label: series.label, value: formatNumber(day[series.key] || 0), color: series.color })),
+                    { label: t('Total'), value: formatNumber(day.total) },
+                    ...SENTIMENT_SERIES.map(series => ({ label: t(series.label), value: formatNumber(day[series.key] || 0), color: series.color })),
                     { label: 'NSS', value: nss == null ? 'N/A' : formatNss(nss) },
                   ]}
                 />

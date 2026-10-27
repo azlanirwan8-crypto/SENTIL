@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { formatNumber, platformLabel } from '../lib/format.js';
+import { t, topicLabel } from '../lib/i18n.js';
 import { scopeDataset } from '../lib/scope.js';
 import { KpiRow } from './KpiRow.jsx';
 import { ChannelStrip } from './ChannelStrip.jsx';
@@ -27,11 +28,11 @@ function Chip({ active, onClick, children, count }) {
 function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, matched, total, onReset }) {
   if (!options.platforms.length && !options.topics.length) return null;
   return (
-    <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" aria-label="Dashboard filters">
+    <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" aria-label={t('Dashboard filters')}>
       {options.platforms.length > 1 && (
-        <div role="group" aria-label="Channel filter" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          <span className="label-sm shrink-0">Channel</span>
-          <Chip active={platform === 'all'} onClick={() => onPlatform('all')} count={total}>All</Chip>
+        <div role="group" aria-label={t('Channel filter')} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+          <span className="label-sm shrink-0">{t('Channel')}</span>
+          <Chip active={platform === 'all'} onClick={() => onPlatform('all')} count={total}>{t('All')}</Chip>
           {options.platforms.map(entry => (
             <Chip key={entry.id} active={platform === entry.id} onClick={() => onPlatform(entry.id)} count={entry.count}>
               {platformLabel(entry.id)}
@@ -41,12 +42,12 @@ function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, ma
       )}
 
       {options.topics.length > 0 && (
-        <div role="group" aria-label="Topic filter" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          <span className="label-sm shrink-0">Topic</span>
-          <Chip active={topic === 'all'} onClick={() => onTopic('all')} count={total}>All</Chip>
+        <div role="group" aria-label={t('Topic filter')} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+          <span className="label-sm shrink-0">{t('Topic')}</span>
+          <Chip active={topic === 'all'} onClick={() => onTopic('all')} count={total}>{t('All')}</Chip>
           {options.topics.map(entry => (
             <Chip key={entry.id} active={topic === entry.id} onClick={() => onTopic(entry.id)} count={entry.count}>
-              {entry.name}
+              {topicLabel(entry.topic)}
             </Chip>
           ))}
         </div>
@@ -54,8 +55,8 @@ function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, ma
 
       {filtered && (
         <div className="ml-auto flex items-center gap-2">
-          <span className="num text-[10px] text-slate-400">{formatNumber(matched)} of {formatNumber(total)} reviews</span>
-          <button type="button" onClick={onReset} className="btn btn-ghost btn-xs">Clear filter</button>
+          <span className="num text-[10px] text-slate-400">{formatNumber(matched)} {t('of')} {formatNumber(total)} {t('reviews')}</span>
+          <button type="button" onClick={onReset} className="btn btn-ghost btn-xs">{t('Clear filter')}</button>
         </div>
       )}
     </section>
@@ -85,13 +86,12 @@ export function Overview({ dataset, workspace }) {
       />
 
       {scoped.filtered && scoped.matched === 0 ? (
-        <section className="card p-4" aria-label="No review matches this filter">
-          <p className="label">No review matches this filter</p>
+        <section className="card p-4" aria-label={t('No review matches this filter')}>
+          <p className="label">{t('No review matches this filter')}</p>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            {formatNumber(total)} reviews were read, but none carries this combination of channel and topic. Every chart counts only what is in the
-            corpus, so an empty filter stays empty instead of falling back to the unfiltered numbers.
+            {formatNumber(total)} {t('reviews were read, but none carries this combination of channel and topic. Every chart counts only what is in the corpus, so an empty filter stays empty instead of falling back to the unfiltered numbers.')}
           </p>
-          <button type="button" onClick={reset} className="btn btn-ghost btn-xs mt-2">Clear filter</button>
+          <button type="button" onClick={reset} className="btn btn-ghost btn-xs mt-2">{t('Clear filter')}</button>
         </section>
       ) : (
         <>
@@ -114,7 +114,7 @@ export function Overview({ dataset, workspace }) {
               <PlatformBars platforms={scoped.model.platforms} />
             </div>
             <div className="min-w-0 xl:col-span-12">
-              <PainLabels pain={dataset.model?.painPoints} filtered={scoped.filtered} />
+              <PainLabels pain={dataset.model?.painPoints} topics={dataset.model?.topics} filtered={scoped.filtered} />
             </div>
           </div>
         </>

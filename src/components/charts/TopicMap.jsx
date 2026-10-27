@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { formatNumber, formatPercent, isNumber, toNumber } from '../../lib/format.js';
+import { bilingual, t, topicAlias, topicLabel } from '../../lib/i18n.js';
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
 import { ChartFrame } from './ChartFrame.jsx';
@@ -24,34 +25,35 @@ export function TopicMap({ topics, filtered = false }) {
 
   if (!data.length) {
     return (
-      <ChartFrame label="Complaint map">
+      <ChartFrame label={t('Complaint map')}>
         <EmptyState
           compact
           icon={IconGrid}
-          title="No complaint topic yet"
-          body="Reviews were read, but none of them matched a feature term in the domain dictionary. Nothing is forced into a topic to fill this chart."
+          title={t('No complaint topic yet')}
+          body={t('Reviews were read, but none of them matched a feature term in the domain dictionary. Nothing is forced into a topic to fill this chart.')}
         />
       </ChartFrame>
     );
   }
 
   const active = data.find(topic => topic.id === selected) || null;
+  const activeAlias = active ? topicAlias(active) : '';
 
   return (
     <ChartFrame
-      label="Complaint map"
-      meta={`${data.length} topics · ${formatNumber(data.reduce((sum, topic) => sum + topic.low, 0))} 1–2★ reviews${filtered ? ' in filter' : ''}`}
+      label={t('Complaint map')}
+      meta={`${data.length} ${t('topics')} · ${formatNumber(data.reduce((sum, topic) => sum + topic.low, 0))} 1–2★ ${t('reviews')}${filtered ? ` ${t('in filter')}` : ''}`}
       legend={active
         ? (
           <button type="button" onClick={() => setSelected(null)} className="text-[10px] font-semibold text-slate-400 hover:text-slate-200">
-            close detail
+            {t('close detail')}
           </button>
         )
-        : <span className="text-[10px] text-slate-400">click a topic for details</span>}
+        : <span className="text-[10px] text-slate-400">{t('click a topic for details')}</span>}
       className="h-full"
       bodyClassName="flex flex-col"
     >
-      <div role="group" aria-label="Complaint topics named by the domain dictionary" className="flex flex-1 flex-col justify-between gap-1 py-1">
+      <div role="group" aria-label={t('Complaint topics named by the domain dictionary')} className="flex flex-1 flex-col justify-between gap-1 py-1">
         {data.map(topic => {
           const activeRow = selected === topic.id;
           const complaintWidth = Math.max(1.5, (topic.low / max) * 100);
@@ -63,12 +65,12 @@ export function TopicMap({ topics, filtered = false }) {
               type="button"
               onClick={() => setSelected(current => (current === topic.id ? null : topic.id))}
               aria-pressed={activeRow}
-              aria-label={`${topic.name}: ${formatNumber(topic.low)} 1–2 star reviews, ${formatPercent(topic.share, 100)} of the complaint pool, ${formatNumber(topic.high)} 4–5 star reviews.`}
-              title={words.length ? `Reviewers wrote: ${words.join(', ')}` : 'Named by the domain dictionary'}
+              aria-label={`${topicLabel(topic)}: ${formatNumber(topic.low)} ${t('1–2 star reviews')}, ${formatPercent(topic.share, 100)} ${t('of the complaint pool')}, ${formatNumber(topic.high)} ${t('4–5 star reviews')}.`}
+              title={words.length ? `${t('Reviewers wrote')}: ${words.join(', ')}` : t('Named by the domain dictionary')}
               className={`flex w-full items-center gap-2.5 rounded px-1.5 py-1 text-left transition ${activeRow ? 'bg-slate-800/70' : 'hover:bg-slate-800/40'}`}
             >
               <span className={`shrink-0 truncate text-[10px] font-semibold ${activeRow ? 'text-slate-50' : 'text-slate-300'}`} style={{ width: LABEL_WIDTH }}>
-                {topic.name}
+                {topicLabel(topic)}
               </span>
               {/* Dua segmen dipisah 2px agar keluhan dan pujian tidak dibaca sebagai satu blok dua warna. */}
               <span className="relative h-3 min-w-0 flex-1 overflow-hidden rounded-[2px] bg-slate-800/50">
@@ -87,27 +89,25 @@ export function TopicMap({ topics, filtered = false }) {
       <div className="mt-2.5 min-h-[36px] rounded border border-slate-800/80 bg-slate-950/40 px-3 py-2">
         {active ? (
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="text-[11px] font-bold text-slate-100">{active.name}</span>
-            {active.nameId && <span className="text-[10px] text-slate-400">{active.nameId}</span>}
+            <span className="text-[11px] font-bold text-slate-100">{topicLabel(active)}</span>
+            {activeAlias && <span className="text-[10px] text-slate-400">{activeAlias}</span>}
             {active.clusterName && (
-              <span className="tag">{active.clusterName.en}</span>
+              <span className="tag">{bilingual(active.clusterName.en, active.clusterName.id)}</span>
             )}
             <span className="num text-[10px] text-slate-400">
-              {formatNumber(active.low)} complaints · {formatNumber(active.mid)} neutral · {formatNumber(active.high)} praise
-              {active.unrated ? ` · ${formatNumber(active.unrated)} unstarred` : ''}
+              {formatNumber(active.low)} {t('complaints')} · {formatNumber(active.mid)} {t('neutral')} · {formatNumber(active.high)} {t('praise')}
+              {active.unrated ? ` · ${formatNumber(active.unrated)} ${t('unstarred')}` : ''}
             </span>
             {isNumber(active.complaintRate) && (
-              <span className="num text-[10px] text-slate-400">{Math.round(toNumber(active.complaintRate))}% of its mentions are complaints</span>
+              <span className="num text-[10px] text-slate-400">{Math.round(toNumber(active.complaintRate))}% {t('of its mentions are complaints')}</span>
             )}
             {wordsOf(active).length > 0 && (
-              <span className="font-mono text-[10px] text-slate-400">matched: {wordsOf(active).join(', ')}</span>
+              <span className="font-mono text-[10px] text-slate-400">{t('matched')}: {wordsOf(active).join(', ')}</span>
             )}
           </div>
         ) : (
           <p className="text-[10px] leading-relaxed text-slate-400">
-            Each bar is a product feature named by the domain dictionary, counted across 1–2★ reviews; the green segment counts
-            4–5★ reviews using the same words. Names come from the dictionary in English and Indonesian, never from filler words
-            inside a review. One review can carry several topics, so the bars do not add up to 100%.
+            {t('Each bar is a product feature named by the domain dictionary, counted across 1–2★ reviews; the green segment counts 4–5★ reviews using the same words. Names come from the dictionary in English and Indonesian, never from filler words inside a review. One review can carry several topics, so the bars do not add up to 100%.')}
           </p>
         )}
       </div>

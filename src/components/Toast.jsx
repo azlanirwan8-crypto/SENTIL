@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { IconAlert, IconCheck, IconInfo, IconX } from './icons.jsx';
+import { t } from '../lib/i18n.js';
 
 const TONES = {
   success: { icon: IconCheck, accent: 'text-pos', ring: 'border-pos/25' },
@@ -17,14 +18,16 @@ function ToastItem({ toast, onDismiss }) {
 
   const tone = TONES[toast.tone] || TONES.info;
   const Icon = tone.icon;
+  // String yang sudah masuk state dibaca ulang lewat tabel dua arah, jadi toast yang masih
+  // tampil ikut berganti bahasa alih-alih membeku dalam bahasa saat ia dibuat.
   return (
     <div className={`pointer-events-auto flex w-full items-start gap-2.5 rounded-lg border ${tone.ring} bg-slate-900/97 p-2.5 shadow-xl shadow-black/50 backdrop-blur animate-scale-in sm:w-[340px]`}>
       <Icon size={14} className={`mt-0.5 shrink-0 ${tone.accent}`} />
       <div className="min-w-0 flex-1">
-        {toast.title && <p className="text-[11px] font-bold text-slate-100">{toast.title}</p>}
-        <p className={`text-[11px] leading-relaxed text-slate-400 ${toast.title ? 'mt-0.5' : ''}`}>{toast.message}</p>
+        {toast.title && <p className="text-[11px] font-bold text-slate-100">{t(toast.title)}</p>}
+        <p className={`text-[11px] leading-relaxed text-slate-400 ${toast.title ? 'mt-0.5' : ''}`}>{t(toast.message)}</p>
       </div>
-      <button type="button" onClick={() => onDismiss(toast.id)} className="mt-0.5 shrink-0 text-slate-400 hover:text-slate-200" aria-label="Dismiss notification">
+      <button type="button" onClick={() => onDismiss(toast.id)} className="mt-0.5 shrink-0 text-slate-400 hover:text-slate-200" aria-label={t('Dismiss notification')}>
         <IconX size={13} />
       </button>
     </div>

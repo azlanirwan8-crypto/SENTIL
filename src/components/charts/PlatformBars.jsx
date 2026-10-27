@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { formatNumber, formatNss, formatPercent, platformLabel } from '../../lib/format.js';
+import { t } from '../../lib/i18n.js';
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
 import { StoreMark } from '../Brand.jsx';
@@ -36,23 +37,23 @@ export function PlatformBars({ platforms }) {
   const gap = 3;
   const clusterWidth = barWidth * SENTIMENT_SERIES.length + gap * (SENTIMENT_SERIES.length - 1);
 
-  const legend = <Legend items={SENTIMENT_SERIES.map(item => ({ key: item.key, label: item.label, color: item.color }))} />;
+  const legend = <Legend items={SENTIMENT_SERIES.map(item => ({ key: item.key, label: t(item.label), color: item.color }))} />;
 
   if (!data.length) {
     return (
-      <ChartFrame label="Channel × sentiment" legend={legend}>
-        <EmptyState compact icon={IconGrid} title="No label per channel yet" body="This chart needs a labelled review on at least one channel." />
+      <ChartFrame label={t('Channel × sentiment')} legend={legend}>
+        <EmptyState compact icon={IconGrid} title={t('No label per channel yet')} body={t('This chart needs a labelled review on at least one channel.')} />
       </ChartFrame>
     );
   }
 
   return (
-    <ChartFrame label="Channel × sentiment" meta={`${data.length} channels`} legend={legend} className="h-full">
+    <ChartFrame label={t('Channel × sentiment')} meta={`${data.length} ${t('channels')}`} legend={legend} className="h-full">
       <div ref={measureRef} className="relative w-full min-w-0">
         <div ref={scrollRef} className="scroll-x min-w-0" onScroll={() => { if (hovered != null) bumpScroll(value => value + 1); }}>
           <div className="relative" style={{ width: chartWidth }}>
-            <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`Label composition for ${data.length} channels.`}>
-              <title>Sentiment label composition per platform</title>
+            <svg width={chartWidth} height={HEIGHT} role="group" aria-label={`${t('Label composition for')} ${data.length} ${t('channels')}.`}>
+              <title>{t('Sentiment label composition per platform')}</title>
               {scale.ticks.map(tick => {
                 const y = MARGIN.top + plotHeight - (tick / scale.max) * plotHeight;
                 return (
@@ -97,7 +98,7 @@ export function PlatformBars({ platforms }) {
                       fill="transparent"
                       tabIndex={0}
                       role="img"
-                      aria-label={`${platformLabel(platform.id)}: ${platform.total} reviews; ${platform.positive} positive, ${platform.neutral} neutral, ${platform.negative} negative, ${platform.unclassified} unclassified.`}
+                      aria-label={`${platformLabel(platform.id)}: ${platform.total} ${t('reviews')}; ${platform.positive} ${t('positive')}, ${platform.neutral} ${t('neutral')}, ${platform.negative} ${t('negative')}, ${platform.unclassified} ${t('unclassified')}.`}
                       onMouseEnter={() => setHovered(platform.id)}
                       onMouseLeave={() => setHovered(current => (current === platform.id ? null : current))}
                       onFocus={() => setHovered(platform.id)}
@@ -127,8 +128,8 @@ export function PlatformBars({ platforms }) {
                   viewWidth={measuredWidth}
                   title={platformLabel(platform.id)}
                   rows={[
-                    { label: 'Total', value: formatNumber(platform.total) },
-                    ...SENTIMENT_SERIES.map(series => ({ label: series.label, value: formatNumber(platform[series.key] || 0), color: series.color })),
+                    { label: t('Total'), value: formatNumber(platform.total) },
+                    ...SENTIMENT_SERIES.map(series => ({ label: t(series.label), value: formatNumber(platform[series.key] || 0), color: series.color })),
                     { label: 'NSS', value: nss == null ? 'N/A' : formatNss(nss) },
                   ]}
                 />

@@ -1,4 +1,5 @@
 import { channelStatusLabel, formatDateTime, formatDecimal, formatNumber, isNumber } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { StoreMark } from './Brand.jsx';
 import { IconAlert, IconExternal, IconInfo } from './icons.jsx';
 
@@ -29,7 +30,7 @@ function ChannelRow({ channel, store, workspaceStore, fetchedAt }) {
   const note = channel?.status === 'error' || channel?.status === 'empty'
     ? channel.message
     : channel?.truncated
-      ? 'This channel was not read to the end on this pull.'
+      ? t('This channel was not read to the end on this pull.')
       : null;
   const noteTone = channel?.status === 'error' ? 'text-neg' : 'text-neu';
 
@@ -43,15 +44,15 @@ function ChannelRow({ channel, store, workspaceStore, fetchedAt }) {
             {selected ? (
               <span className={`pill ${style}`}>{channelStatusLabel(status)}</span>
             ) : (
-              <span className="pill border-slate-800 bg-slate-900 text-slate-400">not included</span>
+              <span className="pill border-slate-800 bg-slate-900 text-slate-400">{t('not included')}</span>
             )}
           </div>
           <p className="mt-0.5 truncate text-[10px] text-slate-400">
-            {selected ? `${app?.title || workspaceStore?.title || 'N/A'} · ${workspaceStore?.appId || channel?.appId || 'N/A'}` : `This channel was not selected · ${workspaceStore?.appId || 'N/A'}`}
+            {selected ? `${app?.title || workspaceStore?.title || 'N/A'} · ${workspaceStore?.appId || channel?.appId || 'N/A'}` : `${t('This channel was not selected')} · ${workspaceStore?.appId || 'N/A'}`}
           </p>
         </div>
         {url && (
-          <a href={url} target="_blank" rel="noopener noreferrer" className="icon-btn h-7 w-7" aria-label={`Open ${store === 'play' ? 'Google Play' : 'the App Store'}`} title="Open in store">
+          <a href={url} target="_blank" rel="noopener noreferrer" className="icon-btn h-7 w-7" aria-label={`${t('Open')} ${store === 'play' ? 'Google Play' : 'App Store'}`} title={t('Open in store')}>
             <IconExternal size={12} />
           </a>
         )}
@@ -59,24 +60,24 @@ function ChannelRow({ channel, store, workspaceStore, fetchedAt }) {
 
       {selected && (
         <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5 border-t border-slate-800/70 pt-3 sm:grid-cols-4">
-          <Stat label="Score" value={isNumber(app?.score) ? formatDecimal(app.score, 2) : 'N/A'} />
-          <Stat label="Ratings" value={formatNumber(storeRatings)} />
-          <Stat label="Read" value={formatNumber(channel?.fetched)} />
-          <Stat label="Reported" value={formatNumber(coverage?.reportedReviewCount ?? app?.reviewCountReported)} />
+          <Stat label={t('Score')} value={isNumber(app?.score) ? formatDecimal(app.score, 2) : 'N/A'} />
+          <Stat label={t('Ratings')} value={formatNumber(storeRatings)} />
+          <Stat label={t('Read')} value={formatNumber(channel?.fetched)} />
+          <Stat label={t('Reported')} value={formatNumber(coverage?.reportedReviewCount ?? app?.reviewCountReported)} />
         </div>
       )}
 
       {selected && note && (
         <p className={`mt-2 flex items-start gap-1.5 text-[10px] leading-relaxed ${noteTone}`}>
           <IconAlert size={11} className="mt-0.5 shrink-0" />
-          <span className="line-clamp-2">{note}</span>
+          <span className="line-clamp-2">{t(note)}</span>
         </p>
       )}
 
       {selected && !note && (
         <p className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-400">
           <IconInfo size={11} />
-          {channel.cache?.hit ? 'from cache' : 'fresh pull'} · {formatDateTime(channel.cache?.fetchedAt || fetchedAt)}
+          {channel.cache?.hit ? t('from cache') : t('fresh pull')} · {formatDateTime(channel.cache?.fetchedAt || fetchedAt)}
         </p>
       )}
     </div>
@@ -89,8 +90,8 @@ export function ChannelStrip({ dataset, workspace }) {
   return (
     <section aria-labelledby="sumber-title" className="card overflow-hidden">
       <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-4 py-2">
-        <h2 id="sumber-title" className="label">Sources</h2>
-        <p className="text-[10px] text-slate-400">Store figures shown as published, never forced to match what was read</p>
+        <h2 id="sumber-title" className="label">{t('Sources')}</h2>
+        <p className="text-[10px] text-slate-400">{t('Store figures shown as published, never forced to match what was read')}</p>
       </header>
       <div className="grid gap-0 md:grid-cols-2 md:divide-x divide-slate-800/70">
         {['play', 'appstore'].map(store => (

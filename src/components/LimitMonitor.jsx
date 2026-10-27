@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchLimits, resetLimits } from '../lib/api.js';
 import { formatDateTime, formatNumber, formatTime, relativeTime } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { StoreMark } from './Brand.jsx';
 import { IconAlert, IconClock, IconRefresh, IconShield } from './icons.jsx';
 
@@ -11,6 +12,8 @@ const TONE_CLASS = {
   slate: 'border-slate-700 bg-slate-800/70 text-slate-400',
 };
 
+// Label ditulis dalam bentuk baku; t() yang memilih bahasanya. Perbandingan status di bawah
+// memakai nilai mentah ini, jadi ia tidak boleh membandingkan hasil terjemahan.
 const OVERALL = {
   ok: ['All paths read', 'pos'],
   limited: ['Some paths truncated', 'neu'],
@@ -28,9 +31,9 @@ function Signal({ signal }) {
       title={`${signal.source}: ${signal.detail}`}
     >
       <span className={signal.kind === 'rate-limit' || signal.kind === 'blocked' ? 'text-neg' : 'text-neu'}>
-        {signal.httpStatus ? `${signal.httpStatus} · ` : ''}{signal.label}
+        {signal.httpStatus ? `${signal.httpStatus} · ` : ''}{t(signal.label)}
       </span>
-      {signal.retryAfterMs && <span className="num text-slate-400">wait {Math.round(signal.retryAfterMs / 1000)}s</span>}
+      {signal.retryAfterMs && <span className="num text-slate-400">{t('wait')} {Math.round(signal.retryAfterMs / 1000)}s</span>}
     </span>
   );
 }
@@ -76,14 +79,14 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
       const response = await run();
       if (action === 'check') {
         setMonitor(response);
-        onToast?.('Source limit status was refreshed from the instance that is still warm.', 'info', 'Monitoring refreshed');
+        onToast?.(t('Source limit status was refreshed from the instance that is still warm.'), 'info', t('Monitoring refreshed'));
       } else {
-        onToast?.(response.message || 'Channel attempt log cleared.', 'success', successTitle);
+        onToast?.(response.message || t('Channel attempt log cleared.'), 'success', successTitle);
         setMonitor(await fetchLimits(idsFor(null)));
       }
     } catch (cause) {
-      setError(cause.message || 'Source limit monitoring failed.');
-      onToast?.(cause.message || 'Source limit monitoring failed.', 'error', 'Failed');
+      setError(cause.message || t('Source limit monitoring failed.'));
+      onToast?.(cause.message || t('Source limit monitoring failed.'), 'error', t('Failed'));
     } finally {
       setBusy(null);
     }
@@ -99,53 +102,53 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
           <div className="flex min-w-0 items-center gap-2">
             <IconShield size={13} className="shrink-0 text-slate-400" />
-            <h2 className="label">Source limits</h2>
-            <span className={`pill ${TONE_CLASS[overall[1]]}`}>{overall[0]}</span>
-            {monitor?.setupCount > 0 && overall[0].startsWith('All') && (
+            <h2 className="label">{t('Source limits')}</h2>
+            <span className={`pill ${TONE_CLASS[overall[1]]}`}>{t(overall[0])}</span>
+            {monitor?.setupCount > 0 && overall[0] === OVERALL.ok[0] && (
               <span className="pill border border-slate-700 bg-slate-800/70 text-slate-400">
-                {formatNumber(monitor.setupCount)} channels waiting for credentials
+                {formatNumber(monitor.setupCount)} {t('channels waiting for credentials')}
               </span>
             )}
           </div>
           <div className="flex items-center gap-1.5">
             <span className="num text-[10px] text-slate-400">
-              {monitor?.generatedAt ? formatDateTime(monitor.generatedAt) : 'no monitoring yet'}
+              {monitor?.generatedAt ? formatDateTime(monitor.generatedAt) : t('no monitoring yet')}
             </span>
             <button
               type="button"
               onClick={() => call('check', () => fetchLimits(idsFor(null)))}
               disabled={Boolean(busy)}
               className="btn btn-secondary btn-xs"
-              title="Re-read limit status from the server instance that is still warm"
+              title={t('Re-read limit status from the server instance that is still warm')}
             >
               <IconRefresh size={12} className={busy === 'check' ? 'animate-spin' : ''} />
-              Re-check
+              {t('Re-check')}
             </button>
             <button
               type="button"
-              onClick={() => call({ source: 'all' }, () => resetLimits(idsFor(null)), 'Monitoring reset')}
+              onClick={() => call({ source: 'all' }, () => resetLimits(idsFor(null)), t('Monitoring reset'))}
               disabled={Boolean(busy)}
               className="btn btn-ghost btn-xs"
-              title="Clear the attempt log + channel cache on this instance"
+              title={t('Clear the attempt log + channel cache on this instance')}
             >
-              Reset
+              {t('Reset')}
             </button>
           </div>
         </header>
 
-        <div className="scroll-x" tabIndex={0} role="region" aria-label="Limit status per source channel">
+        <div className="scroll-x" tabIndex={0} role="region" aria-label={t('Limit status per source channel')}>
           <table className="w-full min-w-[760px] border-collapse text-xs">
-            <caption className="sr-only">Limit status per source channel: state, observed signals, rows read, figures reported by the store, pages, and fallback path</caption>
+            <caption className="sr-only">{t('Limit status per source channel: state, observed signals, rows read, figures reported by the store, pages, and fallback path')}</caption>
             <thead>
               <tr className="border-b border-slate-800/70 bg-slate-950/40 text-[10px] uppercase tracking-wider text-slate-400">
-                <th scope="col" className="px-2 py-1 text-left font-semibold">Source</th>
-                <th scope="col" className="px-2 py-1 text-left font-semibold">Limit status</th>
-                <th scope="col" className="px-2 py-1 text-left font-semibold">Observed signals</th>
-                <th scope="col" className="px-2 py-1 text-right font-semibold">Read</th>
-                <th scope="col" className="px-2 py-1 text-right font-semibold">Reported by source</th>
-                <th scope="col" className="px-2 py-1 text-right font-semibold">Pages</th>
-                <th scope="col" className="px-2 py-1 text-left font-semibold">Fallback path</th>
-                <th scope="col" className="px-2 py-1 text-right font-semibold">Action</th>
+                <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Source')}</th>
+                <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Limit status')}</th>
+                <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Observed signals')}</th>
+                <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Read')}</th>
+                <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Reported by source')}</th>
+                <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Pages')}</th>
+                <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Fallback path')}</th>
+                <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Action')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -162,48 +165,48 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
                       <span className="font-semibold text-slate-100">{source.label}</span>
                     </span>
                     <span className="mt-0.5 block truncate font-mono text-[10px] text-slate-400">
-                      {appId || source.appId || (workspace?.channels?.[source.id]?.enabled ? 'target: entity name' : 'N/A')}
+                      {appId || source.appId || (workspace?.channels?.[source.id]?.enabled ? t('target: entity name') : 'N/A')}
                     </span>
                   </td>
                   <td className="px-2 py-1.5">
                     <span className={`pill ${TONE_CLASS[source.tone]}`}>{source.stateLabel}</span>
                     {source.errorCount > 0 && (
                       <span className="num mt-1 block text-[10px] text-slate-400">
-                        {formatNumber(source.errorCount)} of {formatNumber(source.sourceCalls)} source attempts had problems
+                        {formatNumber(source.errorCount)} {t('of')} {formatNumber(source.sourceCalls)} {t('source attempts had problems')}
                       </span>
                     )}
                   </td>
                   <td className="px-2 py-1.5">
                     <span className="flex flex-wrap gap-1">
                       {source.signals.length ? source.signals.map((signal, index) => <Signal key={`${signal.kind}-${index}`} signal={signal} />)
-                        : <span className="text-[10px] text-slate-400">{source.staleLedger ? 'history present, channel copy missing' : 'no limit signal'}</span>}
+                        : <span className="text-[10px] text-slate-400">{source.staleLedger ? t('history present, channel copy missing') : t('no limit signal')}</span>}
                     </span>
                     {source.nextSafeAt && (
-                      <span className="num mt-1 block text-[10px] text-neu">suggested retry ≈ {formatTime(source.nextSafeAt)}</span>
+                      <span className="num mt-1 block text-[10px] text-neu">{t('suggested retry')} ≈ {formatTime(source.nextSafeAt)}</span>
                     )}
                   </td>
                   <Value value={formatNumber(source.read)} />
                   <td className="px-2 py-1.5 text-right align-top">
                     <span className="num text-[11.5px] font-bold text-slate-200">{formatNumber(source.reported)}</span>
-                    <span className="num mt-0.5 block text-[10px] text-slate-400">{formatNumber(source.reportedRatings)} ratings</span>
+                    <span className="num mt-0.5 block text-[10px] text-slate-400">{formatNumber(source.reportedRatings)} {t('ratings')}</span>
                   </td>
                   <Value value={formatNumber(source.pages)} />
                   <td className="px-2 py-1.5">
                     <span className={`text-[10px] leading-snug ${source.fallback?.used ? 'text-pos' : 'text-slate-400'}`}>
-                      {source.fallback?.used ? 'used' : 'not needed'}
+                      {source.fallback?.used ? t('used') : t('not needed')}
                     </span>
-                    <span className="mt-0.5 block text-[10px] leading-snug text-slate-400">{source.fallback?.detail || 'single path'}</span>
+                    <span className="mt-0.5 block text-[10px] leading-snug text-slate-400">{source.fallback?.detail || t('single path')}</span>
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     <button
                       type="button"
-                      onClick={() => call({ source: source.id }, () => resetLimits(idsFor(source.id)), 'Channel refreshed')}
+                      onClick={() => call({ source: source.id }, () => resetLimits(idsFor(source.id)), t('Channel refreshed'))}
                       disabled={Boolean(busy) || !actionable}
                       className="btn btn-ghost btn-xs"
-                      title={`Drop the cache + log for ${source.label} so the next pull starts on a clean path`}
+                      title={`${t('Drop the cache + log for')} ${source.label} ${t('so the next pull starts on a clean path')}`}
                     >
                       {busy === source.id ? <IconRefresh size={12} className="animate-spin" /> : <IconClock size={12} />}
-                      Refresh
+                      {t('Refresh')}
                     </button>
                   </td>
                 </tr>
@@ -229,23 +232,23 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
 
       <section className="card overflow-hidden">
         <header className="flex items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
-          <h2 className="label">Attempt log</h2>
-          <span className="num text-[10px] text-slate-400">{formatNumber(history.length)} entries · max 24 per channel</span>
+          <h2 className="label">{t('Attempt log')}</h2>
+          <span className="num text-[10px] text-slate-400">{formatNumber(history.length)} {t('entries')} · {t('max 24 per channel')}</span>
         </header>
         {history.length ? (
-          <div className="scroll-x max-h-[168px] overflow-y-auto" tabIndex={0} role="region" aria-label="Attempt log per channel">
+          <div className="scroll-x max-h-[168px] overflow-y-auto" tabIndex={0} role="region" aria-label={t('Attempt log per channel')}>
             <table className="w-full min-w-[620px] border-collapse text-xs">
-              <caption className="sr-only">The last twenty-four attempts per channel on the warm server instance</caption>
+              <caption className="sr-only">{t('The last twenty-four attempts per channel on the warm server instance')}</caption>
               <thead>
                 <tr className="border-b border-slate-800/70 text-[10px] uppercase tracking-wider text-slate-400">
-                  <th scope="col" className="px-2 py-1 text-left font-semibold">Time</th>
-                  <th scope="col" className="px-2 py-1 text-left font-semibold">Channel</th>
-                  <th scope="col" className="px-2 py-1 text-left font-semibold">Path</th>
-                  <th scope="col" className="px-2 py-1 text-right font-semibold">Duration</th>
-                  <th scope="col" className="px-2 py-1 text-right font-semibold">Rows</th>
-                  <th scope="col" className="px-2 py-1 text-right font-semibold">Status</th>
-                  <th scope="col" className="px-2 py-1 text-right font-semibold">Signal</th>
-                  <th scope="col" className="px-2 py-1 text-right font-semibold">Ago</th>
+                  <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Time')}</th>
+                  <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Channel')}</th>
+                  <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Path')}</th>
+                  <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Duration')}</th>
+                  <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Rows')}</th>
+                  <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Status')}</th>
+                  <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Signal')}</th>
+                  <th scope="col" className="px-2 py-1 text-right font-semibold">{t('Ago')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -253,14 +256,14 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
                   <tr key={`${attempt.at}-${index}`} className="hover:bg-slate-900/60">
                     <td className="num px-2 py-1 text-[10px] text-slate-400">{formatTime(attempt.at)}</td>
                     <td className="px-2 py-1 text-[10px] font-semibold text-slate-300">{attempt.source}</td>
-                    <td className="px-2 py-1 text-[10px] text-slate-400">{attempt.cacheHit ? 'cache' : 'fresh pull'}</td>
+                    <td className="px-2 py-1 text-[10px] text-slate-400">{attempt.cacheHit ? t('cache') : t('fresh pull')}</td>
                     <td className="num px-2 py-1 text-right text-[10px] text-slate-400">
-                      {attempt.cacheHit ? `age ${duration(attempt.cacheAgeMs)}` : duration(attempt.ms)}
+                      {attempt.cacheHit ? `${t('age')} ${duration(attempt.cacheAgeMs)}` : duration(attempt.ms)}
                     </td>
-                    <td className="num px-2 py-1 text-right text-[10px] text-slate-400">{formatNumber(attempt.fetched)} rows</td>
+                    <td className="num px-2 py-1 text-right text-[10px] text-slate-400">{formatNumber(attempt.fetched)} {t('rows')}</td>
                     <td className="px-2 py-1 text-right">
                       <span className={`pill ${attempt.status === 'error' ? TONE_CLASS.neg : attempt.status === 'partial' ? TONE_CLASS.neu : TONE_CLASS.pos}`}>
-                        {attempt.status || 'failed'}
+                        {attempt.status ? t(attempt.status) : t('failed')}
                       </span>
                     </td>
                     <td className="px-2 py-1 text-right text-[10px] text-slate-400">
@@ -274,7 +277,7 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
           </div>
         ) : (
           <p className="px-3 py-4 text-center text-[10.5px] text-slate-400">
-            The warm server instance has not logged an attempt on this channel yet. Press Refresh or run a pull to fill the log.
+            {t('The warm server instance has not logged an attempt on this channel yet. Press Refresh or run a pull to fill the log.')}
           </p>
         )}
       </section>

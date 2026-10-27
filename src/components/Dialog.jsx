@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { IconX } from './icons.jsx';
+import { t } from '../lib/i18n.js';
 
 const FOCUSABLE = [
   'a[href]',
@@ -91,7 +92,7 @@ export function DialogShell({ open, onClose, labelledBy, describedBy, children, 
             type="button"
             onClick={() => closeRef.current()}
             className="absolute right-2.5 top-2.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-800 bg-slate-900 text-slate-400 transition hover:border-slate-700 hover:text-slate-100"
-            aria-label="Close dialog"
+            aria-label={t('Close dialog')}
           >
             <IconX size={14} />
           </button>

@@ -1,4 +1,5 @@
 import { formatDecimal, formatNumber, formatNss, formatPercent, isNumber, platformLabel, toNumber } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { IconStar } from './icons.jsx';
 import { storeColor } from './charts/palette.js';
 
@@ -12,12 +13,12 @@ function Cell({ label, children }) {
 }
 
 function direction(value) {
-  if (value == null) return 'not available yet';
-  if (value >= 60) return 'very positive';
-  if (value >= 20) return 'tilts positive';
-  if (value > -20) return 'balanced';
-  if (value > -60) return 'tilts negative';
-  return 'very negative';
+  if (value == null) return t('not available yet');
+  if (value >= 60) return t('very positive');
+  if (value >= 20) return t('tilts positive');
+  if (value > -20) return t('balanced');
+  if (value > -60) return t('tilts negative');
+  return t('very negative');
 }
 
 export function KpiRow({ dataset }) {
@@ -38,14 +39,14 @@ export function KpiRow({ dataset }) {
   const maxRatingCount = Math.max(1, ...ratingCounts.map(entry => entry.count));
 
   return (
-    <section aria-label="Headline indicators" className="card grid grid-cols-2 overflow-hidden xl:grid-cols-4">
-      <Cell label="Reviews read">
+    <section aria-label={t('Headline indicators')} className="card grid grid-cols-2 overflow-hidden xl:grid-cols-4">
+      <Cell label={t('Reviews read')}>
         <div>
           <div className="flex items-baseline gap-1.5">
             <span className="metric">{formatNumber(total)}</span>
-            <span className="text-[10px] font-semibold text-slate-400">reviews</span>
+            <span className="text-[10px] font-semibold text-slate-400">{t('reviews')}</span>
           </div>
-          <div className="mt-2 flex h-1 rounded-full bg-slate-800" role="group" aria-label="Reviews per channel">
+          <div className="mt-2 flex h-1 rounded-full bg-slate-800" role="group" aria-label={t('Reviews per channel')}>
             {channelTotals.map((channel, index) => {
               const color = storeColor(channel.id);
               const tipAlign = index === 0 ? 'left-0' : index === channelTotals.length - 1 ? 'right-0' : 'left-1/2 -translate-x-1/2';
@@ -54,7 +55,7 @@ export function KpiRow({ dataset }) {
                   key={channel.id}
                   tabIndex={0}
                   role="img"
-                  aria-label={`${platformLabel(channel.id)}: ${formatNumber(channel.count)} reviews, ${formatPercent(channel.count, channelSum)} of the reviews read`}
+                  aria-label={`${platformLabel(channel.id)}: ${formatNumber(channel.count)} ${t('reviews')}, ${formatPercent(channel.count, channelSum)} ${t('of the reviews read')}`}
                   className={`group/seg relative outline-none focus-visible:z-10 ${channelTotals.length === 1 ? 'rounded-full' : index === 0 ? 'rounded-l-full' : index === channelTotals.length - 1 ? 'rounded-r-full' : ''}`}
                   style={{ width: `${(channel.count / channelSum) * 100}%`, backgroundColor: color }}
                 >
@@ -72,13 +73,13 @@ export function KpiRow({ dataset }) {
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-2.5 text-[10px] text-slate-400">
             {isNumber(summary.withText) && (
-              <span className="num">{formatNumber(summary.withText)} with text · {formatNumber(summary.withoutText)} without text</span>
+              <span className="num">{formatNumber(summary.withText)} {t('with text')} · {formatNumber(summary.withoutText)} {t('without text')}</span>
             )}
           </div>
         </div>
       </Cell>
 
-      <Cell label="Classification coverage">
+      <Cell label={t('Classification coverage')}>
         <div>
           <div className="flex items-baseline gap-1.5">
             <span className="metric">{total ? formatPercent(analyzed, total) : 'N/A'}</span>
@@ -88,12 +89,12 @@ export function KpiRow({ dataset }) {
             <span className="block h-full rounded-full bg-pos transition-all duration-700" style={{ width: `${total ? (analyzed / total) * 100 : 0}%` }} />
           </div>
           <p className="mt-1.5 text-[10px] text-slate-400">
-            <span className="num">{formatNumber(summary.unclassified)}</span> unclassified · <span className="num">{formatNumber(model.metrics?.learnedTerms)}</span> learned terms
+            <span className="num">{formatNumber(summary.unclassified)}</span> {t('unclassified')} · <span className="num">{formatNumber(model.metrics?.learnedTerms)}</span> {t('learned terms')}
           </p>
         </div>
       </Cell>
 
-      <Cell label="NSS · weak labels">
+      <Cell label={t('NSS · weak labels')}>
         <div>
           <div className="flex items-baseline gap-1.5">
             <span className="metric">{nss == null ? 'N/A' : formatNss(nss)}</span>
@@ -109,23 +110,23 @@ export function KpiRow({ dataset }) {
             )}
           </div>
           <p className="mt-1.5 text-[10px] text-slate-400">
-            {direction(nss)} · n=<span className="num">{formatNumber(analyzed)}</span> · not a probability
+            {direction(nss)} · n=<span className="num">{formatNumber(analyzed)}</span> · {t('not a probability')}
           </p>
         </div>
       </Cell>
 
-      <Cell label="Average stars">
+      <Cell label={t('Average stars')}>
         <div className="flex items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-1">
               <span className="metric">{avgRating == null ? 'N/A' : formatDecimal(avgRating, 2)}</span>
               {avgRating != null && <IconStar size={13} className="mb-0.5 text-neu" />}
             </div>
-            <p className="mt-1.5 text-[10px] text-slate-400">from <span className="num">{formatNumber(rated)}</span> rated reviews · weak signal</p>
+            <p className="mt-1.5 text-[10px] text-slate-400">{t('from')} <span className="num">{formatNumber(rated)}</span> {t('rated reviews')} · {t('weak signal')}</p>
           </div>
-          <div className="flex h-[38px] shrink-0 items-end gap-1" role="img" aria-label={ratingCounts.map(entry => `${entry.stars} stars: ${entry.count}`).join(', ')}>
+          <div className="flex h-[38px] shrink-0 items-end gap-1" role="img" aria-label={ratingCounts.map(entry => `${entry.stars} ${t('stars')}: ${entry.count}`).join(', ')}>
             {ratingCounts.map(entry => (
-              <span key={entry.stars} className="flex flex-col items-center gap-1" title={`${entry.stars}★: ${entry.count} reviews`}>
+              <span key={entry.stars} className="flex flex-col items-center gap-1" title={`${entry.stars}★: ${entry.count} ${t('reviews')}`}>
                 <span
                   className={`w-[7px] rounded-[1px] ${entry.stars <= 2 ? 'bg-neg/70' : entry.stars === 3 ? 'bg-neu/70' : 'bg-pos/70'}`}
                   style={{ height: `${Math.max(entry.count ? 6 : 2, (entry.count / maxRatingCount) * 30)}px` }}

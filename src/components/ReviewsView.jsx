@@ -8,6 +8,7 @@ import {
   safeHttpUrl,
   sentimentLabel,
 } from '../lib/format.js';
+import { t, topicLabel } from '../lib/i18n.js';
 import { EmptyState } from './EmptyState.jsx';
 import { StoreMark } from './Brand.jsx';
 import { IconChevronDown, IconExternal, IconQuote, IconSearch, IconStar, IconX } from './icons.jsx';
@@ -39,7 +40,7 @@ function Stars({ rating }) {
     return <span className="num text-[10px] text-slate-400">N/A</span>;
   }
   return (
-    <span className="inline-flex items-center gap-1" aria-label={`${rating} of 5 stars`}>
+    <span className="inline-flex items-center gap-1" aria-label={`${rating} ${t('of 5 stars')}`}>
       <span className="flex gap-px" aria-hidden="true">
         {[1, 2, 3, 4, 5].map(star => (
           <IconStar key={star} size={9} className={star <= rating ? 'text-neu' : 'text-slate-400'} />
@@ -70,17 +71,17 @@ function ReviewRow({ review, topicLabels, sourceUrls }) {
         <span className="max-w-[22ch] truncate text-[11px] font-bold text-slate-200">{review.author || 'N/A'}</span>
         {primary
           ? (
-            <span className="tag truncate" title="Primary topic measured on this review">
+            <span className="tag truncate" title={t('Primary topic measured on this review')}>
               {primary}
             </span>
           )
           : (
-            <span className="tag-quiet shrink-0" title="No dictionary term appears in this review">
-              no topic
+            <span className="tag-quiet shrink-0" title={t('No dictionary term appears in this review')}>
+              {t('no topic')}
             </span>
           )}
         {language && language !== 'unknown' && (
-          <span className="font-mono text-[10px] text-slate-400" title="Language detected from this review alone">{language}</span>
+          <span className="font-mono text-[10px] text-slate-400" title={t('Language detected from this review alone')}>{language}</span>
         )}
         <span className="num text-[10px] text-slate-400">{formatDate(review.publishedAt || review.date)}</span>
         {review.meta?.appVersion && <span className="font-mono text-[10px] text-slate-400">v{review.meta.appVersion}</span>}
@@ -94,23 +95,23 @@ function ReviewRow({ review, topicLabels, sourceUrls }) {
       {text ? (
         <p className={`mt-1 whitespace-pre-line text-[11.5px] leading-relaxed text-slate-400 ${long && !expanded ? 'line-clamp-3' : ''}`}>{text}</p>
       ) : (
-        <p className="mt-1 text-[11px] italic text-slate-400">No review text · word score not computed</p>
+        <p className="mt-1 text-[11px] italic text-slate-400">{t('No review text · word score not computed')}</p>
       )}
       {long && (
         <button type="button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded} className="mt-1 text-[10px] font-semibold text-accent hover:underline">
-          {expanded ? 'Show less' : 'Read more'}
+          {expanded ? t('Show less') : t('Read more')}
         </button>
       )}
 
       <div className="mt-2.5 space-y-1.5 border-t border-slate-800/70 pt-2.5">
         {topicLabels.length > 1 && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">also</span>
+            <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('also')}</span>
             {topicLabels.slice(1).map(label => (
               <span
                 key={label}
                 className="tag-quiet"
-                title="Topic named by the domain dictionary (English and Indonesian terms are recognised)"
+                title={t('Topic named by the domain dictionary (English and Indonesian terms are recognised)')}
               >
                 {label}
               </span>
@@ -119,11 +120,11 @@ function ReviewRow({ review, topicLabels, sourceUrls }) {
         )}
         {terms.length > 0 && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">terms</span>
+            <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('terms')}</span>
             {terms.slice(0, 5).map(term => (
               <span
                 key={term.term}
-                title="Weight learned from the 1–2 vs 4–5 star correlation"
+                title={t('Weight learned from the 1–2 vs 4–5 star correlation')}
                 className={`tag-quiet font-mono ${term.weight > 0 ? 'text-pos' : 'text-neg'}`}
               >
                 {term.term} {formatWeight(term.weight)}
@@ -134,11 +135,11 @@ function ReviewRow({ review, topicLabels, sourceUrls }) {
         {(review.analysis?.score != null || sourceUrl) && (
           <div className="flex items-center justify-between gap-3 pt-0.5">
             {review.analysis?.score != null ? (
-              <span className="num text-[10px] text-slate-400">score {formatDecimal(review.analysis.score, 2)}</span>
+              <span className="num text-[10px] text-slate-400">{t('score')} {formatDecimal(review.analysis.score, 2)}</span>
             ) : <span />}
             {sourceUrl && (
               <a href={sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-accent">
-                source <IconExternal size={10} />
+                {t('source')} <IconExternal size={10} />
               </a>
             )}
           </div>
@@ -160,7 +161,15 @@ export function ReviewsView({ dataset }) {
   const [visible, setVisible] = useState(PAGE);
   const reviews = Array.isArray(dataset.reviews) ? dataset.reviews : [];
   const topics = Array.isArray(dataset.model?.topics) ? dataset.model.topics : [];
-  const topicNames = useMemo(() => new Map(topics.map(topic => [topic.id, topic.name])), [topics]);
+  const topicsById = useMemo(() => new Map(topics.map(topic => [topic.id, topic])), [topics]);
+  // Badge topik per ulasan dibaca dari kamus lewat id, bukan dari nama yang dibakar di baris:
+  // sebutan kamuslah yang harus ikut berganti saat bahasa diubah. Nama lama hanya menjadi
+  // cadangan kalau id-nya tidak ada di daftar topik yang dilaporkan.
+  const topicBadges = review => {
+    const ids = review.analysis?.topics || [];
+    if (!ids.length) return review.analysis?.topicNames || [];
+    return ids.slice(0, 4).map((id, index) => topicLabel(topicsById.get(id)) || review.analysis?.topicNames?.[index] || id);
+  };
 
   const platformCounts = useMemo(() => {
     const counts = new Map();
@@ -237,59 +246,59 @@ export function ReviewsView({ dataset }) {
 
   return (
     <div className="space-y-3">
-      <section className="card px-4 py-3" aria-label="Review filters">
+      <section className="card px-4 py-3" aria-label={t('Review filters')}>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
           <div className="relative min-w-[180px] flex-1 sm:max-w-[280px]">
-            <label htmlFor="review-search" className="sr-only">Search text, title, or reviewer name</label>
+            <label htmlFor="review-search" className="sr-only">{t('Search text, title, or reviewer name')}</label>
             <IconSearch size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               id="review-search"
               className="field field-sm h-8 pl-8 pr-7"
-              placeholder="Search text or name…"
+              placeholder={t('Search text or name…')}
               value={query}
               onChange={event => { setQuery(event.target.value); setVisible(PAGE); }}
             />
             {query && (
-              <button type="button" onClick={() => { setQuery(''); setVisible(PAGE); }} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300" aria-label="Clear search">
+              <button type="button" onClick={() => { setQuery(''); setVisible(PAGE); }} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300" aria-label={t('Clear search')}>
                 <IconX size={12} />
               </button>
             )}
           </div>
 
           <label className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            Stars
+            {t('Stars')}
             <span className="relative">
               <select value={rating} onChange={event => change(setRating, event.target.value)} className="select">
-                <option value="all">All</option>
+                <option value="all">{t('All')}</option>
                 {[5, 4, 3, 2, 1].map(star => <option key={star} value={String(star)}>{star}★</option>)}
-                <option value="none">No stars</option>
+                <option value="none">{t('No stars')}</option>
               </select>
               <IconChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
             </span>
           </label>
           <label className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            Sort
+            {t('Sort')}
             <span className="relative">
               <select value={sort} onChange={event => change(setSort, event.target.value)} className="select">
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
-                <option value="ratingHigh">Highest stars</option>
-                <option value="ratingLow">Lowest stars</option>
+                <option value="newest">{t('Newest')}</option>
+                <option value="oldest">{t('Oldest')}</option>
+                <option value="ratingHigh">{t('Highest stars')}</option>
+                <option value="ratingLow">{t('Lowest stars')}</option>
               </select>
               <IconChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
             </span>
           </label>
           {activeFilters && (
             <button type="button" onClick={resetFilters} className="btn btn-ghost btn-xs ml-auto">
-              <IconX size={11} /> Clear
+              <IconX size={11} /> {t('Clear')}
             </button>
           )}
         </div>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-800/70 pt-2.5">
-          <div role="group" aria-label="Channel filter" className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div role="group" aria-label={t('Channel filter')} className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <button type="button" onClick={() => change(setPlatform, 'all')} aria-pressed={platform === 'all'} className={`filter-chip ${platform === 'all' ? 'filter-chip-active' : ''}`}>
-              All channels <span className="num">{formatNumber(reviews.length)}</span>
+              {t('All channels')} <span className="num">{formatNumber(reviews.length)}</span>
             </button>
             {[...platformCounts.entries()].map(([id, count]) => (
               <button key={id} type="button" onClick={() => change(setPlatform, id)} aria-pressed={platform === id} className={`filter-chip ${platform === id ? 'filter-chip-active' : ''}`}>
@@ -298,7 +307,7 @@ export function ReviewsView({ dataset }) {
             ))}
           </div>
           <span className="mx-1 hidden h-4 w-px bg-slate-800 sm:block" />
-          <div role="group" aria-label="Sentiment label filter" className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <div role="group" aria-label={t('Sentiment label filter')} className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             {SENTIMENTS.map(option => (
               <button
                 key={option.id}
@@ -308,17 +317,17 @@ export function ReviewsView({ dataset }) {
                 className={`filter-chip ${sentiment === option.id ? 'filter-chip-active' : ''}`}
               >
                 {option.id !== 'all' && <span className="h-1.5 w-1.5 rounded-[1px]" style={{ backgroundColor: SENTIMENT_COLOR[option.id] }} />}
-                {option.label} <span className="num">{formatNumber(sentimentCounts[option.id] || 0)}</span>
+                {t(option.label)} <span className="num">{formatNumber(sentimentCounts[option.id] || 0)}</span>
               </button>
             ))}
           </div>
         </div>
 
         {topics.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-800/70 pt-2.5" role="group" aria-label="Complaint topic filter">
-            <span className="label-sm mr-0.5">Topics</span>
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-800/70 pt-2.5" role="group" aria-label={t('Complaint topic filter')}>
+            <span className="label-sm mr-0.5">{t('Topics')}</span>
             <button type="button" onClick={() => change(setTopic, 'all')} aria-pressed={topic === 'all'} className={`filter-chip ${topic === 'all' ? 'filter-chip-active' : ''}`}>
-              All topics <span className="num">{formatNumber(reviews.length)}</span>
+              {t('All topics')} <span className="num">{formatNumber(reviews.length)}</span>
             </button>
             {shownTopics.map(item => (
               <button
@@ -326,10 +335,10 @@ export function ReviewsView({ dataset }) {
                 type="button"
                 onClick={() => change(setTopic, item.id)}
                 aria-pressed={topic === item.id}
-                title={`${formatNumber(item.low)} 1–2★ and ${formatNumber(item.high)} 4–5★ reviews mention this term`}
+                title={`${formatNumber(item.low)} 1–2★ ${t('and')} ${formatNumber(item.high)} 4–5★ ${t('reviews mention this term')}`}
                 className={`filter-chip ${topic === item.id ? 'filter-chip-active' : ''}`}
               >
-                {item.name} <span className="num">{formatNumber(item.total)}</span>
+                {topicLabel(item)} <span className="num">{formatNumber(item.total)}</span>
               </button>
             ))}
             {topics.length > 8 && (
@@ -339,7 +348,7 @@ export function ReviewsView({ dataset }) {
                 aria-expanded={allTopics}
                 className="link-quiet text-[10px] font-semibold"
               >
-                {allTopics ? 'Show fewer' : `Show all ${topics.length} topics`}
+                {allTopics ? t('Show fewer') : `${t('Show all')} ${topics.length} ${t('topics')}`}
               </button>
             )}
           </div>
@@ -348,19 +357,19 @@ export function ReviewsView({ dataset }) {
 
       <div className="flex items-baseline justify-between px-0.5">
         <p role="status" aria-live="polite" className="text-[11px] text-slate-400">
-          <span className="num font-bold text-slate-200">{formatNumber(filtered.length)}</span> reviews{activeFilters ? ' match the filters' : ''}
+          <span className="num font-bold text-slate-200">{formatNumber(filtered.length)}</span> {t('reviews')}{activeFilters ? ` ${t('match the filters')}` : ''}
         </p>
-        <p className="num text-[10px] text-slate-400">showing {formatNumber(shown.length)} · every row is still counted in the statistics</p>
+        <p className="num text-[10px] text-slate-400">{t('showing')} {formatNumber(shown.length)} · {t('every row is still counted in the statistics')}</p>
       </div>
 
       {shown.length ? (
-        <ol aria-label="Review list" className="space-y-2">
+        <ol aria-label={t('Review list')} className="space-y-2">
           {shown.map((review, index) => (
             <ReviewRow
               key={`${review.platform}:${review.id}:${index}`}
               review={review}
               sourceUrls={dataset.sourceUrls}
-              topicLabels={(review.analysis?.topicNames?.length ? review.analysis.topicNames : (review.analysis?.topics || []).slice(0, 4).map(id => topicNames.get(id) || id))}
+              topicLabels={topicBadges(review)}
             />
           ))}
         </ol>
@@ -368,9 +377,9 @@ export function ReviewsView({ dataset }) {
         <div className="card">
           <EmptyState
             icon={IconQuote}
-            title="No review matches"
-            body="This filter combination is empty. Every source review stays stored."
-            action={<button type="button" onClick={resetFilters} className="btn btn-secondary btn-xs">Clear filters</button>}
+            title={t('No review matches')}
+            body={t('This filter combination is empty. Every source review stays stored.')}
+            action={<button type="button" onClick={resetFilters} className="btn btn-secondary btn-xs">{t('Clear filters')}</button>}
           />
         </div>
       )}
@@ -378,7 +387,7 @@ export function ReviewsView({ dataset }) {
       {filtered.length > visible && (
         <div className="flex justify-center">
           <button type="button" onClick={() => setVisible(value => value + PAGE)} className="btn btn-secondary">
-            Load {formatNumber(Math.min(PAGE, filtered.length - visible))} more
+            {t('Load')} {formatNumber(Math.min(PAGE, filtered.length - visible))} {t('more')}
           </button>
         </div>
       )}

@@ -1,3 +1,5 @@
+import { t } from '../lib/i18n.js';
+
 // Bilah progres untuk pekerjaan yang sedang berjalan.
 //
 // Dua bentuk, dipilih oleh ada/tidaknya angka: dengan `percent` bilahnya tentu (aria-valuenow
@@ -5,7 +7,7 @@
 // dikarang di komponen ini — pemanggil hanya mengirim persen yang dihitung dari pekerjaan yang
 // benar-benar selesai (fase analisis per tahap, fase tulis per potongan), dan fase tarik memang
 // tidak punya penyebut yang jujur jadi ia dikirim sebagai null.
-export function Progress({ label = 'Working', percent = null, detail = null, className = '' }) {
+export function Progress({ label = t('Working'), percent = null, detail = null, className = '' }) {
   const value = Number.isFinite(percent) ? Math.min(100, Math.max(0, Math.round(percent))) : null;
   if (value === null) {
     return (

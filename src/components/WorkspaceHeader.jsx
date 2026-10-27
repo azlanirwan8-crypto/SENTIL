@@ -1,4 +1,5 @@
 import { formatNumber, relativeTime } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { useNow } from '../lib/useNow.js';
 import { MobileNav } from './Sidebar.jsx';
 import { IconAlert, IconClock } from './icons.jsx';
@@ -31,7 +32,7 @@ export function WorkspaceHeader({ workspace, dataset, view, onView, syncing, syn
               title={dataset.limits.hint}
             >
               <IconAlert size={10} />
-              source limits {dataset.limits.overall === 'exhausted' ? 'hit' : 'truncated'}
+              {dataset.limits.overall === 'exhausted' ? t('source limits hit') : t('source limits truncated')}
             </button>
           )}
           {syncing && (
@@ -41,16 +42,16 @@ export function WorkspaceHeader({ workspace, dataset, view, onView, syncing, syn
               aria-live="polite"
             >
               <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-accent" aria-hidden="true" />
-              {elapsed === null ? 'refreshing' : `refreshing · ${elapsed}s`}
+              {elapsed === null ? t('refreshing') : `${t('refreshing')} · ${elapsed}s`}
             </span>
           )}
           <span className="num">
-            {snapshot ? `${formatNumber(snapshot.reviews)} reviews · ${formatNumber(snapshot.analyzed)} classified` : 'no snapshot yet'}
+            {snapshot ? `${formatNumber(snapshot.reviews)} ${t('reviews')} · ${formatNumber(snapshot.analyzed)} ${t('classified')}` : t('no snapshot yet')}
           </span>
           {fetchedAt && (
-            <span className="inline-flex items-center gap-1 text-slate-400" title={`Snapshot pulled at ${new Date(fetchedAt).toISOString()}`}>
+            <span className="inline-flex items-center gap-1 text-slate-400" title={`${t('Snapshot pulled at')} ${new Date(fetchedAt).toISOString()}`}>
               <IconClock size={11} />
-              as of {relativeTime(fetchedAt, now)}
+              {t('as of')} {relativeTime(fetchedAt, now)}
             </span>
           )}
         </div>

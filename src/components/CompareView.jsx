@@ -4,6 +4,7 @@ import { IconCheck, IconRefresh } from './icons.jsx';
 import { Notice } from './Notices.jsx';
 import { fetchComparison } from '../lib/api.js';
 import { formatNumber, formatNss, relativeTime } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { useNow } from '../lib/useNow.js';
 
 const MAX_COLUMNS = 12;
@@ -38,7 +39,7 @@ function Delta({ delta, direction, unit }) {
   const good = direction === 'down' ? delta < 0 : delta > 0;
   const shown = unit === 'ratio' ? `${(Math.abs(delta) * 100).toFixed(1)}%` : Math.abs(delta) >= 1000 ? formatNumber(Math.abs(delta)) : Math.abs(delta).toFixed(2);
   return (
-    <span className={`num text-[10px] font-semibold ${good ? 'text-pos' : 'text-neg'}`} aria-label={`${good ? 'above' : 'below'} the median by ${shown}`}>
+    <span className={`num text-[10px] font-semibold ${good ? 'text-pos' : 'text-neg'}`} aria-label={`${good ? t('above') : t('below')} ${t('the median by')} ${shown}`}>
       {delta > 0 ? '▲' : '▼'} {shown}
     </span>
   );
@@ -48,19 +49,19 @@ function SelectionBar({ workspaces, selected, onToggle, onAll, onRun, busy }) {
   return (
     <div className="card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="label">Projects in matrix · {selected.length}/{Math.min(workspaces.length, MAX_COLUMNS)}</p>
+        <p className="label">{t('Projects in matrix')} · {selected.length}/{Math.min(workspaces.length, MAX_COLUMNS)}</p>
         <div className="flex items-center gap-2">
           {workspaces.length ? (
             <button type="button" onClick={onAll} className="btn btn-secondary btn-xs">
-              {selected.length === Math.min(workspaces.length, MAX_COLUMNS) ? 'Clear' : 'Select all'}
+              {selected.length === Math.min(workspaces.length, MAX_COLUMNS) ? t('Clear') : t('Select all')}
             </button>
           ) : null}
           <button type="button" onClick={onRun} disabled={selected.length < 2 || busy} className="btn btn-primary btn-xs">
-            {busy ? <IconRefresh size={12} className="animate-spin" /> : <IconCheck size={12} />} Compare
+            {busy ? <IconRefresh size={12} className="animate-spin" /> : <IconCheck size={12} />} {t('Compare')}
           </button>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Select projects to compare">
+      <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={t('Select projects to compare')}>
         {workspaces.map(workspace => {
           const on = selected.includes(workspace.id);
           return (
@@ -79,7 +80,7 @@ function SelectionBar({ workspaces, selected, onToggle, onAll, onRun, busy }) {
             </button>
           );
         })}
-        {!workspaces.length ? <p className="text-[11px] text-slate-400">No stored projects yet.</p> : null}
+        {!workspaces.length ? <p className="text-[11px] text-slate-400">{t('No stored projects yet.')}</p> : null}
       </div>
     </div>
   );
@@ -89,21 +90,19 @@ function MatrixTable({ result }) {
   const columns = result.projects;
   const now = useNow(60000);
   return (
-    <Panel title="Metric matrix" meta={`reference = median of ${result.reference.projects} columns`} className="xl:col-span-12">
+    <Panel title={t('Metric matrix')} meta={`${t('reference = median of')} ${result.reference.projects} ${t('columns')}`} className="xl:col-span-12">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">
-            Metric matrix: one row per measured metric, one column per stored project. Every cell
-            is read from that project&apos;s own snapshot; a project without a snapshot shows no
-            value rather than a zero.
+            {t("Metric matrix: one row per measured metric, one column per stored project. Every cell is read from that project's own snapshot; a project without a snapshot shows no value rather than a zero.")}
           </caption>
           <thead>
             <tr className="border-b border-slate-800">
-              <th scope="col" className="label sticky left-0 bg-slate-900/95 py-1.5 pr-3 font-semibold">Metric</th>
+              <th scope="col" className="label sticky left-0 bg-slate-900/95 py-1.5 pr-3 font-semibold">{t('Metric')}</th>
               {columns.map(column => (
                 <th key={column.id} scope="col" className="py-1.5 pl-3 align-bottom">
                   <p className="truncate text-[11px] font-bold text-slate-200">{column.label}</p>
-                  <p className="num text-[10px] text-slate-400">{column.hasData ? `${formatNumber(column.metrics.volume)} · as of ${relativeTime(column.fetchedAt, now)}` : 'no snapshot'}</p>
+                  <p className="num text-[10px] text-slate-400">{column.hasData ? `${formatNumber(column.metrics.volume)} · ${t('as of')} ${relativeTime(column.fetchedAt, now)}` : t('no snapshot')}</p>
                 </th>
               ))}
             </tr>
@@ -140,7 +139,7 @@ function MatrixTable({ result }) {
 function Leaderboard({ result }) {
   if (!result.leaderboard.length) return null;
   return (
-    <Panel title="NSS leaderboard" meta={`${result.leaderboard.length} ranked`} className="xl:col-span-5">
+    <Panel title={t('NSS leaderboard')} meta={`${result.leaderboard.length} ${t('ranked')}`} className="xl:col-span-5">
       <ol className="space-y-1">
         {result.leaderboard.map(entry => (
           <li key={entry.id} className="flex items-center gap-2 rounded border border-slate-800/70 bg-slate-900/40 px-2 py-1.5">
@@ -159,14 +158,14 @@ function Insights({ result }) {
   const labels = useMemo(() => new Map(result.projects.map(project => [project.id, project.label])), [result]);
   if (!result.insights.length) return null;
   return (
-    <Panel title="Widest gaps" meta={`${result.insights.length} metrics`} className="xl:col-span-7">
+    <Panel title={t('Widest gaps')} meta={`${result.insights.length} ${t('metrics')}`} className="xl:col-span-7">
       <ul className="grid gap-1 sm:grid-cols-2">
         {result.insights.map(insight => (
           <li key={insight.key} className="flex items-baseline justify-between gap-2 border-b border-slate-800/60 pb-1 last:border-0">
             <span className="min-w-0 truncate text-[11px] text-slate-300">{insight.label}</span>
             <span className="shrink-0 text-right">
               <span className="text-[11px] font-semibold text-pos">{labels.get(insight.winnerId) || insight.winnerId}</span>
-              <span className="num text-[10px] text-slate-400"> vs </span>
+              <span className="num text-[10px] text-slate-400"> {t('vs')} </span>
               <span className="text-[11px] font-semibold text-neg">{labels.get(insight.loserId) || insight.loserId}</span>
             </span>
           </li>
@@ -181,17 +180,15 @@ function PainHeatmap({ result }) {
   const ceiling = Math.max(...result.painPoints.flatMap(row => Object.values(row.cells).map(cell => cell.share).filter(Number.isFinite)), 0) || 1;
   if (!result.painPoints.length) return null;
   return (
-    <Panel title="Cross-project pain points" meta={`${result.painPointTotal} phrases · showing ${result.painPoints.length}`} className="xl:col-span-12">
+    <Panel title={t('Cross-project pain points')} meta={`${result.painPointTotal} ${t('phrases')} · ${t('showing')} ${result.painPoints.length}`} className="xl:col-span-12">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">
-            Cross-project pain points: each row is one complaint phrase measured inside every
-            selected project. A cell shows that project&apos;s own count; a dash means the phrase
-            did not clear the evidence test there, not that it was zero.
+            {t("Cross-project pain points: each row is one complaint phrase measured inside every selected project. A cell shows that project's own count; a dash means the phrase did not clear the evidence test there, not that it was zero.")}
           </caption>
           <thead>
             <tr className="border-b border-slate-800">
-              <th scope="col" className="label py-1.5 pr-3">Phrase</th>
+              <th scope="col" className="label py-1.5 pr-3">{t('Phrase')}</th>
               {columns.map(column => <th key={column.id} scope="col" className="py-1.5 pl-2 text-right text-[10px] font-semibold text-slate-400">{column.label}</th>)}
             </tr>
           </thead>
@@ -211,7 +208,7 @@ function PainHeatmap({ result }) {
                         <span
                           className="num inline-block min-w-[52px] rounded px-1.5 py-0.5 text-[11px] font-semibold text-neg"
                           style={{ backgroundColor: `rgba(248,113,113,${(0.08 + strength * 0.34).toFixed(3)})` }}
-                          title={`${formatNumber(cell.count)} negative reviews · severity ${cell.severity}`}
+                          title={`${formatNumber(cell.count)} ${t('negative reviews')} · ${t('severity')} ${cell.severity}`}
                         >
                           {(cell.share * 100).toFixed(1)}%
                         </span>
@@ -283,8 +280,8 @@ export function CompareView({ workspaces, onToast }) {
         onRun={run}
         busy={busy}
       />
-      {error ? <Notice tone="coral" title="Comparison unavailable">{error}</Notice> : null}
-      {busy && !view ? <Panel title="Building matrix" meta="reading stored summaries">…</Panel> : null}
+      {error ? <Notice tone="coral" title={t('Comparison unavailable')}>{error}</Notice> : null}
+      {busy && !view ? <Panel title={t('Building matrix')} meta={t('reading stored summaries')}>…</Panel> : null}
       {view ? (
         <>
           <div className="grid gap-3 xl:grid-cols-12">

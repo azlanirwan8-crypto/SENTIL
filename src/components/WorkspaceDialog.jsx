@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { discoverStores } from '../lib/api.js';
 import { formatDecimal, formatNumber, isNumber } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { DialogShell } from './Dialog.jsx';
 import { StoreGlyph, StoreMark } from './Brand.jsx';
 import { IconAlert, IconCheck, IconExternal, IconRefresh, IconSearch, IconStar } from './icons.jsx';
@@ -25,7 +26,7 @@ function CandidateSkeleton() {
 function CandidateCard({ store, candidate, checked, auto, onSelect }) {
   const id = `candidate-${store}-${candidate.appId}`;
   const score = isNumber(candidate.score) ? formatDecimal(candidate.score, 2) : 'N/A';
-  const ratingCount = isNumber(candidate.ratings) ? `${formatNumber(candidate.ratings)} ratings` : null;
+  const ratingCount = isNumber(candidate.ratings) ? `${formatNumber(candidate.ratings)} ${t('ratings')}` : null;
   const storeLabel = store === 'play' ? 'Google Play' : 'App Store';
   const badge = MATCH_BADGES[candidate.match?.tier] || null;
   return (
@@ -44,8 +45,8 @@ function CandidateCard({ store, candidate, checked, auto, onSelect }) {
           <span className="flex items-start gap-1.5">
             <span className="min-w-0 flex-1 truncate text-[11.5px] font-bold leading-snug text-slate-100">{candidate.title || 'N/A'}</span>
             {badge && (
-              <span className={`shrink-0 rounded border px-1 py-px text-[10px] font-bold uppercase tracking-wider ${badge[1]}`} title={`Name match ${candidate.match?.score ?? 0} · missing words: ${candidate.match?.missing?.join(', ') || 'none'}`}>
-                {badge[0]}
+              <span className={`shrink-0 rounded border px-1 py-px text-[10px] font-bold uppercase tracking-wider ${badge[1]}`} title={`${t('Name match')} ${candidate.match?.score ?? 0} · ${t('missing words')}: ${candidate.match?.missing?.join(', ') || t('none')}`}>
+                {t(badge[0])}
               </span>
             )}
           </span>
@@ -56,7 +57,7 @@ function CandidateCard({ store, candidate, checked, auto, onSelect }) {
               {score}
             </span>
             {ratingCount && <span className="num">{ratingCount}</span>}
-            {auto && <span className="font-semibold text-accent">auto-selected</span>}
+            {auto && <span className="font-semibold text-accent">{t('auto-selected')}</span>}
             <span className="truncate rounded bg-slate-800/70 px-1.5 py-px font-mono text-[10px] text-slate-400">{candidate.appId}</span>
           </span>
         </span>
@@ -66,8 +67,8 @@ function CandidateCard({ store, candidate, checked, auto, onSelect }) {
         target="_blank"
         rel="noopener noreferrer"
         className="absolute right-1.5 top-1.5 z-10 inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
-        aria-label={`Open ${candidate.title || 'this candidate'} on ${storeLabel}`}
-        title={`Open in ${storeLabel}`}
+        aria-label={`${t('Open')} ${candidate.title || t('this candidate')} ${t('on')} ${storeLabel}`}
+        title={`${t('Open in')} ${storeLabel}`}
       >
         <IconExternal size={11} />
       </a>
@@ -89,7 +90,7 @@ function StoreColumn({ store, data, phase, selection, onSelect }) {
           <p className="truncate text-[11px] font-bold text-slate-200">{label}</p>
         </div>
         <p className="shrink-0 text-[10px] text-slate-400" aria-live="polite">
-          {searching ? 'searching…' : phase === 'ready' ? `${candidates.length} candidate${candidates.length === 1 ? '' : 's'}${filteredOut ? ` · ${filteredOut} filtered out` : ''}` : 'waiting for the entity name'}
+          {searching ? t('searching…') : phase === 'ready' ? `${candidates.length} ${candidates.length === 1 ? t('candidate') : t('candidates')}${filteredOut ? ` · ${filteredOut} ${t('filtered out')}` : ''}` : t('waiting for the entity name')}
         </p>
       </header>
 
@@ -99,22 +100,22 @@ function StoreColumn({ store, data, phase, selection, onSelect }) {
         {phase === 'idle' && (
           <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-md border border-dashed border-slate-800 px-4 text-center">
             <IconSearch size={16} className="mb-2 text-slate-400" />
-            <p className="text-[10.5px] font-semibold text-slate-400">Candidates appear automatically</p>
-            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Type the entity name above. No ID has to be typed.</p>
+            <p className="text-[10.5px] font-semibold text-slate-400">{t('Candidates appear automatically')}</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{t('Type the entity name above. No ID has to be typed.')}</p>
           </div>
         )}
 
         {phase === 'ready' && data?.status === 'error' && (
           <div className="rounded-md border border-neg/25 bg-neg/[0.07] p-2.5 text-[10.5px] leading-relaxed text-neg">
-            <p className="mb-1 flex items-center gap-1.5 font-bold"><IconAlert size={12} /> Search failed</p>
+            <p className="mb-1 flex items-center gap-1.5 font-bold"><IconAlert size={12} /> {t('Search failed')}</p>
             {data.message}
           </div>
         )}
 
         {phase === 'ready' && data?.status !== 'error' && candidates.length === 0 && (
           <div className="flex h-full min-h-[200px] flex-col items-center justify-center rounded-md border border-dashed border-slate-800 px-4 text-center">
-            <p className="text-[10.5px] font-semibold text-slate-400">No candidate matches</p>
-            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{data?.message || 'The store search results were all filtered out because their names do not contain the words you searched for.'}</p>
+            <p className="text-[10.5px] font-semibold text-slate-400">{t('No candidate matches')}</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{data?.message || t('The store search results were all filtered out because their names do not contain the words you searched for.')}</p>
           </div>
         )}
 
@@ -145,7 +146,7 @@ function ChannelSummary({ store, chosen }) {
       </span>
       <span className="min-w-0">
         <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">{store === 'play' ? 'Google Play' : 'App Store'}</span>
-        <span className="block truncate text-[10.5px] font-semibold text-slate-300">{chosen ? chosen.title || 'N/A' : 'not included'}</span>
+        <span className="block truncate text-[10.5px] font-semibold text-slate-300">{chosen ? chosen.title || 'N/A' : t('not included')}</span>
       </span>
     </div>
   );
@@ -249,6 +250,9 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     setSummaryError(null);
   }
 
+  // Pesan validasi disimpan dalam satu bentuk baku (Inggris) dan baru dibaca lewat tabel di
+  // tempat ia digambar: kalau yang masuk state adalah hasil terjemahan, pesan itu membeku
+  // dalam bahasa yang sedang aktif saat tombol ditekan.
   function save() {
     const errors = {};
     const name = label.trim();
@@ -299,10 +303,10 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     <DialogShell open={open} onClose={onClose} labelledBy="workspace-dialog-title" describedBy="workspace-dialog-desc" className="sm:max-w-[860px]" dismissible={!busy}>
       <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 px-4 py-3">
         <div className="min-w-0">
-          <p className="label-sm">New analysis</p>
-          <h2 id="workspace-dialog-title" className="mt-1 text-[17px] font-extrabold tracking-tight text-slate-100">Two fields, the rest is automatic</h2>
+          <p className="label-sm">{t('New analysis')}</p>
+          <h2 id="workspace-dialog-title" className="mt-1 text-[17px] font-extrabold tracking-tight text-slate-100">{t('Two fields, the rest is automatic')}</h2>
           <p id="workspace-dialog-desc" className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            Candidates are searched automatically on Google Play and the App Store. You pick the identity that is right.
+            {t('Candidates are searched automatically on Google Play and the App Store. You pick the identity that is right.')}
           </p>
         </div>
       </header>
@@ -311,7 +315,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <label className="mb-1 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400" htmlFor="workspace-label">
-              <span>1 · Analysis name</span>
+              <span>{t('1 · Analysis name')}</span>
               <span className="num font-normal text-slate-400">{label.length}/60</span>
             </label>
             <input
@@ -319,18 +323,18 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
               className={`field field-sm ${fieldErrors.label ? 'field-error' : ''}`}
               value={label}
               onChange={event => { setLabel(event.target.value); setFieldErrors(current => ({ ...current, label: undefined })); }}
-              placeholder="e.g. Merchant reviews Q4"
+              placeholder={t('e.g. Merchant reviews Q4')}
               maxLength={60}
               autoComplete="off"
               data-autofocus
               aria-invalid={Boolean(fieldErrors.label)}
               aria-describedby={fieldErrors.label ? 'workspace-label-error' : undefined}
             />
-            {fieldErrors.label && <p id="workspace-label-error" className="mt-1 text-[10px] font-semibold text-neg" role="alert">{fieldErrors.label}</p>}
+            {fieldErrors.label && <p id="workspace-label-error" className="mt-1 text-[10px] font-semibold text-neg" role="alert">{t(fieldErrors.label)}</p>}
           </div>
           <div>
             <label className="mb-1 flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400" htmlFor="workspace-entity">
-              <span>2 · Entity name / target app</span>
+              <span>{t('2 · Entity name / target app')}</span>
               <span className="num font-normal text-slate-400">{entity.length}/80</span>
             </label>
             <div className="relative">
@@ -339,7 +343,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
                 className={`field field-sm pr-8 ${fieldErrors.entity ? 'field-error' : ''}`}
                 value={entity}
                 onChange={event => { setEntity(event.target.value); setFieldErrors(current => ({ ...current, entity: undefined })); setSummaryError(null); }}
-                placeholder="e.g. wondr merchant"
+                placeholder={t('e.g. wondr merchant')}
                 maxLength={80}
                 autoComplete="off"
                 aria-invalid={Boolean(fieldErrors.entity)}
@@ -350,10 +354,10 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
               </span>
             </div>
             {fieldErrors.entity ? (
-              <p id="workspace-entity-error" className="mt-1 text-[10px] font-semibold text-neg" role="alert">{fieldErrors.entity}</p>
+              <p id="workspace-entity-error" className="mt-1 text-[10px] font-semibold text-neg" role="alert">{t(fieldErrors.entity)}</p>
             ) : (
               <p id="workspace-entity-hint" className="mt-1 text-[10px] text-slate-400">
-                {entity.trim().length < MIN_SEARCH_LENGTH ? 'At least three characters to start searching.' : 'Candidates load automatically while you type.'}
+                {entity.trim().length < MIN_SEARCH_LENGTH ? t('At least three characters to start searching.') : t('Candidates load automatically while you type.')}
               </p>
             )}
           </div>
@@ -361,14 +365,14 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
 
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <p className="label-sm">Store candidates</p>
+            <p className="label-sm">{t('Store candidates')}</p>
             <div className="flex items-center gap-2.5">
               <p className="text-[10px] text-slate-400" aria-live="polite">
-                {busy ? 'searching both sources…' : phase === 'ready' ? `${found} found · ${selectedCount} selected` : 'no candidate yet'}
+                {busy ? t('searching both sources…') : phase === 'ready' ? `${found} ${t('found')} · ${selectedCount} ${t('selected')}` : t('no candidate yet')}
               </p>
               {phase === 'ready' && (
                 <button type="button" onClick={() => runDiscover(entity.trim())} className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-200">
-                  <IconRefresh size={11} /> search again
+                  <IconRefresh size={11} /> {t('search again')}
                 </button>
               )}
             </div>
@@ -377,8 +381,8 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
           {requestError && (
             <div className="mb-1.5 flex items-start gap-2 rounded-md border border-neg/25 bg-neg/[0.07] p-2.5 text-[10.5px] leading-relaxed text-neg" role="alert">
               <IconAlert size={13} className="mt-0.5 shrink-0" />
-              <span className="flex-1">{requestError}</span>
-              <button type="button" onClick={() => runDiscover(entity.trim())} className="btn btn-secondary btn-xs">Try again</button>
+              <span className="flex-1">{t(requestError)}</span>
+              <button type="button" onClick={() => runDiscover(entity.trim())} className="btn btn-secondary btn-xs">{t('Try again')}</button>
             </div>
           )}
 
@@ -391,7 +395,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
         <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5">
           <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
             <div className="min-w-0">
-              <p className="label-sm">Summary</p>
+              <p className="label-sm">{t('Summary')}</p>
               <p className="mt-1 truncate text-[11px] font-semibold text-slate-300">
                 {label.trim() || '—'} <span className="font-normal text-slate-400">/</span> {entity.trim() || '—'}
               </p>
@@ -401,15 +405,15 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
               <ChannelSummary store="appstore" chosen={selection.appstore} />
             </div>
           </div>
-          {summaryError && <p className="mt-1.5 text-[10.5px] font-semibold text-neg" role="alert">{summaryError}</p>}
+          {summaryError && <p className="mt-1.5 text-[10.5px] font-semibold text-neg" role="alert">{t(summaryError)}</p>}
         </div>
 
         <div className="card p-3">
           <div className="flex items-baseline justify-between gap-2">
-            <h3 className="label">Social &amp; web channels</h3>
-            <p className="text-[10px] text-slate-400">credentials are installed only in the server environment, never on this page</p>
+            <h3 className="label">{t('Social & web channels')}</h3>
+            <p className="text-[10px] text-slate-400">{t('credentials are installed only in the server environment, never on this page')}</p>
           </div>
-          <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Non-store channels included in the pull">
+          <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={t('Non-store channels included in the pull')}>
             {SOCIAL_OPTIONS.map(option => {
               const on = channels[option.id] === true;
               return (
@@ -419,32 +423,32 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
                   aria-pressed={on}
                   onClick={() => setChannels(current => ({ ...current, [option.id]: !current[option.id] }))}
                   className={`filter-chip ${on ? 'filter-chip-active' : ''}`}
-                  title={option.needs}
+                  title={t(option.needs)}
                 >
-                  {option.label}
-                  <span className={`num ml-1 ${on ? 'opacity-80' : 'text-slate-400'}`}>{option.needsKey ? 'key needed' : 'ready'}</span>
+                  {t(option.label)}
+                  <span className={`num ml-1 ${on ? 'opacity-80' : 'text-slate-400'}`}>{option.needsKey ? t('key needed') : t('ready')}</span>
                 </button>
               );
             })}
           </div>
           <p className="mt-2 text-[10px] leading-snug text-slate-400">
-            A channel without credentials is still pulled and reported as Needs credentials, never as zero reviews.
+            {t('A channel without credentials is still pulled and reported as Needs credentials, never as zero reviews.')}
           </p>
         </div>
       </div>
 
       <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-800 bg-slate-900/80 px-4 py-2.5">
-        <p className="hidden text-[10px] text-slate-400 sm:block">A pull reads every public review the source returns · 1 h cache</p>
+        <p className="hidden text-[10px] text-slate-400 sm:block">{t('A pull reads every public review the source returns · 1 h cache')}</p>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={onClose} className="btn btn-ghost">Cancel</button>
+          <button type="button" onClick={onClose} className="btn btn-ghost">{t('Cancel')}</button>
           <button
             type="button"
             onClick={save}
             disabled={busy || (!selectedCount && !socialCount)}
             className="btn btn-primary"
-            title={selectedCount || socialCount ? 'Save this workspace, then pull its data' : 'Pick one store candidate or enable one social channel'}
+            title={selectedCount || socialCount ? t('Save this workspace, then pull its data') : t('Pick one store candidate or enable one social channel')}
           >
-            Save &amp; pull data
+            {t('Save & pull data')}
           </button>
         </div>
       </footer>

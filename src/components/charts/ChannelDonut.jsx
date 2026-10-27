@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { formatNumber, formatPercent, platformLabel } from '../../lib/format.js';
+import { t } from '../../lib/i18n.js';
 import { EmptyState } from '../EmptyState.jsx';
 import { IconGrid } from '../icons.jsx';
 import { StoreMark } from '../Brand.jsx';
@@ -43,18 +44,18 @@ export function ChannelDonut({ platforms }) {
 
   if (!total) {
     return (
-      <ChartFrame label="Channel split">
-        <EmptyState compact icon={IconGrid} title="No channel read yet" body="This snapshot has no review on any channel." />
+      <ChartFrame label={t('Channel split')}>
+        <EmptyState compact icon={IconGrid} title={t('No channel read yet')} body={t('This snapshot has no review on any channel.')} />
       </ChartFrame>
     );
   }
 
   return (
-    <ChartFrame label="Channel split" meta={`${data.length} channels`} className="h-full">
+    <ChartFrame label={t('Channel split')} meta={`${data.length} ${t('channels')}`} className="h-full">
       <div className="flex items-center gap-5">
         <div className="relative shrink-0" style={{ width: SIZE, height: SIZE }}>
-          <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} role="group" aria-label={`Split across ${data.length} channels, ${formatNumber(total)} reviews in total.`}>
-            <title>Review split per channel</title>
+          <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} role="group" aria-label={`${t('Split across')} ${data.length} ${t('channels')}, ${formatNumber(total)} ${t('reviews in total')}.`}>
+            <title>{t('Review split per channel')}</title>
             <circle cx={center} cy={center} r={radius} fill="none" stroke={SERIES_COLORS.lineSoft} strokeWidth={STROKE} />
             {segments.map(segment => {
               const isActive = hovered === segment.id;
@@ -64,7 +65,7 @@ export function ChannelDonut({ platforms }) {
                 strokeWidth: isActive ? STROKE + 3 : STROKE,
                 tabIndex: 0,
                 role: 'img',
-                'aria-label': `${platformLabel(segment.id)}: ${formatNumber(segment.total)} reviews (${formatPercent(segment.total, total, 1)})`,
+                'aria-label': `${platformLabel(segment.id)}: ${formatNumber(segment.total)} ${t('reviews')} (${formatPercent(segment.total, total, 1)})`,
                 onMouseEnter: () => setHovered(segment.id),
                 onMouseLeave: () => setHovered(current => (current === segment.id ? null : current)),
                 onFocus: () => setHovered(segment.id),
@@ -81,7 +82,7 @@ export function ChannelDonut({ platforms }) {
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
             <span className="metric text-xl">{active ? formatPercent(active.total, total, 0) : formatNumber(total)}</span>
             <span className="mt-0.5 max-w-[92px] truncate text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              {active ? platformLabel(active.id) : 'total'}
+              {active ? platformLabel(active.id) : t('total')}
             </span>
           </div>
         </div>

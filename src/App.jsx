@@ -16,6 +16,7 @@ import { ToastStack } from './components/Toast.jsx';
 import { fetchJob, recomputeWorkspace, syncWorkspace } from './lib/api.js';
 import { exportWorkspace } from './lib/export.js';
 import { formatNumber, platformLabel } from './lib/format.js';
+import { t, useLanguage } from './lib/i18n.js';
 import {
   createWorkspaceId,
   deleteWorkspace,
@@ -95,6 +96,9 @@ function mergeStores(existing, data) {
 }
 
 export default function App() {
+  // Bahasa dibaca di sini supaya seluruh pohon menggambar ulang saat pilihan berubah; t()
+  // sendiri mengambil nilainya dari modul, jadi tidak ada prop bahasa yang perlu diteruskan.
+  const language = useLanguage();
   const [workspaces, setWorkspaces] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [dataset, setDataset] = useState(null);
@@ -147,6 +151,13 @@ export default function App() {
     setDataset(data);
   }, []);
 
+  // Judul tab dan atribut bahasa dokumen ikut pilihan. index.html hanya bisa menulis nilai
+  // awal, karena berkas itu disajikan sebelum React berjalan.
+  useEffect(() => {
+    document.title = t('Sentil — Review sentiment analysis');
+    document.documentElement.lang = language;
+  }, [language]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -194,7 +205,7 @@ export default function App() {
       if (loaded.db) setDbStatus(loaded.db);
       applyDataset(loaded.dataset);
       setDatasetError(loaded.error);
-      pushToast('A newer snapshot was pulled on the server and is now on screen.', 'info', 'Data refreshed');
+      pushToast(t('A newer snapshot was pulled on the server and is now on screen.'), 'info', t('Data refreshed'));
     }
     const timer = setInterval(checkServer, STATE_POLL_MS);
     const onVisible = () => { if (!document.hidden) checkServer(); };
@@ -213,7 +224,7 @@ export default function App() {
     const social = workspace.channels || {};
     const socialOn = Object.values(social).some(entry => entry?.enabled);
     if (!playAppId && !appleAppId && !socialOn) {
-      pushToast('No source is active yet. Enable at least one channel for this analysis.', 'error');
+      pushToast(t('No source is active yet. Enable at least one channel for this analysis.'), 'error');
       return;
     }
     syncingRef.current = true;
@@ -233,9 +244,9 @@ export default function App() {
       const preservePrevious = previous?.reviews?.length > 0 && (allFailed || (data.reviews.length === 0 && anyFailed));
 
       if (preservePrevious) {
-        setSyncError('The last pull returned no reviews and at least one channel failed. The previous snapshot is still in use; no number was overwritten.');
-        pushToast('Pull incomplete. The previous snapshot was kept.', 'warning', 'Old data not deleted');
-        if (stored && stored.ok === false) pushToast(stored.reason, 'warning', 'Not stored in the database');
+        setSyncError(t('The last pull returned no reviews and at least one channel failed. The previous snapshot is still in use; no number was overwritten.'));
+        pushToast(t('Pull incomplete. The previous snapshot was kept.'), 'warning', t('Old data not deleted'));
+        if (stored && stored.ok === false) pushToast(stored.reason, 'warning', t('Not stored in the database'));
         return;
       }
 
@@ -254,20 +265,20 @@ export default function App() {
         snapshot: snapshotOf(data),
       } : item)));
 
-      if (allFailed) pushToast('Every channel failed to read. No number was invented.', 'error', 'Pull failed');
-      else if (data.reviews.length === 0) pushToast('Sources responded, but no written review came back.', 'warning', 'Zero reviews read');
-      else if (anyFailed || anyPartial) pushToast(`${formatNumber(data.reviews.length)} reviews read; some channels are still incomplete.`, 'warning', 'Partial result');
-      else pushToast(`${formatNumber(data.reviews.length)} reviews read; the corpus model was refreshed.`, 'success', 'Snapshot ready');
+      if (allFailed) pushToast(t('Every channel failed to read. No number was invented.'), 'error', t('Pull failed'));
+      else if (data.reviews.length === 0) pushToast(t('Sources responded, but no written review came back.'), 'warning', t('Zero reviews read'));
+      else if (anyFailed || anyPartial) pushToast(`${formatNumber(data.reviews.length)} ${t('reviews read; some channels are still incomplete.')}`, 'warning', t('Partial result'));
+      else pushToast(`${formatNumber(data.reviews.length)} ${t('reviews read; the corpus model was refreshed.')}`, 'success', t('Snapshot ready'));
       if (stored && stored.ok === true && stored.unchanged) {
-        pushToast('The sources answered and nothing new came in since the stored snapshot, so no analysis was repeated and nothing was overwritten.', 'info', 'No new reviews');
+        pushToast(t('The sources answered and nothing new came in since the stored snapshot, so no analysis was repeated and nothing was overwritten.'), 'info', t('No new reviews'));
       } else if (stored && stored.ok === true) {
-        pushToast(`${formatNumber(stored.rows)} review rows saved as revision ${stored.revision}.`, 'success', 'Saved to the database');
+        pushToast(`${formatNumber(stored.rows)} ${t('review rows saved as revision')} ${stored.revision}.`, 'success', t('Saved to the database'));
       } else if (stored && stored.ok === false) {
-        pushToast(stored.reason, 'warning', 'Not stored in the database');
+        pushToast(stored.reason, 'warning', t('Not stored in the database'));
       }
     } catch (error) {
-      setSyncError(error.message || 'The pull failed.');
-      pushToast(error.message || 'The pull failed.', 'error', 'Pull failed');
+      setSyncError(error.message || t('The pull failed.'));
+      pushToast(error.message || t('The pull failed.'), 'error', t('Pull failed'));
     } finally {
       stopWatching();
       syncingRef.current = false;
@@ -285,17 +296,17 @@ export default function App() {
     setSyncError(null);
     try {
       const result = await recomputeWorkspace(workspace.id);
-      pushToast(result.message || `${formatNumber(result.rows || 0)} stored reviews were re-analysed.`, 'success', 'Analysis rebuilt');
+      pushToast(result.message || `${formatNumber(result.rows || 0)} ${t('stored reviews were re-analysed.')}`, 'success', t('Analysis rebuilt'));
       const loaded = await loadDataset(workspace.id);
       if (loaded.dataset && activeIdRef.current === workspace.id) {
         applyDataset(loaded.dataset);
         setDatasetError(null);
       } else if (loaded.error) {
-        pushToast(loaded.error, 'warning', 'Could not read the new snapshot');
+        pushToast(loaded.error, 'warning', t('Could not read the new snapshot'));
       }
     } catch (error) {
-      setSyncError(error.message || 'Re-running the analysis failed.');
-      pushToast(error.message || 'Re-running the analysis failed.', 'error', 'Re-run failed');
+      setSyncError(error.message || t('Re-running the analysis failed.'));
+      pushToast(error.message || t('Re-running the analysis failed.'), 'error', t('Re-run failed'));
     } finally {
       syncingRef.current = false;
       setSyncing(null);
@@ -342,7 +353,7 @@ export default function App() {
     setDialogOpen(false);
     const saved = await saveWorkspace(workspace);
     if (saved.db) setDbStatus(saved.db);
-    if (!saved.saved) pushToast(saved.error, 'warning', 'Not stored in the database');
+    if (!saved.saved) pushToast(saved.error, 'warning', t('Not stored in the database'));
     runSync(workspace, { force: false });
   }
 
@@ -351,7 +362,7 @@ export default function App() {
     if (!target) return;
     const result = await deleteWorkspace(target);
     if (!result.deleted) {
-      pushToast(result.error, 'error', 'Delete not confirmed');
+      pushToast(result.error, 'error', t('Delete not confirmed'));
       setConfirmOpen(false);
       return;
     }
@@ -371,36 +382,36 @@ export default function App() {
       applyDataset(loaded.dataset);
       setDatasetError(loaded.error);
     }
-    pushToast('This workspace and its stored reviews were deleted from the database.', 'success', 'Analysis deleted');
+    pushToast(t('This workspace and its stored reviews were deleted from the database.'), 'success', t('Analysis deleted'));
   }
 
   function handleExport() {
     if (!activeWorkspace || !dataset) {
-      pushToast('There is no snapshot to export yet.', 'warning');
+      pushToast(t('There is no snapshot to export yet.'), 'warning');
       return;
     }
     const ok = exportWorkspace(activeWorkspace, dataset);
-    if (ok) pushToast('The full snapshot was exported as JSON.', 'success', 'Export complete');
-    else pushToast('The export could not run in this browser.', 'error');
+    if (ok) pushToast(t('The full snapshot was exported as JSON.'), 'success', t('Export complete'));
+    else pushToast(t('The export could not run in this browser.'), 'error');
   }
 
   const notices = [];
   if (dbStatus && dbStatus.enabled === false) {
     notices.push(
-      <Notice key="db-off" tone="amber" title="The database is not configured on this server" live>
-        {dbStatus.reason} Nothing is saved between visits until it is set up, so the analyses you see here live in this session only.
+      <Notice key="db-off" tone="amber" title={t('The database is not configured on this server')} live>
+        {dbStatus.reason} {t('Nothing is saved between visits until it is set up, so the analyses you see here live in this session only.')}
       </Notice>,
     );
   } else if (dbStatus && dbStatus.reachable === false) {
     notices.push(
-      <Notice key="db-down" tone="coral" title="The database could not be reached" live>
-        {dbStatus.reason} Pulls still read the live sources, but nothing new is stored until the database answers again.
+      <Notice key="db-down" tone="coral" title={t('The database could not be reached')} live>
+        {dbStatus.reason} {t('Pulls still read the live sources, but nothing new is stored until the database answers again.')}
       </Notice>,
     );
   }
   if (syncError) {
     notices.push(
-      <Notice key="sync" tone="coral" title="Last pull failed" live>
+      <Notice key="sync" tone="coral" title={t('Last pull failed')} live>
         {syncError}
       </Notice>,
     );
@@ -408,22 +419,22 @@ export default function App() {
   if (dataset?.channels?.some(channel => channel.status === 'error')) {
     const failed = dataset.channels.filter(channel => channel.status === 'error').map(channel => platformLabel(channel.id));
     notices.push(
-      <Notice key="failed" tone="coral" title={`${failed.join(', ')} could not be read`}>
-        This analysis uses only the channels that succeeded. No stand-in numbers and no old data were mixed into the new snapshot.
+      <Notice key="failed" tone="coral" title={`${failed.join(', ')} ${t('could not be read')}`}>
+        {t('This analysis uses only the channels that succeeded. No stand-in numbers and no old data were mixed into the new snapshot.')}
       </Notice>,
     );
   }
   if (dataset?.channels?.some(channel => channel.status === 'partial' || (channel.truncated && channel.status !== 'error'))) {
     notices.push(
-      <Notice key="partial" tone="amber" title="Some channels were not read to the end">
-        A time or page limit was reached. The figures shown come only from the rows that were actually read; press Refresh to try again.
+      <Notice key="partial" tone="amber" title={t('Some channels were not read to the end')}>
+        {t('A time or page limit was reached. The figures shown come only from the rows that were actually read; press Refresh to try again.')}
       </Notice>,
     );
   }
   if (dataset?.model?.status === 'insufficient') {
     notices.push(
-      <Notice key="model" tone="amber" title="The model cannot learn a distinguishing term yet">
-        The corpus needs both low-rated and high-rated reviews. The volume that was read is still shown as it is.
+      <Notice key="model" tone="amber" title={t('The model cannot learn a distinguishing term yet')}>
+        {t('The corpus needs both low-rated and high-rated reviews. The volume that was read is still shown as it is.')}
       </Notice>,
     );
   }
@@ -432,15 +443,14 @@ export default function App() {
       <Notice
         key="stale"
         tone="amber"
-        title="This snapshot was analysed by the previous engine"
+        title={t('This snapshot was analysed by the previous engine')}
         action={(
           <button type="button" onClick={() => runRecompute(activeWorkspace)} disabled={Boolean(syncing)} className="btn btn-secondary btn-xs">
-            Re-run analysis
+            {t('Re-run analysis')}
           </button>
         )}
       >
-        Topic names in it can still contain ordinary words lifted from review text. Re-running rebuilds every label from
-        the domain dictionary using the reviews already stored here — nothing is pulled again and no review text is altered.
+        {t('Topic names in it can still contain ordinary words lifted from review text. Re-running rebuilds every label from the domain dictionary using the reviews already stored here — nothing is pulled again and no review text is altered.')}
       </Notice>,
     );
   }
@@ -457,7 +467,7 @@ export default function App() {
   } else if (view === 'limits') {
     content = <LimitMonitor dataset={dataset} workspace={activeWorkspace} onToast={pushToast} />;
   } else if (loadingDataset) {
-    content = <BootScreen label="Reading the stored snapshot" />;
+    content = <BootScreen label={t('Reading the stored snapshot')} />;
   } else if (!dataset && activeSyncing) {
     content = <SyncScreen workspace={activeWorkspace} progress={syncProgress} />;
   } else if (!dataset || dataset.reviews.length === 0) {

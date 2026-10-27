@@ -142,12 +142,14 @@ function tallyOptions(rows, keyOf) {
 }
 
 function topicOptions(rows, modelTopics) {
-  const names = new Map((Array.isArray(modelTopics) ? modelTopics : []).map(topic => [topic.id, topic.name]));
+  // Chip filter membawa objek topik, bukan salah satu namanya, supaya penyaji bisa memilih
+  // sebutan sesuai bahasa aktif tanpa menyalin dua nama ke setiap pilihan.
+  const byId = new Map((Array.isArray(modelTopics) ? modelTopics : []).map(topic => [topic.id, topic]));
   const counts = new Map();
   for (const review of rows) {
     for (const id of new Set(topicIds(review))) counts.set(id, (counts.get(id) || 0) + 1);
   }
   return [...counts.entries()]
-    .map(([id, count]) => ({ id, name: names.get(id) || id, count }))
+    .map(([id, count]) => ({ id, topic: byId.get(id) || { id, name: id }, count }))
     .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
 }

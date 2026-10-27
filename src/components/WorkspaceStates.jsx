@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { channelStatusLabel, formatDateTime, formatNumber } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { StoreMark } from './Brand.jsx';
 import { Progress } from './Progress.jsx';
 import { Notice } from './Notices.jsx';
@@ -60,27 +61,27 @@ function SyncHeader({ phase, percent, rows, elapsed }) {
   const rate = elapsed >= 3 && rows > 0 ? Math.round(rows / elapsed) : 0;
   return (
     <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-4 py-2">
-      <h2 className="label">{PHASE_TITLES[phase] || 'Pull in progress'}</h2>
+      <h2 className="label">{PHASE_TITLES[phase] ? t(PHASE_TITLES[phase]) : t('Pull in progress')}</h2>
       <p className="num flex shrink-0 items-baseline gap-2 text-[10px] text-slate-400">
         {percent !== null
           ? <span className="font-semibold text-slate-200">{Math.round(percent)}%</span>
-          : <span>{formatNumber(rows)} rows read</span>}
+          : <span>{formatNumber(rows)} {t('rows read')}</span>}
         {rate > 0 && <span aria-hidden="true">· {formatNumber(rate)}/s</span>}
         <span aria-hidden="true">·</span>
-        <span>{elapsed < 1 ? 'just started' : `${elapsed} s`}</span>
+        <span>{elapsed < 1 ? t('just started') : `${elapsed} s`}</span>
       </p>
     </header>
   );
 }
 
-export function BootScreen({ label = 'Loading' }) {
+export function BootScreen({ label = t('Loading') }) {
   return (
     <div className="space-y-3" aria-busy="true">
       <section className="card overflow-hidden">
         <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-4 py-2">
           <h2 className="label">{label}</h2>
           <p className="text-[10px] text-slate-400">
-            database<span className="sr-only"> is being read</span>
+            {t('database')}<span className="sr-only">{t(' is being read')}</span>
           </p>
         </header>
         <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -92,7 +93,7 @@ export function BootScreen({ label = 'Loading' }) {
             </div>
           ))}
         </div>
-        <Progress label="Reading sources" />
+        <Progress label={t('Reading sources')} />
       </section>
     </div>
   );
@@ -108,6 +109,9 @@ export function SyncScreen({ workspace, progress = null }) {
   const stages = Array.isArray(progress?.stages) ? progress.stages : [];
   const chunks = progress?.chunks || { done: 0, total: 0 };
   const activeChannel = id => channels.find(entry => entry.id === id) || null;
+  // Nilai peta label tetap dibaca lewat t(variabel) di tempat digambar; yang berdiri sendiri di
+  // sini hanyalah teks cadangannya, supaya ia juga menjadi literal t('...') yang terlihat pemindai.
+  const stageLabel = STAGE_LABELS[stages[stages.length - 1]] || null;
 
   useEffect(() => {
     const timer = window.setInterval(() => setElapsed(value => value + 1), 1000);
@@ -128,8 +132,8 @@ export function SyncScreen({ workspace, progress = null }) {
             <PhaseLine
               active={phase === 'fetch'}
               done={['analyse', 'write', 'storing', 'done'].includes(phase)}
-              title="1 · Read the sources"
-              detail={phase === 'fetch' && rows ? `${formatNumber(rows)} rows` : (stores.length ? stores.map(store => rowsOf(store)).filter(Boolean).join(' · ') || 'opening' : null)}
+              title={t('1 · Read the sources')}
+              detail={phase === 'fetch' && rows ? `${formatNumber(rows)} ${t('rows')}` : (stores.length ? stores.map(store => rowsOf(store)).filter(Boolean).join(' · ') || t('opening') : null)}
             />
             {stores.map(store => {
               const counted = rowsOf(store);
@@ -143,7 +147,7 @@ export function SyncScreen({ workspace, progress = null }) {
                   </div>
                   <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold ${running ? 'text-accent' : 'text-slate-400'}`}>
                     {running ? <Spinner /> : null}
-                    {counted ? <span className="num">{counted} read</span> : running ? 'pulling' : 'done'}
+                    {counted ? <span className="num">{counted} {t('read')}</span> : running ? t('pulling') : t('done')}
                   </span>
                 </div>
               );
@@ -151,16 +155,16 @@ export function SyncScreen({ workspace, progress = null }) {
             <PhaseLine
               active={phase === 'analyse'}
               done={['write', 'storing', 'done'].includes(phase)}
-              title="2 · Analyse the corpus"
+              title={t('2 · Analyse the corpus')}
               detail={phase === 'analyse'
-                ? `${stages.length}/7 · ${STAGE_LABELS[stages[stages.length - 1]] || 'starting'}`
-                : (['write', 'storing', 'done'].includes(phase) ? '7/7 stages' : null)}
+                ? `${stages.length}/7 · ${stageLabel ? t(stageLabel) : t('starting')}`
+                : (['write', 'storing', 'done'].includes(phase) ? t('7/7 stages') : null)}
             />
             <PhaseLine
               active={['write', 'storing'].includes(phase)}
               done={phase === 'done'}
-              title="3 · Save the snapshot"
-              detail={chunks.total ? `${formatNumber(chunks.done)}/${formatNumber(chunks.total)} blocks of 1.000` : null}
+              title={t('3 · Save the snapshot')}
+              detail={chunks.total ? `${formatNumber(chunks.done)}/${formatNumber(chunks.total)} ${t('blocks of 1.000')}` : null}
             />
           </div>
           <div className="grid grid-cols-2 gap-0 divide-x divide-slate-800/70">
@@ -174,14 +178,14 @@ export function SyncScreen({ workspace, progress = null }) {
           </div>
         </div>
         <Progress
-          label={PHASE_TITLES[phase] || 'Pull in progress'}
+          label={PHASE_TITLES[phase] ? t(PHASE_TITLES[phase]) : t('Pull in progress')}
           percent={percent}
-          detail={percent === null ? 'The reading phase has no honest total: a store page never says how many reviews are still readable.' : `${Math.round(percent)}% of the measured work`}
+          detail={percent === null ? t('The reading phase has no honest total: a store page never says how many reviews are still readable.') : `${Math.round(percent)}% ${t('of the measured work')}`}
         />
         <p className="px-4 py-2 text-[10px] leading-relaxed text-slate-400">
           {percent === null
-            ? 'No percentage is shown while sources are being read, because the store does not report how much of its review history is still reachable — the row counter is real work, the percentage would not be. Percentages start as soon as the corpus is complete and measurable.'
-            : 'Percentages are computed from finished work only: analysis stages that already returned and review blocks the database already accepted.'}
+            ? t('No percentage is shown while sources are being read, because the store does not report how much of its review history is still reachable — the row counter is real work, the percentage would not be. Percentages start as soon as the corpus is complete and measurable.')
+            : t('Percentages are computed from finished work only: analysis stages that already returned and review blocks the database already accepted.')}
         </p>
       </section>
     </div>
@@ -199,9 +203,9 @@ function ChannelState({ channel, workspaceStore, store }) {
         <p className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-slate-100">
           {store === 'play' ? 'Google Play' : 'App Store'}
         </p>
-        <span className={`pill ${tone}`}>{channelStatusLabel(status) || 'Not pulled yet'}</span>
+        <span className={`pill ${tone}`}>{channelStatusLabel(status) || t('Not pulled yet')}</span>
         {url && (
-          <a href={url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-accent" aria-label="Open the store page">
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-accent" aria-label={t('Open the store page')}>
             <IconExternal size={12} />
           </a>
         )}
@@ -209,7 +213,7 @@ function ChannelState({ channel, workspaceStore, store }) {
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-800/70 pt-2">
         <span className="truncate font-mono text-[10px] text-slate-400">{workspaceStore?.appId || 'N/A'}</span>
         <span className="num shrink-0 text-[10px] font-semibold text-slate-400">
-          {channel?.fetched != null ? `${formatNumber(channel.fetched)} read` : '0 read'}
+          {channel?.fetched != null ? `${formatNumber(channel.fetched)} ${t('read')}` : `0 ${t('read')}`}
         </span>
       </div>
       {channel?.message && (
@@ -225,18 +229,21 @@ export function WorkspaceEmpty({ workspace, dataset, datasetError, syncError, sy
   const stores = ['play', 'appstore'].filter(store => workspace.stores?.[store]?.appId);
   const allError = channels.length > 0 && channels.every(channel => channel.status === 'error');
   const title = dataset
-    ? allError ? 'Channels could not be read' : 'No written review was read'
-    : syncError ? 'Pull failed' : 'No snapshot yet';
+    ? allError ? t('Channels could not be read') : t('No written review was read')
+    : syncError ? t('Pull failed') : t('No snapshot yet');
+  // Error yang sudah dibawa ke layar ini adalah string yang mungkin dibuat dalam bahasa lain,
+  // jadi ia dibaca ulang lewat tabel dua arah; pesan dari server tidak ada di tabel dan tetap
+  // apa adanya.
   const body = dataset
     ? allError
-      ? 'Source failures on the last pull, not proof of zero reviews. The older snapshot is still in use.'
-      : 'The sources responded, but no written review came back for the selected channels.'
-    : syncError || datasetError || 'No data copy exists in this workspace yet.';
+      ? t('Source failures on the last pull, not proof of zero reviews. The older snapshot is still in use.')
+      : t('The sources responded, but no written review came back for the selected channels.')
+    : (syncError || datasetError) ? t(syncError || datasetError) : t('No data copy exists in this workspace yet.');
 
   return (
     <div className="mx-auto w-full max-w-[720px] space-y-3" aria-live="polite">
       {dataset && (syncError || datasetError) && (
-        <Notice tone="coral" title="Load note" live>{syncError || datasetError}</Notice>
+        <Notice tone="coral" title={t('Load note')} live>{syncError || datasetError}</Notice>
       )}
 
       <section className="card overflow-hidden">
@@ -249,11 +256,11 @@ export function WorkspaceEmpty({ workspace, dataset, datasetError, syncError, sy
           <div className="mt-4 flex items-center gap-2">
             <button type="button" onClick={onRefresh} disabled={syncing} className="btn btn-primary">
               {syncing ? <Spinner size={12} /> : <IconRefresh size={13} />}
-              {syncing ? 'Pulling data…' : 'Pull data now'}
+              {syncing ? t('Pulling data…') : t('Pull data now')}
               {!syncing && <IconArrowRight size={12} />}
             </button>
             {dataset?.fetchedAt && (
-              <span className="text-[10px] text-slate-400">Last snapshot {formatDateTime(dataset.fetchedAt)}</span>
+              <span className="text-[10px] text-slate-400">{t('Last snapshot')} {formatDateTime(dataset.fetchedAt)}</span>
             )}
           </div>
         </div>

@@ -1,6 +1,14 @@
+import { getLanguage, t } from './i18n.js';
+
 const numberFormatter = new Intl.NumberFormat('en-GB');
 const decimalFormatter = new Intl.NumberFormat('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const LOCALE = 'en-GB';
+
+// Tanggal dan jam adalah label yang dibaca orang, jadi nama bulan dan kalimat "5 minutes ago"
+// ikut berganti bahasa. Angka sengaja TIDAK dipindah ke locale Indonesia: pemisah ribu dan desimal
+// adalah isi data, dan satu angka yang berubah bentuk di dua bahasa lebih sulit dicocokkan dengan
+// baris korpus daripada bentuk yang tetap satu.
+const dateLocale = () => (getLanguage() === 'id' ? 'id-ID' : LOCALE);
 
 // Number(null) dan Number('') adalah 0. Tanpa penjaga ini, kolom yang kosong di sumber
 // akan tampil sebagai angka nol — padahal yang benar adalah tidak ada angka sama sekali.
@@ -59,7 +67,7 @@ function safeDate(value) {
 export function formatDate(value, options = {}) {
   const date = safeDate(value);
   if (!date) return 'N/A';
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(dateLocale(), {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -70,7 +78,7 @@ export function formatDate(value, options = {}) {
 export function formatDateTime(value) {
   const date = safeDate(value);
   if (!date) return 'N/A';
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(dateLocale(), {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -82,14 +90,14 @@ export function formatDateTime(value) {
 export function formatTime(value) {
   const date = safeDate(value);
   if (!date) return 'N/A';
-  return new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit' }).format(date);
+  return new Intl.DateTimeFormat(dateLocale(), { hour: '2-digit', minute: '2-digit' }).format(date);
 }
 
 export function formatDay(dateString, { long = false } = {}) {
   if (typeof dateString !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return 'N/A';
   const date = new Date(`${dateString}T12:00:00Z`);
   if (Number.isNaN(date.getTime())) return 'N/A';
-  return new Intl.DateTimeFormat(LOCALE, {
+  return new Intl.DateTimeFormat(dateLocale(), {
     day: '2-digit',
     month: long ? 'long' : 'short',
     year: long ? 'numeric' : undefined,
@@ -101,8 +109,8 @@ export function relativeTime(value, now = Date.now()) {
   const date = safeDate(value);
   if (!date) return 'N/A';
   const delta = Math.round((date.getTime() - now) / 1000);
-  if (Math.abs(delta) < 60) return delta <= 0 ? 'just now' : 'less than a minute from now';
-  const formatter = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' });
+  if (Math.abs(delta) < 60) return delta <= 0 ? t('just now') : t('less than a minute from now');
+  const formatter = new Intl.RelativeTimeFormat(dateLocale(), { numeric: 'auto' });
   const ranges = [
     ['year', 60 * 60 * 24 * 365],
     ['month', 60 * 60 * 24 * 30],
@@ -115,7 +123,7 @@ export function relativeTime(value, now = Date.now()) {
       return formatter.format(Math.round(delta / seconds), unit);
     }
   }
-  return 'just now';
+  return t('just now');
 }
 
 const PLATFORM_NAMES = {
@@ -131,7 +139,11 @@ const PLATFORM_NAMES = {
 };
 
 export function platformLabel(value) {
-  return PLATFORM_NAMES[value] || (value ? String(value) : 'N/A');
+  const name = PLATFORM_NAMES[value];
+  // Hanya nama kanal dari peta ini yang diterjemahkan; nilai lain adalah pengenal dari data
+  // dan harus keluar apa adanya.
+  if (name) return t(name);
+  return value ? String(value) : 'N/A';
 }
 
 export const SENTIMENT_LABELS = {
@@ -142,15 +154,15 @@ export const SENTIMENT_LABELS = {
 };
 
 export function sentimentLabel(value) {
-  return SENTIMENT_LABELS[value] || 'Unclassified';
+  return t(SENTIMENT_LABELS[value] || SENTIMENT_LABELS.unclassified);
 }
 
 export function channelStatusLabel(status) {
-  if (status === 'success') return 'Complete';
-  if (status === 'partial') return 'Partial';
-  if (status === 'empty') return 'Empty';
-  if (status === 'error') return 'Failed';
-  if (status === 'needs_setup') return 'Needs credentials';
+  if (status === 'success') return t('Complete');
+  if (status === 'partial') return t('Partial');
+  if (status === 'empty') return t('Empty');
+  if (status === 'error') return t('Failed');
+  if (status === 'needs_setup') return t('Needs credentials');
   return 'N/A';
 }
 

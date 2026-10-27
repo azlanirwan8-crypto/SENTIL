@@ -1,4 +1,5 @@
 import { formatDecimal, formatNumber } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
 import { ChartFrame } from './charts/ChartFrame.jsx';
 import { EmptyState } from './EmptyState.jsx';
 import { IconAlert, IconGauge } from './icons.jsx';
@@ -33,12 +34,13 @@ export function Signal({ item }) {
     <li className="break-inside-avoid rounded border border-slate-800/70 bg-slate-900/40 px-2.5 py-2">
       <div className="flex items-baseline gap-2">
         <span className={`shrink-0 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-wider ${kind.tone}`}>
-          {kind.label}
+          {t(kind.label)}
         </span>
+        {/* judul dan badan kalimat ditulis mesin di server: keduanya data, tidak diterjemahkan */}
         <p className="min-w-0 text-[12px] font-bold leading-snug text-slate-100">{item.title}</p>
       </div>
       <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{item.body}</p>
-      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1.5" aria-label={`Measurements behind: ${item.title}`}>
+      <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1.5" aria-label={`${t('Measurements behind')}: ${item.title}`}>
         {item.facts.map(entry => (
           <li key={entry.key} className="flex items-baseline gap-1">
             <span className="text-[9px] uppercase tracking-wider text-slate-400">{entry.label}</span>
@@ -53,12 +55,12 @@ export function Signal({ item }) {
 export function Signals({ signals, filtered = false }) {
   if (!signals || !Array.isArray(signals.items)) {
     return (
-      <ChartFrame label="Analyst signals">
+      <ChartFrame label={t('Analyst signals')}>
         <EmptyState
           compact
           icon={IconGauge}
-          title="This snapshot predates the signal layer"
-          body="Signals are written by the engine that measures them. Pull this project again and the analysis lines are rebuilt from the same numbers the tables show."
+          title={t('This snapshot predates the signal layer')}
+          body={t('Signals are written by the engine that measures them. Pull this project again and the analysis lines are rebuilt from the same numbers the tables show.')}
         />
       </ChartFrame>
     );
@@ -66,12 +68,12 @@ export function Signals({ signals, filtered = false }) {
 
   if (!signals.items.length) {
     return (
-      <ChartFrame label="Analyst signals" meta={`${formatNumber(signals.metrics?.candidates || 0)} candidates`}>
+      <ChartFrame label={t('Analyst signals')} meta={`${formatNumber(signals.metrics?.candidates || 0)} ${t('candidates')}`}>
         <EmptyState
           compact
           icon={IconAlert}
-          title="No signal cleared the test"
-          body="Every candidate reading was either too thin to separate from chance or already reported by a table. An empty panel here is the honest result — no sentence was written to fill it."
+          title={t('No signal cleared the test')}
+          body={t('Every candidate reading was either too thin to separate from chance or already reported by a table. An empty panel here is the honest result — no sentence was written to fill it.')}
         />
       </ChartFrame>
     );
@@ -79,30 +81,27 @@ export function Signals({ signals, filtered = false }) {
 
   const basis = signals.basis || {};
   const metrics = signals.metrics || {};
-  const meta = `${formatNumber(metrics.reported)} of ${formatNumber(metrics.candidates)} measured`
-    + `${basis.reviews ? ` · ${formatNumber(basis.reviews)} reviews` : ''}`
-    + `${filtered ? ' · whole corpus' : ''}`;
+  const meta = `${formatNumber(metrics.reported)} ${t('of')} ${formatNumber(metrics.candidates)} ${t('measured')}`
+    + `${basis.reviews ? ` · ${formatNumber(basis.reviews)} ${t('reviews')}` : ''}`
+    + `${filtered ? ` · ${t('whole corpus')}` : ''}`;
 
   return (
     <ChartFrame
-      label="Analyst signals"
+      label={t('Analyst signals')}
       meta={meta}
-      legend={<span className="text-[10px] text-slate-400">each line is a claim its own numbers support</span>}
+      legend={<span className="text-[10px] text-slate-400">{t('each line is a claim its own numbers support')}</span>}
       bodyClassName="flex flex-col"
     >
       <ul className="grid items-start gap-2 md:grid-cols-2 xl:grid-cols-3">
         {signals.items.map(item => <Signal key={item.id} item={item} />)}
       </ul>
       <p className="mt-2 shrink-0 border-t border-slate-800/70 pt-1.5 text-[10px] leading-relaxed text-slate-400">
-        A line is written only when the gap between two proportions is larger than the standard error of that
-        gap — the same test that admits a phrase or a topic, with no threshold chosen per project. Direction
-        compares the second half of <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : 'the observed period'}</span> against the
-        first{basis.trend && basis.trend.earlyNegative != null
-          ? <> on <span className="num">{formatNumber(basis.trend.earlyNegative)}</span> vs <span className="num">{formatNumber(basis.trend.lateNegative)}</span> complaints</>
+        {t('A line is written only when the gap between two proportions is larger than the standard error of that gap — the same test that admits a phrase or a topic, with no threshold chosen per project. Direction compares the second half of')} <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : t('the observed period')}</span> {t('against the first')}{basis.trend && basis.trend.earlyNegative != null
+          ? <> {t('on')} <span className="num">{formatNumber(basis.trend.earlyNegative)}</span> {t('vs')} <span className="num">{formatNumber(basis.trend.lateNegative)}</span> {t('complaints')}</>
           : null}. {metrics.trimmed
-            ? <><span className="num">{formatNumber(metrics.trimmed)}</span> candidates sat outside the display budget and are counted above.</>
-            : 'Nothing was trimmed.'}
-        {filtered ? ' Signals are computed on the whole corpus, not the active filter.' : ''}
+            ? <><span className="num">{formatNumber(metrics.trimmed)}</span> {t('candidates sat outside the display budget and are counted above.')}</>
+            : t('Nothing was trimmed.')}
+        {filtered ? ` ${t('Signals are computed on the whole corpus, not the active filter.')}` : ''}
       </p>
     </ChartFrame>
   );
