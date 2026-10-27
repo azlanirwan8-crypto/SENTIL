@@ -195,6 +195,23 @@ describe('frasa pain point dari klaster negatif', () => {
     }
   });
 
+  test('kerangka tata bahasa tidak pernah naik menjadi frasa keluhan', () => {
+    const documents = corpusOf({
+      negative: [
+        'tidak ada tanda tanda saldo masuk',
+        'tidak ada bantuan sama sekali',
+        'dan tidak ada perbaikan',
+        'tidak ada lagi kabar dari aplikasi',
+        'sudah lama tidak ada solusi transfer',
+      ],
+      positive: SERVER_CORPUS.positive,
+    });
+    const result = derivePainPoints(documents, STRUCTURE);
+    assert.ok(result.metrics.droppedScaffolding > 0, 'frasa yang seluruh tokonya kata tugas harus TERHITUNG dibuang, bukan hilang diam-diam');
+    for (const item of result.items) assert.equal(isJunkTerm(item.text), false, `"${item.text}" hanya kerangka kalimat`);
+    for (const label of result.labels) assert.equal(isJunkTerm(label.name), false, 'nama label tidak boleh berupa kerangka tata bahasa');
+  });
+
   test('hasil deterministik untuk korpus yang sama', () => {
     const documents = corpusOf(SERVER_CORPUS);
     const first = derivePainPoints(documents, STRUCTURE);

@@ -109,6 +109,7 @@ test('HTTP error dan abort dilaporkan sebagai kegagalan, bukan crash', async () 
 
   const aborted = await nameClusters(clusters, {
     env: { GEMINI_API_KEY: 'k' },
+    timeoutMs: 60_000,
     fetchImpl: async () => {
       const error = new Error('This operation was aborted');
       error.name = 'AbortError';
@@ -116,7 +117,9 @@ test('HTTP error dan abort dilaporkan sebagai kegagalan, bukan crash', async () 
     },
   });
   assert.equal(aborted.status, 'failed');
-  assert.match(aborted.reason, /timed out/);
+  assert.match(aborted.reason, /no answer within \d+s/, 'alasan kegagalan menyebut jatah yang habis, bukan kata umum');
+  assert.equal(aborted.tried.length, 3, 'satu model yang diam tidak menutup lapisan: tiap kandidat dapat jatahnya sendiri');
+  assert.equal(aborted.tried.every(entry => /no answer within/.test(entry.reason)), true);
 });
 
 test('503 dicoba sekali lagi karena API menyebutnya sementara', async () => {
