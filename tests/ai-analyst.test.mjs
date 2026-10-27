@@ -435,6 +435,7 @@ test('daftar model API melebarkan tangga sebelum id yang basi dicoba', async () 
             models: [
               { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
               { name: 'models/gemini-3.8-flash-lite', supportedGenerationMethods: ['countTokens', 'generateContent'] },
+              { name: 'models/gemini-2.5-flash-preview-tts', supportedGenerationMethods: ['generateContent'] },
               { name: 'models/gemini-3.8-embed', supportedGenerationMethods: ['embedContent'] },
               { name: 'models/gemini-4-pro', supportedGenerationMethods: ['generateContent'] },
             ],
@@ -452,6 +453,7 @@ test('daftar model API melebarkan tangga sebelum id yang basi dicoba', async () 
   assert.deepEqual(seen, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash-lite'],
     'setelah 503 kedua, id hasil daftar yang dicoba — bukan id hafalan yang 404');
   assert.equal(result.model, 'gemini-3.8-flash-lite');
+  assert.equal(seen.includes('gemini-2.5-flash-preview-tts'), false, 'model suara terdaftar dengan generateContent tapi tidak bisa menjawab permintaan teks');
 });
 
 test('sisa waktu di bawah reservasi membatalkan percobaan ulang', async () => {
