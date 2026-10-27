@@ -174,6 +174,20 @@
 }
 
 @layer components {
+  /* Popup native <select> ikut tema. Daftar pilihan tidak mewarisi latar kontrolnya ketika
+     kontrol itu dibuat transparan (pemilih project di bilah atas memang begitu: teks aslinya
+     ditutupi label), jadi Chrome menggambar barisnya dengan warna bawaan — putih keperakan di
+     atas bilah gelap. Yang bisa diatur per baris hanyalah option, jadi aturannya di sini. */
+  option {
+    background-color: rgb(var(--slate-900));
+    color: rgb(var(--slate-200));
+  }
+
+  option:checked {
+    background-color: rgb(var(--slate-700));
+    color: rgb(var(--slate-50));
+  }
+
   .num {
     font-variant-numeric: tabular-nums lining-nums;
     font-feature-settings: 'tnum' 1, 'lnum' 1;

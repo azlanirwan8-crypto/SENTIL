@@ -192,3 +192,15 @@ describe('pemuat tema', () => {
     delete globalThis.document;
   });
 });
+
+// Daftar pilihan native tidak mewarisi latar kontrolnya ketika kontrol itu dibuat transparan
+// (pemilih project di bilah atas memang begitu), jadi tanpa aturan option yang eksplisit Chrome
+// menggambar barisnya putih di atas bilah gelap. Aturan itu harus tetap memakai token, bukan hex,
+// supaya ikut berpindah bersama tema.
+test('baris daftar pilihan native ikut token tema', () => {
+  const option = /option\s*\{[^}]*background-color:\s*rgb\(var\(--slate-\d+\)\)[^}]*color:\s*rgb\(var\(--slate-\d+\)\)/.exec(CSS);
+  assert.ok(option, 'baris option tidak diberi warna token — popup-nya akan kembali ke warna peramban');
+  const checked = /option:checked\s*\{[^}]*background-color:\s*rgb\(var\(--slate-\d+\)\)[^}]*color:\s*rgb\(var\(--slate-\d+\)\)/.exec(CSS);
+  assert.ok(checked, 'baris option:checked tidak diberi warna token — baris terpilih akan menabrak bilah atas');
+  assert.equal(/option[^{}]*\{[^}]*#[0-9a-f]{3,6}/i.test(CSS), false, 'aturan option menulis hex tetap, bukan token');
+});
