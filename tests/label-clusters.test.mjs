@@ -231,10 +231,11 @@ describe('gerombol frasa menjadi label', () => {
     const other = result.labels.find(label => label.id !== ad.id);
     assert.ok(other.name !== 'iklan');
 
-    // Kata tugas tidak boleh menjadi nama walaupun tidak ada pesaing: headline jatuh ke frasa
-    // terberat, yang masih berisi keluhan yang sebenarnya ditulis reviewer.
+    // Kata tugas tidak boleh menjadi nama walaupun tidak ada pesaing: headline jatuh ke salah
+    // satu frasa anggota, dan yang dipilih adalah yang paling informatif — yang menutup dengan
+    // kata bermakna ("bunyi"), bukan yang menggantung di kata penguat ("sekali").
     const alone = build(new Map([['tidak jelas sekali', range(0, 19)], ['tidak ada bunyi', range(0, 19)]]), new Map(), [items[4], items[5]]);
-    assert.equal(alone.labels[0].name, 'tidak jelas sekali');
+    assert.equal(alone.labels[0].name, 'tidak ada bunyi', 'judul memilih frasa yang menutup dengan kata bermakna, bukan yang terberat');
     assert.equal(alone.labels[0].nameSource, 'phrase', 'kata tugas tidak lagi dijadikan istilah nama');
     assert.notEqual(alone.labels[0].name, 'tidak');
   });
