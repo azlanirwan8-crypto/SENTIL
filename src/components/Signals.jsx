@@ -91,7 +91,7 @@ export function Signals({ signals, pain = null, topics = null, ai = null, filter
           compact
           icon={IconGauge}
           title={t('This snapshot predates the signal layer')}
-          body={t('Signals are written by the engine that measures them. Pull this project again and the analysis lines are rebuilt from the same numbers the tables show.')}
+          body={t('Each line is written by the engine that measures it. Run the pull again and these lines are rebuilt from the numbers the tables already show.')}
         />
       </ChartFrame>
     );
@@ -103,8 +103,8 @@ export function Signals({ signals, pain = null, topics = null, ai = null, filter
         <EmptyState
           compact
           icon={IconAlert}
-          title={t('No signal cleared the test')}
-          body={t('Every candidate reading was either too thin to separate from chance or already reported by a table. An empty panel here is the honest result — no sentence was written to fill it.')}
+          title={t('Nothing cleared the test')}
+          body={t('Nothing stood out more than luck would explain, and nothing here repeats a table. An empty panel is the honest answer — no line was written just to fill it.')}
         />
       </ChartFrame>
     );
@@ -114,13 +114,13 @@ export function Signals({ signals, pain = null, topics = null, ai = null, filter
   const metrics = signals.metrics || {};
   const meta = `${formatNumber(metrics.reported)} ${t('of')} ${formatNumber(metrics.candidates)} ${t('measured')}`
     + `${basis.reviews ? ` · ${formatNumber(basis.reviews)} ${t('reviews')}` : ''}`
-    + `${filtered ? ` · ${t('whole corpus')}` : ''}`;
+    + `${filtered ? ` · ${t('all reviews')}` : ''}`;
 
   return (
     <ChartFrame
       label={t('Analyst signals')}
       meta={meta}
-      legend={<span className="text-[10px] text-slate-400">{t('each line is a claim its own numbers support')}</span>}
+      legend={<span className="text-[10px] text-slate-400">{t('every line is backed by the numbers under it')}</span>}
       bodyClassName="flex flex-col"
     >
       {narrative ? (
@@ -131,7 +131,7 @@ export function Signals({ signals, pain = null, topics = null, ai = null, filter
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-200">{narrative}</p>
           <p className="mt-1 text-[10px] leading-snug text-slate-400">
-            {t('This paragraph interprets the lines below it. It was written from rankings and wording, not from counts, and it contains no number by design.')}
+            {t('This paragraph reads the lines below it. It was written from order and wording, not from counts, so it carries no number on purpose.')}
           </p>
         </div>
       ) : null}
@@ -139,12 +139,12 @@ export function Signals({ signals, pain = null, topics = null, ai = null, filter
         {signals.items.map(item => <Signal key={item.id} item={item} area={areaFor(item)} />)}
       </ul>
       <p className="mt-2 shrink-0 border-t border-slate-800/70 pt-1.5 text-[10px] leading-relaxed text-slate-400">
-        {t('A line is written only when the gap between two proportions is larger than the standard error of that gap — the same test that admits a phrase or a topic, with no threshold chosen per project. Direction compares the second half of')} <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : t('the observed period')}</span> {t('against the first')}{basis.trend && basis.trend.earlyNegative != null
+        {t('A line appears only when the difference between two shares is too big to be luck. That is the same test that admits a phrase or a topic, and no cutoff is picked per project. Direction compares the second half of')} <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : t('the observed period')}</span> {t('against the first')}{basis.trend && basis.trend.earlyNegative != null
           ? <> {t('on')} <span className="num">{formatNumber(basis.trend.earlyNegative)}</span> {t('vs')} <span className="num">{formatNumber(basis.trend.lateNegative)}</span> {t('complaints')}</>
           : null}. {metrics.trimmed
             ? <><span className="num">{formatNumber(metrics.trimmed)}</span> {t('candidates sat outside the display budget and are counted above.')}</>
             : t('Nothing was trimmed.')}
-        {filtered ? ` ${t('Signals are computed on the whole corpus, not the active filter.')}` : ''}
+        {filtered ? ` ${t('Counts cover every review in this project, not only the filtered ones.')}` : ''}
       </p>
     </ChartFrame>
   );

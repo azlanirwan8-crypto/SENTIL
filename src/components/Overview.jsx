@@ -89,7 +89,7 @@ export function Overview({ dataset, workspace }) {
         <section className="card p-4" aria-label={t('No review matches this filter')}>
           <p className="label">{t('No review matches this filter')}</p>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            {formatNumber(total)} {t('reviews were read, but none carries this combination of channel and topic. Every chart counts only what is in the corpus, so an empty filter stays empty instead of falling back to the unfiltered numbers.')}
+            {formatNumber(total)} {t('reviews were read, but none matches this channel and topic together. Charts count only what is in this project, so an empty filter stays empty instead of quietly switching back to all reviews.')}
           </p>
           <button type="button" onClick={reset} className="btn btn-ghost btn-xs mt-2">{t('Clear filter')}</button>
         </section>

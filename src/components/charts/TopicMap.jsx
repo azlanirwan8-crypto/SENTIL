@@ -107,7 +107,7 @@ export function TopicMap({ topics, filtered = false }) {
           </div>
         ) : (
           <p className="text-[10px] leading-relaxed text-slate-400">
-            {t('Each bar is a product feature named by the domain dictionary, counted across 1–2★ reviews; the green segment counts 4–5★ reviews using the same words. Names come from the dictionary in English and Indonesian, never from filler words inside a review. One review can carry several topics, so the bars do not add up to 100%.')}
+            {t('Each bar is a product feature from the app dictionary, counted in 1–2★ reviews. The green part counts 4–5★ reviews that use the same words. Names come from the dictionary, in English and Indonesian, never from filler words. One review can mention several features, so the bars do not add up to 100%.')}
           </p>
         )}
       </div>

@@ -155,7 +155,7 @@ export function SyncScreen({ workspace, progress = null }) {
             <PhaseLine
               active={phase === 'analyse'}
               done={['write', 'storing', 'done'].includes(phase)}
-              title={t('2 · Analyse the corpus')}
+              title={t('2 · Analyse every review read')}
               detail={phase === 'analyse'
                 ? `${stages.length}/7 · ${stageLabel ? t(stageLabel) : t('starting')}`
                 : (['write', 'storing', 'done'].includes(phase) ? t('7/7 stages') : null)}
@@ -184,7 +184,7 @@ export function SyncScreen({ workspace, progress = null }) {
         />
         <p className="px-4 py-2 text-[10px] leading-relaxed text-slate-400">
           {percent === null
-            ? t('No percentage is shown while sources are being read, because the store does not report how much of its review history is still reachable — the row counter is real work, the percentage would not be. Percentages start as soon as the corpus is complete and measurable.')
+            ? t('No percentage is shown while the sources are being read: the store does not say how much of its review history is still reachable. The row counter is real work, a percentage would not be. Percentages start once the reviews are in and countable.')
             : t('Percentages are computed from finished work only: analysis stages that already returned and review blocks the database already accepted.')}
         </p>
       </section>

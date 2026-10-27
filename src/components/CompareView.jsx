@@ -95,7 +95,7 @@ function MatrixTable({ result }) {
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">
-            {t("Metric matrix: one row per measured metric, one column per stored project. Every cell is read from that project's own snapshot; a project without a snapshot shows no value rather than a zero.")}
+            {t('Metric matrix: one row per metric, one column per saved project. Each cell comes from that project’s own snapshot. A project without a snapshot shows no value, not a zero.')}
           </caption>
           <thead>
             <tr className="border-b border-slate-800">
@@ -214,7 +214,7 @@ function PainHeatmap({ result }) {
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">
-            {t("Cross-project pain points: each row is one complaint phrase measured inside every selected project. A cell shows that project's own count; a dash means the phrase did not clear the evidence test there, not that it was zero.")}
+            {t('Each row is one complaint phrase measured in every project you selected. A cell is that project’s own count. A dash means the phrase did not clear the test there, not that it was zero.')}
           </caption>
           <thead>
             <tr className="border-b border-slate-800">

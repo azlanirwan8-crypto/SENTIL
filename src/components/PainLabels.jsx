@@ -22,7 +22,7 @@ function Header({ children, className = '' }) {
 function Trend({ entry }) {
   if (!Number.isFinite(entry.momentum)) {
     const reason = entry.undated === null
-      ? t('No usable review dates in this corpus')
+      ? t('No usable review dates in this project')
       : t('No review of this label in the first half of the period, so there is no baseline to compare against');
     return <span className="num text-[11px] text-slate-400" title={reason} aria-label={reason}>—</span>;
   }
@@ -54,7 +54,7 @@ export function PainLabels({ pain, topics, ai = null, filtered = false }) {
           compact
           icon={IconLayers}
           title={t('No complaint phrase yet')}
-          body={t('A label is built only from phrases that live in 1–2★ reviews and are absent from 4–5★ reviews. A corpus without both pools, or without repeated wording, cannot produce one.')}
+          body={t('A label needs wording that appears in 1–2★ reviews and not in 4–5★ reviews. A project without both kinds of review, or without repeated wording, cannot produce one.')}
         />
       </ChartFrame>
     );
@@ -92,7 +92,7 @@ export function PainLabels({ pain, topics, ai = null, filtered = false }) {
   }
 
   const clusters = metrics.clusters || labels.length;
-  const meta = `${labels.length === clusters ? `${formatNumber(clusters)} ${t('clusters')}` : `${labels.length} ${t('of')} ${formatNumber(clusters)} ${t('clusters')}`} · ${formatNumber(pool)} 1–2★ ${t('reviews')}${filtered ? ` · ${t('whole corpus')}` : ''}`;
+  const meta = `${labels.length === clusters ? `${formatNumber(clusters)} ${t('clusters')}` : `${labels.length} ${t('of')} ${formatNumber(clusters)} ${t('clusters')}`} · ${formatNumber(pool)} 1–2★ ${t('reviews')}${filtered ? ` · ${t('all reviews')}` : ''}`;
   const singletons = metrics.singletons || 0;
   const headed = metrics.headed || 0;
   // Kategori punya dua sumber yang keduanya ditandai di barisnya: nama dari model bahasa
@@ -120,7 +120,7 @@ export function PainLabels({ pain, topics, ai = null, filtered = false }) {
       <div className="min-h-0 flex-1 overflow-x-auto">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">
-            {t('Complaint labels found by the corpus engine: an area named by the domain dictionary or by the language model, the reviewer wording that evidences it, supporting phrases, distinct 1–2 star reviews, share of the complaint pool, 4–5 star reviews using the same wording, direction of the daily rate, and severity.')}
+            {t('Complaint labels measured on this project. Each row shows the area name and the reviewer wording behind it. Then its supporting phrases and how many 1–2 star reviews carry it. The last columns give its share of all complaints, how many 4–5 star reviews use the same words, whether the daily rate rises or eases, and severity.')}
           </caption>
           <thead>
             <tr className="border-b border-slate-800">
@@ -222,7 +222,7 @@ export function PainLabels({ pain, topics, ai = null, filtered = false }) {
                     <span
                       className="tag-quiet"
                       title={areaSource === 'ai'
-                        ? `${t('Area named by')} ${naming?.model || t('the language model')} ${t('from the phrases in this row; every number in this row is measured by the corpus engine')}`
+                        ? `${t('Area named by')} ${naming?.model || t('the language model')} ${t('from the phrases in this row; every number in this row is measured on this project’s own reviews')}`
                         : areaSource === 'dictionary'
                           ? t('Area is the domain-dictionary topic carried by this cluster more densely than by other complaints')
                           : t('No naming cleared the evidence test, so this row shows reviewer wording only')}
@@ -254,17 +254,17 @@ export function PainLabels({ pain, topics, ai = null, filtered = false }) {
         </table>
       </div>
       <p className="mt-2 shrink-0 text-[10px] leading-relaxed text-slate-400">
-        {t("The first line of a row is its area: the domain-dictionary topic this cluster carries more densely than other complaints, or a category named by")} {naming?.model || t('the language model')} {t("when the AI layer answered. The second line is always the reviewers' own wording, so every row can be traced to the text it came from")}{' '}
-        {headed ? <span className="num">({formatNumber(headed)} {t('of')} {formatNumber(labels.length)} {t('rows carry a dictionary area')})</span> : null}. {t('Two phrases are grouped only when more reviews carry both than chance explains. Trend is the daily rate of the second half of the observed period against the first.')} {formatNumber(singletons)} {singletons === 1 ? t('label is') : t('labels are')} {singletons === 1 ? t('a single phrase') : t('single phrases')};{' '}
+        {t("The first line of a row is its area: the dictionary topic this group carries more often than other complaints, or a category named by")} {naming?.model || t('the language model')} {t("when the AI layer answered. The second line is always the reviewers' own wording, so every row can be traced to the text it came from")}{' '}
+        {headed ? <span className="num">({formatNumber(headed)} {t('of')} {formatNumber(labels.length)} {t('rows carry a dictionary area')})</span> : null}. {t('Two phrases are grouped only when more reviews carry both than luck explains. Trend compares the daily rate of the second half of the period with the first.')} {formatNumber(singletons)} {singletons === 1 ? t('label is') : t('labels are')} {singletons === 1 ? t('a single phrase') : t('single phrases')};{' '}
         {metrics.trimmedLabels
           ? <>{formatNumber(metrics.trimmedLabels)} {t('clusters fell outside the display budget and are counted in the metrics instead of being dropped silently.')}</>
           : t('every cluster fits the display budget.')}
-        {filtered ? ` ${t('Counts cover the whole corpus, not the active filter.')}` : ''}
+        {filtered ? ` ${t('Counts cover every review in this project, not only the filtered ones.')}` : ''}
       </p>
       <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
         {t('The Named by column and the two interpretation lines inside a row are the interpreted parts, and the layer state is reported as it is:')}{' '}
         {naming?.status === 'answered'
-          ? <>{t('it ran with')} <span className="font-semibold text-slate-400">{naming.model}</span> {t('over')} {formatNumber(naming.clusters || 0)} {t('clusters and')} {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : t('no')} {t('of the rows shown')} {aiCount === 1 ? t('carries') : t('carry')} {t('its name')}; {readCount ? <span className="num">{formatNumber(readCount)}</span> : t('no')} {readCount === 1 ? t('row carries') : t('rows carry')} {t('a cause and a next action')}{termCount ? <>, {formatNumber(termCount)} {t('carry a domain topic name denser inside this cluster than among other complaints')}</> : null}{maskedTermCount ? <>, {formatNumber(maskedTermCount)} {maskedTermCount === 1 ? t('further topic name') : t('further topic names')} {t('measured here but shown under the model name')}</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} {orphanNames === 1 ? t('returned name') : t('returned names')} {t('matched no row on this table and')} {orphanNames === 1 ? t('was') : t('were')} {t('ignored')}</> : null}.</>
+          ? <>{t('it ran with')} <span className="font-semibold text-slate-400">{naming.model}</span> {t('over')} {formatNumber(naming.clusters || 0)} {t('clusters and')} {aiCount ? <span className="num">{formatNumber(aiCount)}</span> : t('no')} {t('of the rows shown')} {aiCount === 1 ? t('carries') : t('carry')} {t('its name')}; {readCount ? <span className="num">{formatNumber(readCount)}</span> : t('no')} {readCount === 1 ? t('row carries') : t('rows carry')} {t('a cause and a next action')}{termCount ? <>, {formatNumber(termCount)} {t('carry a dictionary area name that appears inside this group more often than in other complaints')}</> : null}{maskedTermCount ? <>, {formatNumber(maskedTermCount)} {maskedTermCount === 1 ? t('further topic name') : t('further topic names')} {t('measured here but shown under the model name')}</> : null}{orphanNames ? <>, {formatNumber(orphanNames)} {orphanNames === 1 ? t('returned name') : t('returned names')} {t('matched no row on this table and')} {orphanNames === 1 ? t('was') : t('were')} {t('ignored')}</> : null}.</>
           : naming?.status === 'skipped'
             ? <>{t('it did not run —')} {naming.reason || t('the analyst layer was not configured')} {t('— so every area below comes from the domain dictionary, or the row shows reviewer wording only.')}</>
             : naming?.status === 'failed'

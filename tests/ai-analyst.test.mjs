@@ -149,10 +149,12 @@ test('fact sheet tidak membawa satu pun angka hasil ukur', () => {
   // Kosakata standar operasi produk adalah isi permintaan, bukan hiasan: tanpanya model mengulang
   // kalimat reviewers, dan panel kembali menjadi potongan frasa.
   const rules = JSON.stringify(request.systemInstruction);
-  for (const term of ['incident report', 'failed transaction', 'authentication', 'identity verification', 'notification delivery', 'customer support response']) {
-    assert.match(rules, new RegExp(term), `aturan kosakata kehilangan "${term}"`);
+  for (const term of ['incident report', 'two to four words', 'Payment notification not received', 'Transfer declined', 'Refund delayed', 'Balance not updated', 'Identity verification pending', 'Customer support response late']) {
+    assert.match(rules, new RegExp(term, ''), `aturan kosakata kehilangan "${term}"`);
   }
-  assert.match(rules, /never quote or tidy a reviewer sentence/);
+  assert.match(rules, /one-word category is rejected/, 'satu kata harus explicitly dilarang');
+  assert.match(rules, /Notifikasi pembayaran tidak tiba/, 'sisi Indonesia diberi contoh register yang sama');
+  assert.match(rules, /[Nn]ever quote or tidy a reviewer sentence/);
 });
 
 test('id asli tidak ikut menyeberang; hanya referensi kabut yang jadi pegangan', () => {
@@ -212,6 +214,20 @@ test('nama terlalu panjang atau terlalu pendek tidak dipakai', () => {
     { ref: 'c1', category: { en: 'x'.repeat(61), id: 'y'.repeat(61) } },
     { ref: 'c2', category: { en: 'a', id: 'b' } },
   ]), {});
+});
+
+test('kategori satu kata dibuang: nama area harus sebuah item', () => {
+  // "Notifikasi" boleh menjadi kepala laporan kalau ada sebutannya; satu kata saja tidak
+  // menjelaskan apa yang gagal, jadi barisnya lebih baik menampilkan redaksi reviewers.
+  assert.deepEqual(applyNames(labels, [{ ref: 'c1', category: { en: 'Notification', id: 'Notifikasi' } }]), {},
+    'satu kata ditolak di kedua bahasa');
+  const named = applyNames(labels, [{
+    ref: 'c2',
+    category: { en: 'Payment notification not received', id: 'Notifikasi pembayaran tidak tiba' },
+    subLabel: { en: 'Alerts', id: 'Saluran pemberitahuan' },
+  }]);
+  assert.equal(named['hari kerja'].category.en, 'Payment notification not received');
+  assert.equal(named['hari kerja'].category.id, 'Notifikasi pembayaran tidak tiba');
 });
 
 test('satu kalimat bacaan yang memuat angka dibuang, kalimat bersih tetap dipakai', () => {
