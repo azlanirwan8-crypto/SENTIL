@@ -194,6 +194,17 @@ Workspace, snapshot hasil penarikan, dan riwayat penarikan hidup di PostgreSQL S
 - **Update:** force sync menulis revisi baru sampai lengkap, memindahkan penanda di `sentil_dataset`, baru membuang revisi lama — pembaca tidak pernah melihat data setengah terganti.
 - **Delete:** konfirmasi eksplisit; cascade ikut menghapus dataset dan baris ulasan milik workspace itu. Sumber publik tidak berubah.
 
+### Rasa ringan saat membuat dan menghapus project
+
+Yang terasa berat pada dua aksi ini bukan volumenya, melainkan **urutan permintaannya**. Diukur dengan korpus 66 ulasan nyata di atas perantara local (`tests/project-flow.test.mjs` menjaga urutannya; jeda database dibuat-buat — cascade 0,9 dtk, baca korpus 2,2 dtk — supaya urutan terbaca):
+
+- **Bacaan project berikutnya dimulai bersamaan dengan permintaan hapus, bukan sesudahnya.** Log perantara mencatat `db.delete` dan `db.read` untuk project berikutnya berangkat pada detak yang sama (selisih 16 ms), jadi dasbor project berikutnya muncul dalam ~2,2 dtk, bukan ~3,1 dtk seperti sebelumnya. Di produksi selisihnya bukan 0,9 dtk, melainkan seluruh waktu cascade (puluhan ribu baris) yang sebelumnya memblokir bacaan itu.
+- **Selama permintaan hapus berjalan, dialog menampilkan "Deleting…" dan tombolnya mati.** Sebelumnya dialog hanya terlihat macet dan klik kedua bisa mengirim permintaan hapus yang sama dua kali; sekarang ada penanda `deletingRef` di klien dan tombol yang dinonaktifkan di dialog.
+- **Tidak ada layar "belum ada snapshot" yang bukan kebenaran.** Project baru berpindah layar segera, tetapi barisnya masih harus diterima database sebelum penarikan pertama (baris dataset punya kunci luar ke project) — di celah ±0,4 dtk itu yang tampil adalah layar penarikan, bukan layar kosong. Hapus pun memakai kerangka loading yang sama saat korpus project berikutnya dibaca.
+- **Polling daftar project ditahan selama create/delete berjalan**, jadi project yang baru dibuat tidak sempat hilang dari bilah atas dan yang baru dihapus tidak sempat muncul kembali.
+- **Aksi `job` tidak lagi membayar dua permintaan database tiap dua detik.** Progres penarikan ditanya peramban tiap 2 dtk; permintaan jangkauan yang terpisah membuat tiap pertanyaan menjadi dua permintaan persis saat database paling sibuk. Jangkauan sekarang dibaca dari permintaan riwayat itu sendiri (konfigurasi dilihat tanpa permintaan, kegagalan pembacaan berarti tidak ada pekerjaan yang bisa ditampilkan).
+- **Perpindahan project yang cepat tidak meninggalkan layar loading.** Kerangka loading dilepas sebelum hasil bacaan dibuang, jadi membaca yang lama tidak lagi membuat layar terkunci di project yang baru.
+
 Row Level Security diaktifkan di semua tabel dan hak `anon`/`authenticated` dicabut, jadi hanya `service_role` (fungsi server) yang bisa lewat. Karena aplikasi ini tanpa akun, siapa pun yang mencapai situs akan melihat workspace yang sama — konsekuensi yang disengaja dari keputusan "tanpa login".
 
 `localStorage` peramban hanya menyimpan satu nilai: workspace mana yang sedang dibuka. Salinan data tidak pernah ditulis ke peramban lagi, jadi kegagalan kuota penyimpanan tidak bisa terjadi. Ekspor JSON berisi **setiap baris** ulasan yang terbaca dengan teks aslinya apa adanya, bersama bidang analisis yang dibaca layar, model korpus, dan cakupan kanal — tidak ada baris yang dibuang. Kolom turunan yang hanya dipakai mesin di dalam analisis (pemicu topik, istilah listing, bahasa per baris) tetap tersimpan di database dan tidak ikut ke berkas, karena jalur baca memberangkatkan proyeksi ramping.
@@ -331,7 +342,7 @@ db/supabase.sql          skema tabel sentil_* + RLS + pencabutan hak anon
 server.mjs               server statis lokal + penerusan /api/sync
 build.mjs                bundel esbuild + salinan index.html/assets -> public/
 src/                     React (workspace, dialog, 4 grafik, tabel ulasan, panel metode)
-tests/                   node:test untuk mesin (termasuk kamus topik dan deteksi bahasa), kolektor, kanal, sinkronisasi (paralel, asinkron, inkremental), database, API, dan server
+tests/                   node:test untuk mesin (termasuk kamus topik dan deteksi bahasa), kolektor, kanal, sinkronisasi (paralel, asinkron, inkremental), database, API, server, dan urutan alur project (create/delete/pindah)
 ```
 
 ## Deploy ke Vercel

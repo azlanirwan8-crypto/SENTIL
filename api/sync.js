@@ -396,17 +396,33 @@ export function createSyncHandler(service = syncService, { db = database, quota 
         return;
       }
       if (payload.action === 'job') {
-        const probe = await db.status();
+        // Peramban menanyakan progres tiap dua detik selama penarikan berjalan. Satu permintaan
+        // jangkauan database di atas pembacaan riwayat membuat tiap pertanyaan menjadi dua
+        // permintaan — dan selama penarikan menit itulah antrean database bertambah. Jangkauan
+        // dibaca dari permintaan riwayatnya sendiri: konfigurasi dilihat tanpa permintaan, dan
+        // kegagalan pembacaan berarti layar memang tidak punya pekerjaan untuk ditampilkan, sama
+        // seperti probe yang gagal dulu.
         const workspaceId = typeof payload.workspaceId === 'string' ? payload.workspaceId : '';
-        if (!probe.reachable || !WORKSPACE_ID.test(workspaceId)) {
-          json(response, 200, { action: 'job', db: probe, workspaceId, run: null });
+        if (!db.enabled || !WORKSPACE_ID.test(workspaceId)) {
+          json(response, 200, {
+            action: 'job',
+            db: { enabled: db.enabled === true, reachable: false, reason: db.reason || null },
+            workspaceId,
+            run: null,
+          });
           return;
         }
         // Baris riwayat dibaca tanpa aturan umur: `created_at` datang dari timezone sesi database
         // (instalasi ini mengirim 03:51 ketika UTC sedang 11:51), jadi membandingkannya dengan jam
         // fungsi selalu salah — penarikan yang baru saja mulai langsung dinyatakan mati oleh
         // plafon platform, dan itu kegagalan yang diukur di produksi, bukan teori.
-        const stored = await db.latestRun(workspaceId);
+        let stored = null;
+        let reachable = true;
+        try {
+          stored = await db.latestRun(workspaceId);
+        } catch {
+          reachable = false;
+        }
         // Progres dibaca dari memori instance ini kalau ada; kalau polling mendarat di instance
         // lain, yang dipakai adalah snapshot terakhir yang tersimpan di baris riwayat. Tanpa
         // keduanya, klien tetap mendapat fase dan jumlah baris dari cap status — tanpa persen,
@@ -419,7 +435,11 @@ export function createSyncHandler(service = syncService, { db = database, quota 
             : stored ? progressFromRun(stored) : null;
         json(response, 200, {
           action: 'job',
-          db: probe,
+          db: {
+            enabled: true,
+            reachable,
+            reason: reachable ? null : 'The run history could not be read.',
+          },
           workspaceId,
           pending: PENDING_STATUSES.has(stored?.status),
           finished: stored ? !PENDING_STATUSES.has(stored.status) : false,

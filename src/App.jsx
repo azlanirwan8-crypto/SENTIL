@@ -110,6 +110,11 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Project yang barisnya sedang dituliskan ke database, sebelum penarikan pertamanya dimulai.
+  // Tanpa penanda ini layar sempat menampilkan "belum ada snapshot" di tengah dua permintaan —
+  // padahal yang sedang terjadi hanyalah penyimpanan project baru.
+  const [startingId, setStartingId] = useState(null);
   const [syncing, setSyncing] = useState(null);
   const [syncProgress, setSyncProgress] = useState(null);
   const [syncError, setSyncError] = useState(null);
@@ -119,6 +124,8 @@ export default function App() {
   const activeIdRef = useRef(null);
   const datasetRef = useRef(null);
   const syncingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const startingIdRef = useRef(null);
   const toastSeq = useRef(0);
 
   const activeWorkspace = useMemo(
@@ -190,7 +197,12 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     async function checkServer() {
-      if (cancelled || syncingRef.current || (typeof document !== 'undefined' && document.hidden)) return;
+      // Daftar project tidak boleh ditimpa di tengah mutasi: polling yang mendarat antara
+      // "project baru sudah di layar" dan "barisnya sudah diterima database" (atau antara
+      // konfirmasi hapus dan jawaban server) akan mengembalikan yang baru dihapus dan
+      // menghilangkan yang baru dibuat selama satu tarikan napas.
+      if (cancelled || syncingRef.current || deletingRef.current || startingIdRef.current) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
       const state = await loadState();
       if (cancelled || state.unreachable) return;
       setDbStatus(state.db);
@@ -324,11 +336,14 @@ export default function App() {
     setView('dashboard');
     setLoadingDataset(true);
     const loaded = await loadDataset(id);
+    // Kerangka loading dilepas lebih dulu: kalau orang berpindah project lagi sebelum bacaan
+    // ini selesai, hasil bacaan yang basi tidak boleh meninggalkan layar loading di layar yang
+    // baru.
+    setLoadingDataset(false);
     if (activeIdRef.current !== id) return;
     if (loaded.db) setDbStatus(loaded.db);
     applyDataset(loaded.dataset);
     setDatasetError(loaded.error);
-    setLoadingDataset(false);
   }
 
   async function handleCreate(draft) {
@@ -351,38 +366,62 @@ export default function App() {
     setSyncError(null);
     setView('dashboard');
     setDialogOpen(false);
+    // Baris project harus diterima database sebelum penarikan pertama (baris dataset punya kunci
+    // luar ke project), jadi tulisannya menunggu. Selama tulisan itu menunggu, layar sudah
+    // memindahkan orang ke project barunya — tanpa penanda ini yang muncul justru "belum ada
+    // snapshot", yang bukan kebenaran: cuma jeda satu permintaan.
+    startingIdRef.current = workspace.id;
+    setStartingId(workspace.id);
     const saved = await saveWorkspace(workspace);
     if (saved.db) setDbStatus(saved.db);
     if (!saved.saved) pushToast(saved.error, 'warning', t('Not stored in the database'));
     runSync(workspace, { force: false });
+    startingIdRef.current = null;
+    setStartingId(null);
   }
 
   async function handleDelete() {
     const target = activeIdRef.current;
-    if (!target) return;
+    if (!target || deletingRef.current) return;
+    const kept = workspacesRef.current.filter(workspace => workspace.id !== target);
+    const nextActive = kept[0]?.id || null;
+    deletingRef.current = true;
+    setDeleting(true);
+    // Pembacaan project berikutnya dimulai bersamaan dengan permintaan hapus, bukan sesudahnya.
+    // Yang membuat layar terasa lama saat menghapus bukan penghapusan barisnya — cascade database
+    // hanya membuang beberapa baris kepala plus baris ulasan project itu — melainkan pembacaan
+    // korpus project berikutnya, puluhan detik pada puluhan ribu ulasan. Permintaan ini murni
+    // baca dan tidak menyentuh project yang sedang dihapus, jadi hasilnya siap dipakai begitu
+    // server mengonfirmasi.
+    const nextLoad = nextActive ? loadDataset(nextActive) : null;
     const result = await deleteWorkspace(target);
+    deletingRef.current = false;
+    setDeleting(false);
     if (!result.deleted) {
+      // Konfirmasi tetap terbuka dan tombol kembali bisa dipakai: yang gagal adalah permintaan ke
+      // server, jadi tidak ada yang boleh hilang dari layar.
       pushToast(result.error, 'error', t('Delete not confirmed'));
-      setConfirmOpen(false);
       return;
     }
-    const next = workspacesRef.current.filter(workspace => workspace.id !== target);
-    const nextActive = next[0]?.id || null;
-    applyWorkspaces(next);
+    pushToast(t('This workspace and its stored reviews were deleted from the database.'), 'success', t('Analysis deleted'));
+    applyWorkspaces(kept);
+    setConfirmOpen(false);
+    // Orang bisa berpindah project selama permintaan hapus berjalan; yang boleh dipindahkan
+    // hanyalah yang masih duduk di project yang baru dihapus.
+    if (activeIdRef.current !== target) return;
     applyActive(nextActive);
     applyDataset(null);
     setDatasetError(null);
     setSyncError(null);
     setView('dashboard');
-    setConfirmOpen(false);
-    if (nextActive) {
-      const loaded = await loadDataset(nextActive);
-      if (activeIdRef.current !== nextActive) return;
-      if (loaded.db) setDbStatus(loaded.db);
-      applyDataset(loaded.dataset);
-      setDatasetError(loaded.error);
-    }
-    pushToast(t('This workspace and its stored reviews were deleted from the database.'), 'success', t('Analysis deleted'));
+    if (!nextLoad) return;
+    setLoadingDataset(true);
+    const loaded = await nextLoad;
+    setLoadingDataset(false);
+    if (activeIdRef.current !== nextActive) return;
+    if (loaded.db) setDbStatus(loaded.db);
+    applyDataset(loaded.dataset);
+    setDatasetError(loaded.error);
   }
 
   function handleExport() {
@@ -468,7 +507,7 @@ export default function App() {
     content = <LimitMonitor dataset={dataset} workspace={activeWorkspace} onToast={pushToast} />;
   } else if (loadingDataset) {
     content = <BootScreen label={t('Reading the stored snapshot')} />;
-  } else if (!dataset && activeSyncing) {
+  } else if (!dataset && (activeSyncing || startingId === activeWorkspace.id)) {
     content = <SyncScreen workspace={activeWorkspace} progress={syncProgress} />;
   } else if (!dataset || dataset.reviews.length === 0) {
     content = (
@@ -547,6 +586,7 @@ export default function App() {
       <ConfirmDeleteDialog
         open={confirmOpen}
         workspace={activeWorkspace}
+        busy={deleting}
         onClose={() => setConfirmOpen(false)}
         onConfirm={handleDelete}
       />
