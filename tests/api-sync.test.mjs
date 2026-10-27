@@ -345,7 +345,7 @@ describe('aksi penyimpanan database', () => {
     assert.equal(body.stored.ok, true);
     assert.equal(body.stored.rows, 2);
     assert.equal(body.reviews.length, 2, 'hasil penarikan tetap dikembalikan utuh ke klien');
-    assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'snap:ws-1:2', 'run:ok:2'], 'penanda dibaca, pekerjaan ditandai berjalan, lalu hasil disimpan dan diriwayatkan');
+    assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'run:storing:2', 'snap:ws-1:2', 'run:ok:2'], 'penanda dibaca, pekerjaan ditandai berjalan, tahap simpan ditandai, lalu hasil disimpan dan diriwayatkan');
   });
 
   test('sync tanpa identitas workspace tetap mengembalikan data tetapi melaporkan tidak disimpan', async () => {

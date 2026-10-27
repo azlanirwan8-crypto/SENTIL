@@ -55,7 +55,7 @@ async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = J
     if (state.run) run = state.run;
     if (state.finished) break;
   }
-  if (!run || run.status === 'running') {
+  if (!run || run.status === 'running' || run.status === 'storing') {
     return { ok: false, stillRunning: true, reason: 'The pull is still running on the server. What is on screen is still the last complete snapshot — check again in a moment.' };
   }
   if (run.status === 'error') return { ok: false, reason: run.error || 'The pull failed on the server.' };

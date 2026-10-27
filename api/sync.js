@@ -21,6 +21,10 @@ const QUOTA_ACTIONS = new Set(['sync', 'discover']);
 // fungsinya sudah dimatikan platform. Menganggapnya masih hidup membuat peramban menunggu
 // selamanya pada penarikan yang sebenarnya sudah mati.
 const ABANDONED_MARGIN_MS = 60_000;
+// 'storing' ditulis sesaat sebelum potongan baris dikirim ke database. Tanpa cap itu, penarikan
+// yang mati karena plafon waktu di tengah penyimpanan tidak meninggalkan jejak berapa lama tarik
+// dan analisis memakan waktu — dan itu justru tahap yang perlu diukur.
+const PENDING_STATUSES = new Set(['running', 'storing']);
 // Pull adalah aksi mahal. Di Vercel ia dipindahkan ke latar belakang (waitUntil) sehingga
 // peramban menerima jawaban dalam hitungan milidetik dan menyambungnya lewat polling; di luar
 // Vercel (server lokal, uji) tidak ada waitUntil, jadi penarikan tetap diselesaikan dalam
@@ -170,6 +174,17 @@ export function createSyncHandler(service = syncService, { db = database, quota 
     if (workspace?.id) await note({ workspaceId: workspace.id, entity: args.entity, status: 'running', reviews: null, channels: null, error: cacheNote, elapsedMs: null });
     try {
       const result = await service.sync({ ...args, since, carry, deadlineAt });
+      if (workspace?.id) {
+        await note({
+          workspaceId: workspace.id,
+          entity: args.entity,
+          status: 'storing',
+          reviews: Array.isArray(result.reviews) ? result.reviews.length : result.incremental?.carried ?? null,
+          channels: Array.isArray(result.channels) ? result.channels.map(channel => ({ id: channel.id, status: channel.status, fetched: channel.fetched })) : null,
+          error: null,
+          elapsedMs: Date.now() - startedAt,
+        });
+      }
       const stored = await storeResult(db, workspace, result);
       return { ...result, stored, jobId, incremental: { ...(result.incremental || {}), note: cacheNote } };
     } catch (error) {
@@ -334,10 +349,10 @@ export function createSyncHandler(service = syncService, { db = database, quota 
         }
         const stored = await db.latestRun(workspaceId);
         const born = Date.parse(stored?.createdAt || '');
-        // Status 'running' yang umurnya sudah lewat plafon fungsi tidak akan pernah selesai:
-        // fungsinya sudah dipotong platform. Ia dilaporkan apa adanya supaya klien berhenti
-        // menunggu dan data lama yang tersimpan tetap terbaca.
-        const abandoned = stored?.status === 'running' && Number.isFinite(born)
+        // Status 'running'/'storing' yang umurnya sudah lewat plafon fungsi tidak akan pernah
+        // selesai: fungsinya sudah dipotong platform. Ia dilaporkan apa adanya supaya klien
+        // berhenti menunggu dan data lama yang tersimpan tetap terbaca.
+        const abandoned = PENDING_STATUSES.has(stored?.status) && Number.isFinite(born)
           && Date.now() - born > ceilingMs(env) + ABANDONED_MARGIN_MS;
         const run = abandoned
           ? { ...stored, status: 'abandoned', error: 'The server reached its platform time limit while this pull was running, so nothing was written and the stored snapshot was left untouched. Pull again — the pages already cached make the next run shorter.' }
@@ -346,8 +361,8 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           action: 'job',
           db: probe,
           workspaceId,
-          pending: run?.status === 'running',
-          finished: run ? run.status !== 'running' : false,
+          pending: PENDING_STATUSES.has(run?.status),
+          finished: run ? !PENDING_STATUSES.has(run.status) : false,
           abandoned,
           run,
         });

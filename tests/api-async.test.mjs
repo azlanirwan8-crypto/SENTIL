@@ -83,6 +83,15 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.deepEqual(db.seen, ['job:ws-1']);
   });
 
+  test('cap storing masih pekerjaan berjalan, bukan selesai', async () => {
+    const db = fakeDb({ runRow: { id: 11, status: 'storing', reviews: 4000, channels: [], error: null, elapsedMs: 96_000, createdAt: new Date(Date.now() - 96_000).toISOString() } });
+    const handler = createSyncHandler(stubService(), { db });
+    const body = (await run(handler, { action: 'job', workspaceId: 'ws-1' })).json();
+    assert.equal(body.pending, true);
+    assert.equal(body.finished, false);
+    assert.equal(body.run.reviews, 4000, 'jumlah baris yang sedang disimpan terlihat sejak sebelum tulisan selesai');
+  });
+
   test('cap running yang umurnya lewat plafon fungsi dilaporkan sebagai pekerjaan yang ditinggalkan', async () => {
     // Inilah kegagalan yang terukur di produksi: penarikan 50.000+ ulasan dipotong platform
     // tepat di 300 detik dan cap 'running' tidak pernah ditulis ulang. Tanpa aturan ini,
@@ -127,7 +136,7 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.equal(body.reviews, undefined, 'isi penarikan tidak dikirim pada jawaban pertama');
     assert.ok(held, 'pekerjaan diserahkan ke waitUntil');
     await held;
-    assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'snap:ws-1:1', 'run:ok:1'], 'penanda dibaca, pekerjaan ditandai berjalan, lalu hasil disimpan dan diriwayatkan');
+    assert.deepEqual(db.seen, ['cursor:ws-1', 'run:running:null', 'run:storing:1', 'snap:ws-1:1', 'run:ok:1'], 'penanda dibaca, pekerjaan ditandai berjalan, tahap simpan ditandai, lalu hasil disimpan dan diriwayatkan');
   });
 
   test('penarikan diberi batas waktu mutlak agar muat sebelum plafon fungsi', async () => {
