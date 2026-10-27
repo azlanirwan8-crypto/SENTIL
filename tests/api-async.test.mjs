@@ -95,6 +95,23 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.equal(body.run.reviews, 4000, 'jumlah baris yang sedang disimpan terlihat sejak sebelum tulisan selesai');
   });
 
+  test('progres tetap terukur dari cap status walau kolom riwayat progres belum ada', async () => {
+    // Kolom progress jsonb adalah tambahan baru; database yang belum memilikinya tidak boleh
+    // membuat layar progres kembali jadi buta. Fase dan jumlah baris dibaca dari cap status —
+    // persennya memang tidak ada, jadi tidak dikirim.
+    const db = fakeDb({ runRow: { id: 12, status: 'storing', reviews: 51_532, channels: [{ id: 'play', status: 'success', fetched: 40_000 }, { id: 'appstore', status: 'partial', fetched: 11_532 }], error: null, elapsedMs: 96_000, createdAt: new Date(Date.now() - 96_000).toISOString() } });
+    const handler = createSyncHandler(stubService(), { db });
+    const body = (await run(handler, { action: 'job', workspaceId: 'ws-1' })).json();
+    assert.equal(body.progress.source, 'run status');
+    assert.equal(body.progress.phase, 'write');
+    assert.equal(body.progress.rows, 51_532);
+    assert.deepEqual(body.progress.channels, [
+      { id: 'play', status: 'success', rows: 40_000, pages: 0 },
+      { id: 'appstore', status: 'partial', rows: 11_532, pages: 0 },
+    ]);
+    assert.equal(body.progress.overallPercent, null, 'tanpa pekerjaan yang terukur, tidak ada persen yang dikirim');
+  });
+
   test('cap running yang umurnya lewat plafon fungsi dilaporkan sebagai pekerjaan yang ditinggalkan', async () => {
     // Inilah kegagalan yang terukur di produksi: penarikan 50.000+ ulasan dipotong platform
     // tepat di 300 detik dan cap 'running' tidak pernah ditulis ulang. Tanpa aturan ini,
@@ -134,7 +151,7 @@ describe('penarikan asinkron dan cache inkremental', () => {
     assert.equal(response.statusCode, 202, 'peramban tidak lagi menahan satu permintaan sampai penarikan selesai');
     const body = response.json();
     assert.equal(body.accepted, true);
-    assert.equal(body.pollingMs, 4000);
+    assert.equal(body.pollingMs, 2000, 'setengah interval lama supaya bilah progres bergerak saat penarikan panjang');
     assert.match(body.jobId, /^ws-1:/);
     assert.equal(body.reviews, undefined, 'isi penarikan tidak dikirim pada jawaban pertama');
     assert.ok(held, 'pekerjaan diserahkan ke waitUntil');

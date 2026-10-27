@@ -13,9 +13,11 @@ function Spinner({ size = 13 }) {
   );
 }
 
-export function TopBar({ workspaces, activeId, activeWorkspace, syncing, onSwitch, onAdd, onRefresh, onDelete }) {
+export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncProgress = null, onSwitch, onAdd, onRefresh, onDelete }) {
   const hasWorkspace = Boolean(activeWorkspace);
   const snapshot = activeWorkspace?.snapshot || null;
+  const pullPercent = Number.isFinite(syncProgress?.overallPercent) ? Math.round(syncProgress.overallPercent) : null;
+  const pullRows = Number(syncProgress?.rows) || 0;
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-md">
@@ -59,7 +61,7 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, onSwitc
           {syncing && (
             <span className="hidden items-center gap-1.5 rounded border border-accent/25 bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent sm:inline-flex">
               <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-accent" />
-              pulling data
+              {pullPercent !== null ? <span className="num">{pullPercent}% of the pull</span> : pullRows ? <span className="num">{formatNumber(pullRows)} rows read</span> : 'pulling data'}
             </span>
           )}
           <button type="button" onClick={onAdd} disabled={syncing} className="btn btn-primary" title="Add a new analysis">
@@ -88,7 +90,12 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, onSwitc
           </button>
         </div>
       </div>
-      {syncing && <Progress label="Reading sources" />}
+      {syncing && (
+        <Progress
+          label={pullPercent !== null ? `Pull progress ${pullPercent}%` : 'Pulling data'}
+          percent={pullPercent}
+        />
+      )}
     </header>
   );
 }

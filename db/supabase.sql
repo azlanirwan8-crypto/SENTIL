@@ -66,8 +66,16 @@ create table if not exists public.sentil_sync_run (
   channels      jsonb,
   error         text,
   elapsed_ms    integer,
+  progress      jsonb,
   created_at    timestamptz not null default now()
 );
+
+-- Progres penarikan per fase (baris terbaca, tahap analisis, potongan tulis) ditulis ke baris
+-- riwayat yang sedang berjalan, supaya instance function lain yang menerima permintaan polling
+-- tetap bisa menjawab. Installasi lama menaikkan kolom ini dengan satu baris di bawah; tanpa
+-- kolomnya aplikasi tetap jalan — progres dibaca dari memori instance saja dan kegagalan tulisnya
+-- sengaja diabaikan (persen tidak boleh menggagalkan penarikan).
+alter table public.sentil_sync_run add column if not exists progress jsonb;
 
 create index if not exists sentil_sync_run_workspace_idx
   on public.sentil_sync_run (workspace_id, created_at desc);

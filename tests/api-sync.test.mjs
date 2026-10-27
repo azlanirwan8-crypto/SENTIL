@@ -138,7 +138,7 @@ describe('/api/sync', () => {
       },
     }));
     assert.equal(response.statusCode, 200);
-    const { deadlineAt, ...forwarded } = service.calls[0];
+    const { deadlineAt, onProgress, ...forwarded } = service.calls[0];
     assert.deepEqual(forwarded, {
       action: 'sync',
       entity: 'Aplikasi Tes',
@@ -151,6 +151,7 @@ describe('/api/sync', () => {
       carry: null,
     });
     assert.ok(Number.isFinite(deadlineAt), 'setiap penarikan membawa batas waktu fungsi');
+    assert.equal(typeof onProgress, 'function', 'dan satu pelapor progres supaya peramban bisa menampilkan persen');
   });
 
   test('kanal sosial saja tetap diterima tanpa identitas toko', async () => {
@@ -450,6 +451,37 @@ describe('aksi penyimpanan database', () => {
     assert.equal(body.stored.ok, false);
     assert.match(body.stored.reason, /500/);
   });
+
+  test('progres penarikan tercatat dan bisa dibaca lewat aksi job', async () => {
+    const db = fakeDb();
+    const service = stubService();
+    service.sync = async payload => {
+      payload.onProgress({ type: 'channel', channel: { id: 'play', status: 'partial', fetched: 2, pages: 1 } });
+      payload.onProgress({ type: 'analyse', rows: 2 });
+      payload.onProgress({ type: 'stage', stage: 'tokenize' });
+      payload.onProgress({ type: 'stage', stage: 'stopwords' });
+      return {
+        action: 'sync',
+        ok: true,
+        entity: 'aud',
+        fetchedAt: '2026-10-02T00:00:00.000Z',
+        reviews: [{ id: 'r-1', platform: 'play' }, { id: 'r-2', platform: 'play' }],
+        channels: [{ id: 'play', status: 'partial', fetched: 2 }],
+        summary: { reviews: 2, analyzed: 2 },
+      };
+    };
+    const handler = createSyncHandler(service, { db });
+    const body = (await run(handler, fakeRequest({ body: { action: 'sync', entity: 'aud', playAppId: 'com.aud', workspace: WORKSPACE } }))).json();
+    assert.equal(body.stored.ok, true);
+    const job = (await run(handler, fakeRequest({ body: { action: 'job', workspaceId: WORKSPACE.id } }))).json();
+    assert.equal(job.progress.source, 'this instance');
+    assert.equal(job.progress.phase, 'done');
+    assert.equal(job.progress.rows, 2);
+    assert.deepEqual(job.progress.channels, [{ id: 'play', status: 'partial', rows: 2, pages: 1 }], 'kanal yang mentok batas sumber tidak dicuci menjadi sukses hanya karena penarikannya selesai');
+    assert.deepEqual(job.progress.stages, ['tokenize', 'stopwords']);
+    assert.equal(job.progress.overallPercent, 100, 'pekerjaan yang selesai selalu dilaporkan penuh');
+  });
+
 
   test('dataset workspace tanpa snapshot dikembalikan null, bukan array kosong', async () => {
     const db = fakeDb({ async loadDataset(id) { this.seen.push(`load:${id}`); return null; } });

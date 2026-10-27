@@ -22,6 +22,57 @@ function Spinner({ size = 12 }) {
   );
 }
 
+// Nama tahap analisis yang dibaca orang. Urutannya sama dengan capaian yang dilaporkan mesin
+// (model.timings.stages), jadi label yang menyala adalah tahap yang memang sudah selesai.
+const STAGE_LABELS = {
+  tokenize: 'splitting review text into words',
+  stopwords: 'learning the function words of this corpus',
+  weights: 'learning word weights from the 1–2 vs 4–5★ contrast',
+  topics: 'matching the 23-topic domain dictionary',
+  phrases: 'measuring complaint phrases against praise',
+  rows: 'labelling every stored review row',
+  signals: 'testing proportion signals',
+};
+
+const PHASE_TITLES = {
+  fetch: 'Reading sources',
+  analyse: 'Analysing the corpus',
+  write: 'Saving the snapshot',
+  storing: 'Saving the snapshot',
+  done: 'Finishing',
+  failed: 'Stopped',
+};
+
+function PhaseLine({ active, done, title, detail }) {
+  return (
+    <div className={`flex items-baseline gap-2 px-3 py-1.5 text-[11px] ${active ? 'text-slate-100' : 'text-slate-400'}`}>
+      <span className={`num w-[14px] shrink-0 text-[10px] ${done ? 'text-pos' : ''}`}>{done ? '✓' : active ? '●' : '○'}</span>
+      <span className={`min-w-0 flex-1 truncate font-semibold ${active ? '' : 'font-normal'}`}>{title}</span>
+      {detail ? <span className="num shrink-0 text-[10px] text-slate-400">{detail}</span> : null}
+    </div>
+  );
+}
+
+function SyncHeader({ phase, percent, rows, elapsed }) {
+  // Laju dihitung dari apa yang benar-benar terlihat di layar ini: baris yang dilaporkan server
+  // dibagi detik sejak layar dibuka. Fase tarik tidak punya persen, jadi laju inilah yang
+  // membuat orang tahu apakah penarikan masih jalan atau macet.
+  const rate = elapsed >= 3 && rows > 0 ? Math.round(rows / elapsed) : 0;
+  return (
+    <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-4 py-2">
+      <h2 className="label">{PHASE_TITLES[phase] || 'Pull in progress'}</h2>
+      <p className="num flex shrink-0 items-baseline gap-2 text-[10px] text-slate-400">
+        {percent !== null
+          ? <span className="font-semibold text-slate-200">{Math.round(percent)}%</span>
+          : <span>{formatNumber(rows)} rows read</span>}
+        {rate > 0 && <span aria-hidden="true">· {formatNumber(rate)}/s</span>}
+        <span aria-hidden="true">·</span>
+        <span>{elapsed < 1 ? 'just started' : `${elapsed} s`}</span>
+      </p>
+    </header>
+  );
+}
+
 export function BootScreen({ label = 'Loading' }) {
   return (
     <div className="space-y-3" aria-busy="true">
@@ -47,52 +98,70 @@ export function BootScreen({ label = 'Loading' }) {
   );
 }
 
-function ScanRow({ store, appId }) {
-  return (
-    <div className="flex items-center gap-2.5 border-b border-slate-800/70 px-3 py-2.5 last:border-b-0">
-      <StoreMark store={store} size={22} tone="quiet" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[11.5px] font-bold text-slate-100">{store === 'play' ? 'Google Play' : 'App Store'}</p>
-        <p className="truncate font-mono text-[10px] text-slate-400">{appId}</p>
-      </div>
-      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-accent">
-        <Spinner />
-        pulling
-      </span>
-    </div>
-  );
-}
-
-export function SyncScreen({ workspace }) {
+export function SyncScreen({ workspace, progress = null }) {
   const [elapsed, setElapsed] = useState(0);
   const stores = ['play', 'appstore'].filter(store => workspace.stores?.[store]?.appId);
+  const phase = progress?.phase || 'fetch';
+  const percent = Number.isFinite(progress?.overallPercent) ? progress.overallPercent : null;
+  const rows = Number(progress?.rows) || 0;
+  const channels = Array.isArray(progress?.channels) ? progress.channels : [];
+  const stages = Array.isArray(progress?.stages) ? progress.stages : [];
+  const chunks = progress?.chunks || { done: 0, total: 0 };
+  const activeChannel = id => channels.find(entry => entry.id === id) || null;
 
   useEffect(() => {
     const timer = window.setInterval(() => setElapsed(value => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
+  const rowsOf = id => {
+    const entry = activeChannel(id);
+    return entry ? formatNumber(entry.rows || 0) : null;
+  };
+
   return (
     <div className="space-y-3" aria-busy="true">
       <section className="card overflow-hidden">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-4 py-2">
-          <h2 className="label">Pull in progress</h2>
-          <p className="num text-[10px] text-slate-400">
-            {elapsed < 1 ? 'just started' : `${elapsed} seconds`}<span className="sr-only"> since the pull started</span>
-          </p>
-        </header>
-        <div className="grid md:grid-cols-2 md:divide-x divide-slate-800/70">
+        <SyncHeader phase={phase} percent={percent} rows={rows} elapsed={elapsed} />
+        <div className="grid gap-3 p-3 md:grid-cols-2 md:divide-x divide-slate-800/70">
           <div>
-            {stores.map(store => (
-              <ScanRow key={store} store={store} appId={workspace.stores[store].appId} />
-            ))}
-            <div className="flex items-center gap-2.5 px-3 py-2.5">
-              <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md border border-slate-800 bg-slate-900 text-[10px] font-bold text-slate-400">
-                NLP
-              </span>
-              <p className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-slate-100">Corpus model</p>
-              <span className="text-[10px] text-slate-400">stopwords · weights · topics</span>
-            </div>
+            <PhaseLine
+              active={phase === 'fetch'}
+              done={['analyse', 'write', 'storing', 'done'].includes(phase)}
+              title="1 · Read the sources"
+              detail={phase === 'fetch' && rows ? `${formatNumber(rows)} rows` : (stores.length ? stores.map(store => rowsOf(store)).filter(Boolean).join(' · ') || 'opening' : null)}
+            />
+            {stores.map(store => {
+              const counted = rowsOf(store);
+              const running = phase === 'fetch';
+              return (
+                <div key={store} className="flex items-center gap-2.5 px-3 py-2">
+                  <StoreMark store={store} size={20} tone="quiet" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-bold text-slate-200">{store === 'play' ? 'Google Play' : 'App Store'}</p>
+                    <p className="truncate font-mono text-[10px] text-slate-400">{workspace.stores[store].appId}</p>
+                  </div>
+                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold ${running ? 'text-accent' : 'text-slate-400'}`}>
+                    {running ? <Spinner /> : null}
+                    {counted ? <span className="num">{counted} read</span> : running ? 'pulling' : 'done'}
+                  </span>
+                </div>
+              );
+            })}
+            <PhaseLine
+              active={phase === 'analyse'}
+              done={['write', 'storing', 'done'].includes(phase)}
+              title="2 · Analyse the corpus"
+              detail={phase === 'analyse'
+                ? `${stages.length}/7 · ${STAGE_LABELS[stages[stages.length - 1]] || 'starting'}`
+                : (['write', 'storing', 'done'].includes(phase) ? '7/7 stages' : null)}
+            />
+            <PhaseLine
+              active={['write', 'storing'].includes(phase)}
+              done={phase === 'done'}
+              title="3 · Save the snapshot"
+              detail={chunks.total ? `${formatNumber(chunks.done)}/${formatNumber(chunks.total)} blocks of 1.000` : null}
+            />
           </div>
           <div className="grid grid-cols-2 gap-0 divide-x divide-slate-800/70">
             {[0, 1, 2, 3].map(index => (
@@ -104,7 +173,16 @@ export function SyncScreen({ workspace }) {
             ))}
           </div>
         </div>
-        <Progress label="Reading sources" />
+        <Progress
+          label={PHASE_TITLES[phase] || 'Pull in progress'}
+          percent={percent}
+          detail={percent === null ? 'The reading phase has no honest total: a store page never says how many reviews are still readable.' : `${Math.round(percent)}% of the measured work`}
+        />
+        <p className="px-4 py-2 text-[10px] leading-relaxed text-slate-400">
+          {percent === null
+            ? 'No percentage is shown while sources are being read, because the store does not report how much of its review history is still reachable — the row counter is real work, the percentage would not be. Percentages start as soon as the corpus is complete and measurable.'
+            : 'Percentages are computed from finished work only: analysis stages that already returned and review blocks the database already accepted.'}
+        </p>
       </section>
     </div>
   );

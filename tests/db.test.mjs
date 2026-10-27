@@ -145,6 +145,57 @@ describe('tulis snapshot', () => {
     assert.ok(headIndex < calls.indexOf(sweeps[1]));
   });
 
+  test('pelapor potongan menerima hitungan yang benar walau empat penulis bersamaan', async () => {
+    const reviews = Array.from({ length: 2500 }, (_, index) => reviewOf(index));
+    const seen = [];
+    const { fetchImpl } = recorder(({ url, method }) => {
+      if (method === 'GET' && url.pathname.endsWith('sentil_dataset')) return ok([{ revision: 4 }]);
+      return noContent();
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const saved = await db.saveSnapshot({
+      workspace: { id: 'ws-1', label: 'Audit', entity: 'aud', stores: {}, channels: {} },
+      dataset: { reviews, summary: { reviews: 2500 }, model: {}, fetchedAt: '2026-10-01T00:00:00.000Z' },
+      onChunk: chunk => seen.push(chunk),
+    });
+    assert.equal(saved.stored, 2500);
+    assert.equal(seen.length, 3, 'satu laporan per potongan yang benar-benar diterima server');
+    assert.deepEqual([...seen.map(chunk => chunk.done)].sort((a, b) => a - b), [1, 2, 3], 'nomor potongannya lengkap, apa pun urutan penulisnya');
+    assert.equal(seen.every(chunk => chunk.total === 3), true);
+    assert.equal(seen.every(chunk => chunk.rows === 2500), true, 'jumlah baris ikut dilaporkan supaya persen bisa dicocokkan');
+  });
+
+  test('riwayat mengembalikan id barisnya dan progres ditambal ke baris itu', async () => {
+    const { calls, fetchImpl } = recorder(({ url, method }) => {
+      if (method === 'POST' && url.pathname.endsWith('sentil_sync_run')) return ok([{ id: 77 }]);
+      return noContent();
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    const runId = await db.logRun({ workspaceId: 'ws-1', entity: 'aud', status: 'running', progress: { phase: 'fetch', rows: 0 } });
+    assert.equal(runId, 77, 'id diperlukan supaya instance lain bisa menjawab polling');
+    const insert = calls[0];
+    assert.equal(insert.prefer.includes('return=representation'), true, 'tanpa representation tidak ada id yang kembali');
+    assert.equal(insert.body[0].progress.phase, 'fetch');
+    const patched = await db.updateRunProgress(runId, { phase: 'write', chunks: { done: 2, total: 5 }, overallPercent: 84.2 });
+    assert.equal(patched, true);
+    const patch = calls.find(call => call.method === 'PATCH');
+    assert.equal(patch.path.includes('id=eq.77'), true, 'satu baris riwayat yang disentuh, bukan semua baris project');
+    assert.equal(patch.body.progress.phase, 'write', 'yang dikirim adalah satu kolom progres, bukan seluruh baris');
+    assert.equal(patch.body.progress.overallPercent, 84.2);
+  });
+
+  test('kegagalan tulis progres tidak membuat penarikan gagal', async () => {
+    const { fetchImpl } = recorder(({ url, method }) => {
+      // Column belum ada di installasi lama: PostgREST menolak PATCH. Progres adalah informasi
+      // tambahan, jadi penolakan itu harus diam, bukan menjatuhkan penarikan.
+      if (method === 'PATCH' && url.pathname.endsWith('sentil_sync_run')) return fail(400, 'column sentil_sync_run.progress does not exist');
+      return noContent();
+    });
+    const db = createDatabase({ env: ENV, fetchImpl });
+    assert.equal(await db.updateRunProgress(77, { phase: 'write' }), false);
+    assert.equal(await db.updateRunProgress(null, { phase: 'write' }), false, 'tanpa id tidak ada permintaan yang dikirim');
+  });
+
   test('workspace baru memulai dari revisi satu dan ulasan kosong tetap menulis penanda', async () => {
     const { calls, fetchImpl } = recorder(({ url, method }) => {
       if (method === 'GET' && url.pathname.endsWith('sentil_dataset')) return ok([]);

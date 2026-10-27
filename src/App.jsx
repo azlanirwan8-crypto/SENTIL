@@ -33,7 +33,7 @@ const STATE_POLL_MS = 75_000;
 // Penarikan tidak lagi ditunggu dalam satu permintaan. Halaman menanyakan status pekerjaan tiap
 // beberapa detik, dan berhenti menunggu setelah anggaran ini — kalau lewat, yang ditampilkan
 // tetap snapshot terakhir yang utuh, bukan separuh hasil.
-const JOB_POLL_MS = 4_000;
+const JOB_POLL_MS = 2_000;
 const JOB_BUDGET_MS = 8 * 60_000;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -41,7 +41,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Menyambungkan penarikan yang berjalan di latar belakang: tunggu status selesai, lalu baca
 // kembali dataset yang baru disimpan. Yang dikembalikan berbentuk sama seperti jawaban penarikan
 // biasa, jadi sisa halaman tidak perlu tahu ada dua jalur.
-async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = JOB_BUDGET_MS } = {}) {
+async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = JOB_BUDGET_MS, onProgress = null } = {}) {
   const startedAt = Date.now();
   let run = null;
   while (Date.now() - startedAt < budgetMs) {
@@ -53,6 +53,7 @@ async function awaitPullJob(workspaceId, { pollingMs = JOB_POLL_MS, budgetMs = J
       return { ok: false, reason: error.message || 'The pull status could not be read.' };
     }
     if (state.run) run = state.run;
+    if (typeof onProgress === 'function') onProgress(state.progress || null, run);
     if (state.finished) break;
   }
   if (!run || run.status === 'running' || run.status === 'storing') {
@@ -113,6 +114,7 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [syncing, setSyncing] = useState(null);
+  const [syncProgress, setSyncProgress] = useState(null);
   const [syncError, setSyncError] = useState(null);
   const [toasts, setToasts] = useState([]);
 
@@ -223,6 +225,7 @@ export default function App() {
     }
     syncingRef.current = true;
     setSyncing({ workspaceId: workspace.id, force, startedAt: Date.now() });
+    setSyncProgress(null);
     setSyncError(null);
     try {
       let data = await syncWorkspace({ workspace, entity: workspace.entity, playAppId, appleAppId, social, force });
@@ -230,7 +233,7 @@ export default function App() {
         // Jawaban pertama hanya berisi "pekerjaan diterima". Data datang setelah pekerjaan di
         // server selesai, dibaca ulang dari database lewat status pekerjaan.
         pushToast('The pull is running on the server. Keep browsing; this screen updates when it finishes.', 'info', 'Pull moved to the background');
-        const awaited = await awaitPullJob(workspace.id, { pollingMs: data.pollingMs });
+        const awaited = await awaitPullJob(workspace.id, { pollingMs: data.pollingMs, onProgress: setSyncProgress });
         if (!awaited.ok) {
           setSyncError(awaited.reason);
           pushToast(awaited.reason, awaited.stillRunning ? 'warning' : 'error', awaited.stillRunning ? 'Still running' : 'Pull did not complete');
@@ -299,6 +302,7 @@ export default function App() {
     } finally {
       syncingRef.current = false;
       setSyncing(null);
+      setSyncProgress(null);
     }
   }, [applyDataset, applyWorkspaces, pushToast]);
 
@@ -485,7 +489,7 @@ export default function App() {
   } else if (loadingDataset) {
     content = <BootScreen label="Reading the stored snapshot" />;
   } else if (!dataset && activeSyncing) {
-    content = <SyncScreen workspace={activeWorkspace} />;
+    content = <SyncScreen workspace={activeWorkspace} progress={syncProgress} />;
   } else if (!dataset || dataset.reviews.length === 0) {
     content = (
       <WorkspaceEmpty
@@ -524,6 +528,7 @@ export default function App() {
           activeId={activeId}
           activeWorkspace={activeWorkspace}
           syncing={Boolean(syncing)}
+          syncProgress={syncProgress}
           onSwitch={switchWorkspace}
           onAdd={() => setDialogOpen(true)}
           onRefresh={() => runSync(activeWorkspace, { force: true })}

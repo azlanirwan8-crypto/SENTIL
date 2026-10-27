@@ -99,9 +99,19 @@ describe('gerakan dan tabel', () => {
     assert.match(progress, /role="progressbar"/);
     assert.match(progress, /aria-busy="true"/);
     assert.match(progress, /aria-label/, 'progressbar tanpa nama tidak announce apa pun');
-    // Yang dilarang adalah atributnya, bukan komentar yang menjelaskan mengapa atribut
-    // itu tidak ada.
-    assert.equal(/aria-valuenow=/.test(progress), false, 'progresnya tidak diketahui; angka palsu lebih buruk daripada tanpa angka');
+    // Yang dilarang adalah angka yang dikarang, bukan angkanya sendiri. valuenow hanya sah
+    // kalau ia diturunkan dari prop persen yang dihitung dari pekerjaan yang benar-benar
+    // selesai — dan cabang tak-tentu harus tetap tidak punya valuenow.
+    const valueNow = progress.match(/aria-valuenow=\{[^}]*\}/g) || [];
+    assert.ok(valueNow.length > 0, 'progres yang terukur harus melaporkan persennya ke pembaca layar');
+    for (const attr of valueNow) {
+      assert.match(attr, /aria-valuenow=\{value\}$/, 'valuenow harus variabel, bukan konstanta atau ekspresi liar');
+    }
+    const indeterminate = /if \(value === null\) \{([\s\S]*?)\n {2}\}/.exec(progress)?.[1] || '';
+    assert.ok(indeterminate.length > 0, 'cabang tak-tentu harus tetap ada: fase tarik tidak punya penyebut yang jujur');
+    assert.match(indeterminate, /progress-indeterminate/);
+    assert.equal(indeterminate.includes('aria-valuenow'), false, 'tanpa pekerjaan terukur tidak ada angka yang boleh diumumkan');
+    assert.equal(/\bpercent:\s*\d/.test(sources), false, 'persen tidak boleh dikirim sebagai konstanta dari komponen');
     const inline = COMPONENTS.filter(name => !name.startsWith('Progress')).filter(name => {
       const source = readFileSync(new URL(`../src/components/${name}`, import.meta.url), 'utf8');
       return source.includes('progress-indeterminate');
