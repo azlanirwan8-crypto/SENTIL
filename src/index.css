@@ -347,6 +347,19 @@
     animation: reveal-in .3s cubic-bezier(.2, .7, .2, 1) both;
   }
 
+  /* Gerak masuk tidak boleh pernah menahan isi di bingkai pertama. Terukur di permukaan
+     pratinjau dan tab latar belakang: selama document.visibilityState bukan 'visible', jam
+     animasi dibekukan pada currentTime 0, dan karena reveal-in/fade-in dimulai dari opacity 0
+     dengan fill "both", seluruh panel membeku transparan — datanya ada, yang tidak pernah muncul
+     adalah layarnya. Jadi flag data-motion="off" melepas animasinya (bukan menahannya): tanpa
+     animasi elemen kembali ke gaya alaminya, yaitu terlihat. Saat tab akhirnya ditampilkan,
+     flag itu dilepas dan iringannya tetap berjalan seperti biasa. */
+  [data-motion='off'] .reveal-group > *,
+  [data-motion='off'] .animate-fade-in,
+  [data-motion='off'] .animate-scale-in {
+    animation: none;
+  }
+
   .reveal-group>*:nth-child(2) {
     animation-delay: 45ms;
   }

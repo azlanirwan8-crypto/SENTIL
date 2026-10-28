@@ -83,6 +83,19 @@ describe('gerakan dan tabel', () => {
     assert.ok(block.length > 0 || CSS.includes('animation-duration: 0.001ms'), 'aturan global peredaman gerakan masih ada');
   });
 
+  test('gerak masuk tidak pernah menahan isi di bingkai transparan', () => {
+    // Terukur: selama document.visibilityState != 'visible', jam animasi dibekukan pada
+    // currentTime 0. reveal-in/fade-in mulai dari opacity 0 dengan fill "both", jadi tanpa
+    // jalan keluar ini seluruh laporan membeku tidak terlihat di tab latar belakang dan di
+    // panel pratinjau — data ada, layarnya kosong.
+    assert.match(CSS, /\[data-motion='off'\][\s\S]{0,160}?animation: none/, 'flag pelepas animasi harus ada di CSS');
+    const boot = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+    assert.match(boot, /dataset\.motion/, 'main.jsx yang menulis flag, bukan komponen yang menata letak');
+    assert.match(boot, /visibilityState/, 'dan flag dibaca dari keadaan terlihat dokumen');
+    assert.match(boot, /addEventListener\('visibilitychange'/, 'tab latar belakang harus mendapat iringannya saat pertama ditampilkan');
+    assert.match(CSS, /\.reveal-group\s*>\s*\*\s*\{[^}]*animation: reveal-in/, 'iringan itu sendiri tetap didefinisikan');
+  });
+
   test('setiap tabel punya caption sehingga pembaca layar tahu apa yang dibaca', () => {
     for (const name of COMPONENTS) {
       const source = readFileSync(new URL(`../src/components/${name}`, import.meta.url), 'utf8');
