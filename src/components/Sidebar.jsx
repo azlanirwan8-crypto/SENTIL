@@ -1,6 +1,6 @@
 import { LogoMark, Wordmark } from './Brand.jsx';
 import { IconDatabase, IconGauge, IconGrid, IconLayers, IconShield, IconStar } from './icons.jsx';
-import { formatNumber } from '../lib/format.js';
+import { formatNumber, relativeTime } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 
 // Label nav 'Metode' sudah ditulis dalam bahasa Indonesia, jadi tabel i18n membacanya dua
@@ -56,6 +56,14 @@ export function Sidebar({ view, onView, snapshot, workspaceCount, hasData }) {
             <dt className="text-[10px] uppercase tracking-wider text-slate-400">{t('Workspaces')}</dt>
             <dd className="num text-[10px] font-semibold text-slate-400">{formatNumber(workspaceCount)}</dd>
           </div>
+          {/* Umur snapshot sudah ada di kepala workspace; di bilah sisi ia menjawab pertanyaan
+              yang berbeda: berapa banyak yang sudah dibaca, dan seberapa baru angka itu. */}
+          {snapshot?.fetchedAt ? (
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-[10px] uppercase tracking-wider text-slate-400">{t('as of')}</dt>
+              <dd className="num text-[10px] font-semibold text-slate-400">{relativeTime(snapshot.fetchedAt)}</dd>
+            </div>
+          ) : null}
         </dl>
       </div>
     </aside>

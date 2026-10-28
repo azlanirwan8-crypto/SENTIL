@@ -243,7 +243,7 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
             <table className="w-full min-w-[620px] border-collapse text-xs">
               <caption className="sr-only">{t('The last twenty-four attempts per channel on the warm server instance')}</caption>
               <thead>
-                <tr className="border-b border-slate-800/70 text-[10px] uppercase tracking-wider text-slate-400">
+                <tr className="sticky top-0 z-10 border-b border-slate-800/70 bg-slate-900 text-[10px] uppercase tracking-wider text-slate-400">
                   <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Time')}</th>
                   <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Channel')}</th>
                   <th scope="col" className="px-2 py-1 text-left font-semibold">{t('Path')}</th>
