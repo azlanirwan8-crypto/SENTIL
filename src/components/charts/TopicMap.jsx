@@ -30,7 +30,7 @@ export function TopicMap({ topics, filtered = false }) {
           compact
           icon={IconGrid}
           title={t('No complaint topic yet')}
-          body={t('Reviews were read, but none of them matched a feature term in the domain dictionary. Nothing is forced into a topic to fill this chart.')}
+          body={t('Reviews were read, but none of them matched a topic in the domain dictionary. Nothing is forced into a topic to fill this chart.')}
         />
       </ChartFrame>
     );

@@ -259,7 +259,7 @@ test('tak ada baris tabel yang memakai arah terbalik atau kunci yang bertabrakan
 test('setiap label menu punya pasangan dua arah', () => {
   const sidebar = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8');
   const labels = [...sidebar.matchAll(/label: '([^']+)'/g)].map(match => match[1]);
-  assert.equal(labels.length, 5, 'lima menu: Dashboard, Review, Platform, Compare, Metode');
+  assert.equal(labels.length, 6, 'enam menu: Dashboard, Review, Platform, Compare, Metode, Config');
   const en = new Map(EN_TO_ID);
   const id = new Map(ID_TO_EN);
   for (const label of labels) {

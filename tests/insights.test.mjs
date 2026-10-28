@@ -166,7 +166,7 @@ describe('lapisan sinyal', () => {
     assert.ok(kinds.includes('structure:trimmed'), kinds.join(', '));
     assert.ok(kinds.includes('structure:chain'), kinds.join(', '));
     assert.ok(trimmed.items.find(item => item.id === 'structure:chain').body.includes('187 were refused'));
-    assert.ok(trimmed.items.find(item => item.id === 'structure:spread').body.includes('does not add up to the pool'));
+    assert.ok(trimmed.items.find(item => item.id === 'structure:spread').body.includes('do not add up to one hundred per cent of complaints'));
 
     const unlinked = deriveSignals(modelOf({
       label: { links: 0, merges: 0, rejectedMerges: 0, clusters: 40, reportedLabels: 12 },
@@ -179,7 +179,7 @@ describe('lapisan sinyal', () => {
     const signals = deriveSignals(modelOf({ labels: [labelOf('iklan', { reviewCount: 300, share: 0.3 })] }));
     const silent = signals.items.find(item => item.id === 'coverage:silent');
     assert.equal(silent.facts.find(entry => entry.key === 'silent').value, 300, '1.000 keluhan dikurangi 700 yang berfrasa');
-    assert.ok(silent.body.includes('never inflated to the labelled subset'));
+    assert.ok(silent.body.includes('never against only the labelled ones'));
     const unclassified = signals.items.find(item => item.id === 'coverage:unclassified');
     assert.ok(unclassified.body.includes('NSS and every sentiment figure are computed on the remaining 1,900'));
 

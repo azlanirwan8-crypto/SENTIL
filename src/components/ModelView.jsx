@@ -270,7 +270,7 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   }, [dataset]);
 
   return (
-    <div className="space-y-3">
+    <div className="reveal-group space-y-3">
       {model.status !== 'ready' && (
         <Notice tone="amber" title={t('Model belum siap')} live>
           {t('Korpus belum punya cukup ulasan berating rendah dan tinggi untuk mempelajari pembeda kata. Angka yang ada tetap ditampilkan apa adanya.')}

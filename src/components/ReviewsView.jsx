@@ -77,7 +77,7 @@ function ReviewRow({ review, topicLabels, sourceUrls }) {
             </span>
           )
           : (
-            <span className="tag-quiet shrink-0" title={t('No dictionary term appears in this review')}>
+            <span className="tag-quiet shrink-0" title={t('No topic from the domain dictionary appears in this review')}>
               {t('no topic')}
             </span>
           )}
@@ -247,7 +247,7 @@ export function ReviewsView({ dataset }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="reveal-group space-y-3">
       <section className="card px-4 py-3" aria-label={t('Review filters')}>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
           <div className="relative min-w-[180px] flex-1 sm:max-w-[280px]">
@@ -337,7 +337,7 @@ export function ReviewsView({ dataset }) {
                 type="button"
                 onClick={() => change(setTopic, item.id)}
                 aria-pressed={topic === item.id}
-                title={`${formatNumber(item.low)} 1–2★ ${t('and')} ${formatNumber(item.high)} 4–5★ ${t('reviews mention this term')}`}
+                title={`${formatNumber(item.low)} 1–2★ ${t('and')} ${formatNumber(item.high)} 4–5★ ${t('reviews mention this topic')}`}
                 className={`filter-chip ${topic === item.id ? 'filter-chip-active' : ''}`}
               >
                 {topicLabel(item)} <span className="num">{formatNumber(item.total)}</span>

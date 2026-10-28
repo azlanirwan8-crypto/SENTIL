@@ -134,7 +134,7 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncPro
             <button
               type="button"
               onClick={requestFullscreen}
-              className="icon-btn h-7 w-7"
+              className="icon-btn"
               aria-label={fullscreen ? t('Exit full screen') : t('Enter full screen')}
               title={fullscreen ? t('Exit full screen') : t('Enter full screen')}
             >
@@ -144,7 +144,7 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncPro
           <button
             type="button"
             onClick={toggleTheme}
-            className="icon-btn h-7 w-7"
+            className="icon-btn"
             aria-label={theme === 'light' ? t('Switch to dark theme') : t('Switch to light theme')}
             title={theme === 'light' ? t('Switch to dark theme') : t('Switch to light theme')}
           >
@@ -162,7 +162,7 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncPro
             aria-label={t('Switch to English')}
             aria-pressed={language === 'en'}
             title={t('Switch to English')}
-            className={`icon-btn h-7 w-7 ${language === 'en' ? 'border-accent/60' : ''}`}
+            className={`icon-btn ${language === 'en' ? 'border-accent/60' : ''}`}
           >
             <FlagEnglish />
           </button>
@@ -172,7 +172,7 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncPro
             aria-label={t('Switch to Indonesian')}
             aria-pressed={language === 'id'}
             title={t('Switch to Indonesian')}
-            className={`icon-btn h-7 w-7 ${language === 'id' ? 'border-accent/60' : ''}`}
+            className={`icon-btn ${language === 'id' ? 'border-accent/60' : ''}`}
           >
             <FlagIndonesian />
           </button>

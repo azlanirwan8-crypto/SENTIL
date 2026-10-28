@@ -90,6 +90,17 @@ create index if not exists sentil_sync_run_workspace_idx
 -- (Kolomnya sendiri sudah `timestamptz`; yang salah hanya zona waktu sesi tempat nilainya
 -- dirender, bukan jam internal Postgres.)
 
+-- Konfigurasi induk aplikasi: kunci API dan setelan sumber yang sebelumnya hanya bisa
+-- dipasang manual di dashboard Vercel. `name` dibatasi oleh daftar di lib/config-store.mjs
+-- — server tidak pernah menulis nama di luar daftar itu, jadi tabel ini tidak bisa dipakai
+-- untuk menyuntikkan variabel environment apa pun. Nilainya hanya pernah dibaca fungsi
+-- server; tidak ada jalur yang mengirimnya ke peramban tanpa disamarkan.
+create table if not exists public.sentil_config (
+  name        text primary key,
+  value       text not null,
+  updated_at  timestamptz not null default now()
+);
+
 -- Pemakai yang menyedot kuota tidak punya akun di proyek ini (keputusan pemilik), jadi
 -- yang dihitung adalah pengunjung x jendela waktu x aksi. `scope` sudah di-hash di
 -- server (aksi:hash-ip) sehingga tabel ini bukan log alamat IP. `bucket` adalah awal
@@ -148,6 +159,7 @@ alter table public.sentil_dataset   enable row level security;
 alter table public.sentil_review    enable row level security;
 alter table public.sentil_sync_run  enable row level security;
 alter table public.sentil_quota     enable row level security;
+alter table public.sentil_config    enable row level security;
 
 -- Supabase memberi hak awal ke `anon` dan `authenticated` pada schema public.
 -- Dicabut eksplisit supaya publishable key tidak pernah bisa membaca atau menulis.
@@ -156,11 +168,16 @@ revoke all on public.sentil_dataset   from anon, authenticated;
 revoke all on public.sentil_review    from anon, authenticated;
 revoke all on public.sentil_sync_run  from anon, authenticated;
 revoke all on public.sentil_quota     from anon, authenticated;
+revoke all on public.sentil_config    from anon, authenticated;
 
 grant select, insert, update, delete on public.sentil_workspace to service_role;
 grant select, insert, update, delete on public.sentil_dataset   to service_role;
 grant select, insert, update, delete on public.sentil_review    to service_role;
 grant select, insert, update, delete on public.sentil_sync_run  to service_role;
+-- Konfigurasi induk cuma boleh disentuh fungsi server lewat service_role: sama seperti
+-- tabel lain, publishable key tidak punya hak baca, dan nilai rahasia tidak pernah
+-- meninggalkan server dalam bentuk apa pun selain samarannya.
+grant select, insert, update, delete on public.sentil_config    to service_role;
 -- Tabel kuota hanya boleh berubah lewat fungsi di atas: aplikasi membaca hasilnya,
 -- tidak pernah menulis angkanya sendiri.
 grant select on public.sentil_quota to service_role;

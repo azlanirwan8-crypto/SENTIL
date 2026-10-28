@@ -1,5 +1,5 @@
 import { LogoMark, Wordmark } from './Brand.jsx';
-import { IconDatabase, IconGauge, IconGrid, IconLayers, IconStar } from './icons.jsx';
+import { IconDatabase, IconGauge, IconGrid, IconLayers, IconShield, IconStar } from './icons.jsx';
 import { formatNumber } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 
@@ -11,6 +11,9 @@ const NAV = [
   { id: 'limits', label: 'Platform', icon: IconLayers, always: true },
   { id: 'compare', label: 'Compare', icon: IconStar, always: true },
   { id: 'method', label: 'Metode', icon: IconGauge },
+  // Config adalah layar server, bukan layar satu project: ia tetap boleh dibuka sebelum
+  // project mana pun ada, karena justru di sinilah kunci sumbernya dipasang.
+  { id: 'config', label: 'Config', icon: IconShield, always: true },
 ];
 
 export function Sidebar({ view, onView, snapshot, workspaceCount, hasData }) {
@@ -61,7 +64,7 @@ export function Sidebar({ view, onView, snapshot, workspaceCount, hasData }) {
 
 export function MobileNav({ view, onView, snapshot, hasData }) {
   return (
-    <nav className="flex items-center gap-1 lg:hidden" aria-label={t('Primary navigation')}>
+    <nav className="scroll-x flex items-center gap-1 lg:hidden" aria-label={t('Primary navigation')}>
       {NAV.map(item => {
         const active = view === item.id;
         const count = item.countKey && snapshot ? snapshot[item.countKey] : null;

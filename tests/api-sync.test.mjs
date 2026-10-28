@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 
 import { createSyncHandler, rejectsSameSiteCheck } from '../api/sync.js';
+import { invalidateConfigCache } from '../lib/config-store.mjs';
 import { SyncError } from '../lib/sync-core.mjs';
 import { createQuota } from '../lib/rate-limit.mjs';
 
@@ -138,7 +139,9 @@ describe('/api/sync', () => {
       },
     }));
     assert.equal(response.statusCode, 200);
-    const { deadlineAt, onProgress, ...forwarded } = service.calls[0];
+    // Environment permintaan ikut diteruskan: kunci yang disimpan di menu Config menutupi
+    // environment platform, dan itu hanya bisa berlaku kalau penarikan menerimanya per permintaan.
+    const { deadlineAt, onProgress, env, ...forwarded } = service.calls[0];
     assert.deepEqual(forwarded, {
       action: 'sync',
       entity: 'Aplikasi Tes',
@@ -150,10 +153,46 @@ describe('/api/sync', () => {
       since: null,
       carry: null,
     });
+    assert.ok(env && typeof env === 'object', 'penarikan membawa environment permintaannya sendiri');
+    assert.equal(Object.keys(env).length >= Object.keys(process.env).length, true, 'environment itu menutupi isi platform, bukan membuangnya');
     assert.ok(Number.isFinite(deadlineAt), 'setiap penarikan membawa batas waktu fungsi');
     assert.equal(typeof onProgress, 'function', 'dan satu pelapor progres supaya peramban bisa menampilkan persen');
   });
 
+  test('kunci dari menu Config dipakai permintaan, bukan hanya environment server', async () => {
+    // Inilah alasan layar Config ada: nilai di tabel-master mengalahkan environment platform,
+    // dan ia harus benar-benar sampai ke kanal & lapisan analis pada permintaan ini juga.
+    invalidateConfigCache();
+    const service = stubService();
+    const db = {
+      enabled: true,
+      reason: null,
+      async listConfig() {
+        return [{ name: 'GEMINI_API_KEY', value: 'kunci-dari-config', updated_at: '2026-10-28T00:00:00Z' }];
+      },
+    };
+    const handler = createSyncHandler(service, { db, quota: createQuota({ db }), env: { GEMINI_API_KEY: 'kunci-lama-di-platform' } });
+    const response = await run(handler, fakeRequest({ body: { action: 'limits', entity: 'Aplikasi Tes', playAppId: 'com.tes' } }));
+    assert.equal(response.statusCode, 200);
+    assert.equal(service.calls[0].env.GEMINI_API_KEY, 'kunci-dari-config');
+    assert.equal(service.calls[0].env.PORT, undefined, 'yang tidak didaftarkan tidak ikut dibuat');
+    invalidateConfigCache();
+  });
+
+  test('tabel konfigurasi yang gagal dibaca tidak membatalkan permintaan', async () => {
+    invalidateConfigCache();
+    const service = stubService();
+    const db = {
+      enabled: true,
+      reason: null,
+      async listConfig() { throw new Error('relation "sentil_config" does not exist'); },
+    };
+    const handler = createSyncHandler(service, { db, quota: createQuota({ db }), env: { GEMINI_API_KEY: 'kunci-platform' } });
+    const response = await run(handler, fakeRequest({ body: { action: 'limits', entity: 'Aplikasi Tes', playAppId: 'com.tes' } }));
+    assert.equal(response.statusCode, 200);
+    assert.equal(service.calls[0].env.GEMINI_API_KEY, 'kunci-platform', 'tabel yang tidak terbaca jatuh ke environment, bukan menggagalkan aksi');
+    invalidateConfigCache();
+  });
   test('kanal sosial saja tetap diterima tanpa identitas toko', async () => {
     const service = stubService();
     const handler = createSyncHandler(service);
@@ -180,8 +219,10 @@ describe('/api/sync', () => {
     }));
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().action, 'limits');
-    assert.deepEqual(service.calls[0], { action: 'limits', entity: 'Aplikasi Tes', playAppId: 'com.tes', appleAppId: '12345', social: {} },
+    const { env, ...limitsCall } = service.calls[0];
+    assert.deepEqual(limitsCall, { action: 'limits', entity: 'Aplikasi Tes', playAppId: 'com.tes', appleAppId: '12345', social: {} },
       'limits tidak meneruskan force karena tidak memanggil sumber');
+    assert.ok(env && typeof env === 'object', 'monitor batas sumber juga membaca kunci dari konfigurasi yang sama');
   });
 
   test('aksi limits-reset membersihkan catatan dan membalas daftar yang dihapus', async () => {
@@ -192,7 +233,9 @@ describe('/api/sync', () => {
     }));
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().action, 'limits-reset');
-    assert.deepEqual(service.calls[0], { action: 'limits-reset', entity: 'Aplikasi Tes', playAppId: 'com.tes', appleAppId: null, social: {} });
+    const { env, ...resetCall } = service.calls[0];
+    assert.deepEqual(resetCall, { action: 'limits-reset', entity: 'Aplikasi Tes', playAppId: 'com.tes', appleAppId: null, social: {} });
+    assert.ok(env && typeof env === 'object', 'pembersihan catatan memakai environment yang sama dengan penarikannya');
   });
 
   test('limits tanpa target dibalas 400, bukan 500', async () => {

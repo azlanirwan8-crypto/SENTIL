@@ -14,15 +14,16 @@ import { IconAlert, IconGauge } from './icons.jsx';
 // Hanya arah yang boleh berwarna. Enam warna kategori pada baris sedekat ini membaca sebagai
 // permen, bukan sebagai temuan: theme/channel/structure hanyalah pengelompok, jadi mereka netral,
 // dan accent ditinggalkan untuk status interaksi. rose/emerald tetap berarti memburuk/membaik.
-// Sebutannya mengikuti register laporan tim, bukan register percakapan.
+// Sebutannya adalah kalimat yang dibaca orang di ruang rapat, bukan istilah mesin: badge
+// inilah yang menentukan apakah baris pertama sudah bisa dimengerti sebelum isinya dibaca.
 const KINDS = {
-  theme: { label: 'volume', tone: 'text-slate-200 border-slate-700' },
-  rise: { label: 'rate rising', tone: 'text-neg border-neg/40' },
-  fall: { label: 'rate easing', tone: 'text-pos border-pos/40' },
-  channel: { label: 'concentration', tone: 'text-slate-200 border-slate-700' },
-  shared: { label: 'counter-evidence', tone: 'text-slate-200 border-slate-700' },
-  structure: { label: 'structure', tone: 'text-slate-200 border-slate-700' },
-  coverage: { label: 'coverage limit', tone: 'text-slate-400 border-slate-700' },
+  theme: { label: 'Biggest theme', tone: 'text-slate-200 border-slate-700' },
+  rise: { label: 'Getting worse', tone: 'text-neg border-neg/40' },
+  fall: { label: 'Improving', tone: 'text-pos border-pos/40' },
+  channel: { label: 'One channel leads', tone: 'text-slate-200 border-slate-700' },
+  shared: { label: 'Also praised', tone: 'text-slate-200 border-slate-700' },
+  structure: { label: 'How groups formed', tone: 'text-slate-200 border-slate-700' },
+  coverage: { label: 'What is left out', tone: 'text-slate-400 border-slate-700' },
 };
 
 // Nama area yang dibaca manajer di baris sinyal diambil dari sumber yang sama persis dengan
@@ -61,7 +62,7 @@ export function Signal({ item, area = null }) {
   return (
     <li className="break-inside-avoid rounded border border-slate-800/70 bg-slate-900/40 px-2.5 py-2">
       <div className="flex items-baseline gap-2">
-        <span className={`shrink-0 rounded border px-1.5 py-px text-[9px] font-bold uppercase tracking-wider ${kind.tone}`}>
+        <span className={`shrink-0 rounded border px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ${kind.tone}`}>
           {t(kind.label)}
         </span>
         {/* judul dan badan kalimat ditulis mesin di server: keduanya data hasil ukur */}
@@ -78,7 +79,7 @@ export function Signal({ item, area = null }) {
       <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-800/60 pt-1.5" aria-label={`${t('Measurements behind')}: ${title}`}>
         {item.facts.map(entry => (
           <li key={entry.key} className="flex items-baseline gap-1">
-            <span className="text-[9px] uppercase tracking-wider text-slate-400">{t(entry.label)}</span>
+            <span className="label-sm">{t(entry.label)}</span>
             <span className="num text-[11px] font-semibold text-slate-200">{factValue(entry)}</span>
           </li>
         ))}
@@ -144,12 +145,12 @@ export function Signals({ signals, pain = null, topics = null, ai = null, filter
       <ul className="grid items-start gap-2 md:grid-cols-2 xl:grid-cols-3">
         {signals.items.map(item => <Signal key={item.id} item={item} area={areaFor(item)} />)}
       </ul>
-      <p className="mt-2 shrink-0 border-t border-slate-800/70 pt-1.5 text-[10px] leading-relaxed text-slate-400">
+      <p className="panel-footnote">
         {t('A line appears only when the difference between two shares is too big to be luck. That is the same test that admits a phrase or a topic, and no cutoff is picked per project. Direction compares the second half of')} <span className="num">{basis.trend ? `${basis.trend.firstDay} → ${basis.trend.lastDay}` : t('the observed period')}</span> {t('with the first')}{basis.trend && basis.trend.earlyNegative != null
           ? <> — <span className="num">{formatNumber(basis.trend.earlyNegative)}</span> {t('complaints then,')} <span className="num">{formatNumber(basis.trend.lateNegative)}</span> {t('in the second half.')}</>
           : null}
         {metrics.trimmed
-            ? <><span className="num">{formatNumber(metrics.trimmed)}</span> {t('candidates sat outside the display budget and are counted above.')}</>
+            ? <><span className="num">{formatNumber(metrics.trimmed)}</span> {t('groups were measured but are too small to show here — they are still counted in every total.')}</>
             : t('Nothing was trimmed.')}
         {filtered ? ` ${t('Counts cover every review in this project, not only the filtered ones.')}` : ''}
       </p>

@@ -179,9 +179,9 @@ export function PainLabels({ pain, topics, ai = null, filtered = false }) {
                         </span>
                       </span>
                       {entry.phraseCount > 1 ? (
-                        <span className="shrink-0 rounded border border-slate-700/70 px-1 text-[9px] uppercase tracking-wider text-slate-400">{t('cluster')}</span>
+                        <span className="label-sm shrink-0 rounded border border-slate-700/70 px-1">{t('cluster')}</span>
                       ) : (
-                        <span className="shrink-0 rounded border border-slate-700/70 px-1 text-[9px] uppercase tracking-wider text-slate-400">{t('single')}</span>
+                        <span className="label-sm shrink-0 rounded border border-slate-700/70 px-1">{t('single')}</span>
                       )}
                     </button>
                     {active ? (
@@ -231,7 +231,7 @@ export function PainLabels({ pain, topics, ai = null, filtered = false }) {
                     </span>
                     {aiInfo && store ? (
                       <span
-                        title={`${t('Measured density')}: ${formatNumber(store.inside)} ${t('of')} ${formatNumber(entry.reviewCount)} ${t('reviews in this cluster carry the dictionary term')} ${dictionaryName}${t(', denser than among other complaints')}`}
+                        title={`${t('Measured density')}: ${formatNumber(store.inside)} ${t('of')} ${formatNumber(entry.reviewCount)} ${t('reviews in this cluster are about')} ${dictionaryName}${t(', denser than among other complaints')}`}
                         className="mt-1 block truncate text-[10px] text-slate-400"
                       >
                         {t('measured')}: {dictionaryName}

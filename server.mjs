@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createSyncHandler } from './api/sync.js';
 import { createRefreshHandler } from './api/refresh.js';
+import { createConfigHandler } from './api/config.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 // Yang disajikan publik hanya hasil build; sumber server tidak berada di dalam folder ini.
@@ -107,7 +108,7 @@ async function sendFile(response, filePath, request) {
   createReadStream(filePath).pipe(response);
 }
 
-export function createAppServer({ syncHandler = createSyncHandler(), refreshHandler = createRefreshHandler(), root = STATIC_ROOT } = {}) {
+export function createAppServer({ syncHandler = createSyncHandler(), refreshHandler = createRefreshHandler(), configHandler = createConfigHandler(), root = STATIC_ROOT } = {}) {
   return createServer(async (request, response) => {
     const url = new URL(request.url || '/', 'http://localhost');
     const pathname = url.pathname;
@@ -126,6 +127,13 @@ export function createAppServer({ syncHandler = createSyncHandler(), refreshHand
     // menjawab 501, dan itu keadaan yang sebenarnya, bukan bug server lokal.
     if (pathname === '/api/refresh') {
       await refreshHandler(request, response);
+      return;
+    }
+
+    // Layar Config: satu endpoint POST untuk membaca daftar setelan dan menulis perubahannya.
+    // Sama seperti /api/sync, hanya permintaan dari halaman ini yang diterima.
+    if (pathname === '/api/config') {
+      await configHandler(request, response);
       return;
     }
 

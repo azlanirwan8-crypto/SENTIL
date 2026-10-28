@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sidebar } from './components/Sidebar.jsx';
+import { Sidebar, MobileNav } from './components/Sidebar.jsx';
 import { TopBar } from './components/TopBar.jsx';
 import { Welcome } from './components/Welcome.jsx';
 import { WorkspaceHeader } from './components/WorkspaceHeader.jsx';
@@ -8,6 +8,7 @@ import { ReviewsView } from './components/ReviewsView.jsx';
 import { LimitMonitor } from './components/LimitMonitor.jsx';
 import { ModelView } from './components/ModelView.jsx';
 import { CompareView } from './components/CompareView.jsx';
+import { ConfigView } from './components/ConfigView.jsx';
 import { WorkspaceDialog } from './components/WorkspaceDialog.jsx';
 import { ConfirmDeleteDialog } from './components/ConfirmDialog.jsx';
 import { BootScreen, SyncScreen, WorkspaceEmpty } from './components/WorkspaceStates.jsx';
@@ -503,6 +504,10 @@ export default function App() {
     // Lintas project: tidak butuh workspace aktif, karena matriksnya membaca beberapa
     // snapshot sekaligus dari sisi server.
     content = <CompareView workspaces={workspaces} onToast={pushToast} />;
+  } else if (view === 'config') {
+    // Layar kunci & setelan milik server, bukan milik satu project: ia boleh dibuka sebelum
+    // project pertama ada, karena justru di sinilah kuncinya dipasang.
+    content = <ConfigView />;
   } else if (!activeWorkspace) {
     content = <Welcome onAdd={() => setDialogOpen(true)} />;
   } else if (view === 'limits') {
@@ -567,9 +572,15 @@ export default function App() {
               />
             </div>
           )}
-          {activeWorkspace && <WorkspaceHeader workspace={activeWorkspace} dataset={dataset} view={view} onView={setView} syncing={activeSyncing} syncStartedAt={syncing?.startedAt || null} />}
+          {activeWorkspace ? <WorkspaceHeader workspace={activeWorkspace} dataset={dataset} view={view} onView={setView} syncing={activeSyncing} syncStartedAt={syncing?.startedAt || null} /> : (
+            // Tanpa project sekali pun, menu tetap harus bisa dijangkau dari layar sempit:
+            // Config adalah layar yang justru dipakai sebelum project pertama ditarik.
+            <div className="scroll-x pb-3 lg:hidden">
+              <MobileNav view={view} onView={setView} snapshot={null} hasData={false} />
+            </div>
+          )}
           {notices.length > 0 && <div className="pb-3">{notices}</div>}
-          {activeWorkspace && (
+          {activeWorkspace || view === 'config' ? (
             <div
               key={view}
               id={`panel-${view}`}
@@ -578,8 +589,7 @@ export default function App() {
             >
               <div className="space-y-3">{content}</div>
             </div>
-          )}
-          {!activeWorkspace && content}
+          ) : null}
         </main>
       </div>
 

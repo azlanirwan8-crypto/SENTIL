@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconCheck, IconRefresh } from './icons.jsx';
 import { aiText } from './Analyst.jsx';
 import { Notice } from './Notices.jsx';
+import { Progress } from './Progress.jsx';
 import { fetchComparison } from '../lib/api.js';
 import { formatNumber, formatNss, relativeTime } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
@@ -20,7 +21,7 @@ function Panel({ title, meta, action, children, className = '' }) {
         </div>
         {action}
       </header>
-      <div className="min-h-0 flex-1 p-3">{children}</div>
+      <div className="min-h-0 flex-1 p-3.5">{children}</div>
     </section>
   );
 }
@@ -301,7 +302,7 @@ export function CompareView({ workspaces, onToast }) {
   const view = result ? { ...result, projects: ordered } : null;
 
   return (
-    <div className="space-y-3">
+    <div className="reveal-group space-y-3">
       <SelectionBar
         workspaces={workspaces}
         selected={selected}
@@ -311,22 +312,20 @@ export function CompareView({ workspaces, onToast }) {
         busy={busy}
       />
       {error ? <Notice tone="coral" title={t('Comparison unavailable')}>{error}</Notice> : null}
-      {busy && !view ? <Panel title={t('Building matrix')} meta={t('reading stored summaries')}>…</Panel> : null}
+      {busy && !view ? (
+        <Panel title={t('Building matrix')} meta={t('reading stored summaries')}>
+          <Progress label={t('Reading the stored summary of every project')} />
+        </Panel>
+      ) : null}
       {view ? (
         <>
-          <div className="grid gap-3 xl:grid-cols-12">
+          {/* Satu grid untuk semua panel: sebelumnya empat grid terpisah membuat panel yang
+              kembali null meninggalkan kolom kosong, dan sisa panel berhenti di 58% lebar. */}
+          <div className="reveal-group grid items-start gap-3 xl:grid-cols-12">
             <MatrixTable result={view} />
-          </div>
-          {view.ai?.status === 'answered' ? (
-            <div className="grid gap-3 xl:grid-cols-12">
-              <CompareReading result={view} />
-            </div>
-          ) : null}
-          <div className="grid gap-3 xl:grid-cols-12">
+            {view.ai?.status === 'answered' ? <CompareReading result={view} /> : null}
             <Leaderboard result={view} />
             <Insights result={view} />
-          </div>
-          <div className="grid gap-3 xl:grid-cols-12">
             <PainHeatmap result={view} />
           </div>
           {view.caveats.length ? (

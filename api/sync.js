@@ -14,6 +14,7 @@ import { projectDataset } from '../lib/dataset-view.mjs';
 import { pullProgress, percentOf } from '../lib/pull-progress.mjs';
 import { ANALYST_VERSION, analyseComparison, analyseCorpus } from '../lib/ai-analyst.mjs';
 import { createQuota } from '../lib/rate-limit.mjs';
+import { loadConfigValues } from '../lib/config-store.mjs';
 import { analyzeCorpus, ENGINE_VERSION } from '../lib/corpus-engine.mjs';
 
 const BODY_LIMIT = 16384;
@@ -161,7 +162,23 @@ function workspaceFrom(value) {
   };
 }
 
-export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }), env = process.env } = {}) {
+export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }), env: baseEnv = process.env } = {}) {
+  // Kunci API boleh disimpan di konfigurasi induk, dan nilainya mengalahkan environment
+  // platform. Dibaca per permintaan untuk aksi yang benar-benar memakai kunci — polling
+  // progres dan pembacaan dataset tidak boleh menambah permintaan database tiap dua detik.
+  const CONFIG_ACTIONS = new Set(['sync', 'recompute', 'compare', 'limits', 'limits-reset']);
+  async function environmentFor(action) {
+    if (!CONFIG_ACTIONS.has(action)) return baseEnv;
+    try {
+      const read = await loadConfigValues({ db, env: baseEnv });
+      return read.env;
+    } catch {
+      // Membaca konfigurasi bukan syarat untuk menganalisis: kalau tabelnya tidak bisa
+      // dijangkau, environment platform yang dipakai dan penarikan tetap berjalan.
+      return baseEnv;
+    }
+  }
+
   async function note(run) {
     if (!db.enabled) return null;
     try { return await db.logRun(run); } catch { return null; /* riwayat tidak boleh menggagalkan penarikan */ }
@@ -171,6 +188,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
   // oleh jalur latar belakang (Vercel) maupun jalur inline (server lokal / uji), jadi hanya ada
   // satu urutan kerja untuk keduanya.
   async function runPullJob(args, workspace) {
+    const env = args.env || baseEnv;
     const startedAt = Date.now();
     const deadlineAt = pullDeadline({ startedAt, env });
     const { since, carry, note: cacheNote } = await readIncremental(db, workspace?.id, args.force);
@@ -263,7 +281,8 @@ export function createSyncHandler(service = syncService, { db = database, quota 
   // Hitung ulang tanpa menyentuh sumber: baris yang sudah tersimpan dianalisis lagi oleh mesin
   // versi sekarang. Inilah jalur yang membersihkan analisis lama yang tercemar tanpa perlu
   // menarik ulang 69.000 ulasan, dan tanpa mengubah satu baris teks ulasan pun.
-  async function recomputeStored(workspaceId) {
+  async function recomputeStored(workspaceId, runEnv) {
+    const env = runEnv || baseEnv;
     if (!db.enabled) throw new SyncError('db_unavailable', 'The database is not configured on this server, so there is nothing to recompute.', 400);
     const probe = await db.status();
     if (!probe.reachable) return { action: 'recompute', db: probe, workspaceId, recomputed: false, message: 'The database is not reachable, so nothing was recomputed.' };
@@ -350,6 +369,10 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       return;
     }
     try {
+      // Environment permintaan: platform ditutupi oleh konfigurasi induk untuk aksi yang
+      // memakai kunci. Nama variabelnya tetap `env` supaya seluruh pemanggilan di bawah
+      // otomatis ikut, tanpa satu pun jalur yang diam-diam masih memakai environment proses.
+      const env = await environmentFor(payload.action);
       const force = payload.force === true;
       // Target kanal sosial dinormalisasi ulang di sync-core; permintaan tidak pernah
       // bisa membawa token atau kunci, hanya flag aktif dan target yang sah bentuknya.
@@ -383,6 +406,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           appleAppId: payload.appleAppId,
           social,
           force,
+          env,
         };
         // Penarikan diselesaikan DI DALAM permintaan. Jalur latar belakang (waitUntil + 202)
         // pernah dipasang dan diukur dua kali pada 27 Oktober atas korpus 51.682 dan 54.832
@@ -451,7 +475,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       if (payload.action === 'recompute') {
         const workspaceId = typeof payload.workspaceId === 'string' ? payload.workspaceId : '';
         if (!WORKSPACE_ID.test(workspaceId)) throw new SyncError('workspace_invalid', 'A project ID is required to recompute its analysis.', 400);
-        json(response, 200, await recomputeStored(workspaceId));
+        json(response, 200, await recomputeStored(workspaceId, env));
         return;
       }
       if (payload.action === 'state') {
@@ -530,6 +554,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           playAppId: payload.playAppId,
           appleAppId: payload.appleAppId,
           social,
+          env,
         }));
         return;
       }
@@ -539,6 +564,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
           playAppId: payload.playAppId,
           appleAppId: payload.appleAppId,
           social,
+          env,
         }));
         return;
       }

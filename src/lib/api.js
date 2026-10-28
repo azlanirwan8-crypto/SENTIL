@@ -103,3 +103,50 @@ export function fetchJob(workspaceId) {
 export function recomputeWorkspace(workspaceId) {
   return post({ action: 'recompute', workspaceId });
 }
+
+// Layar Config memakai endpoint sendiri karena jawabannya berbeda dari aksi lain: yang
+// kembali hanyalah daftar setelan beserta samarannya. Kunci admin dikirim sebagai bearer
+// dan hanya hidup di memori halaman — tidak pernah disimpan ke localStorage.
+async function postConfig(payload, token = null) {
+  const headers = { 'content-type': 'application/json', accept: 'application/json' };
+  if (token) headers.authorization = `Bearer ${token}`;
+  let response;
+  try {
+    response = await fetch('/api/config', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+  } catch {
+    throw new ApiError('The configuration server could not be reached. Check the connection and try again.');
+  }
+  const text = await response.text();
+  let body = null;
+  if (text) {
+    try { body = JSON.parse(text); } catch { body = null; }
+  }
+  if (!response.ok) {
+    throw new ApiError(
+      body && typeof body.message === 'string' ? body.message : `The request failed with status ${response.status}.`,
+      { status: response.status, code: body && typeof body.error === 'string' ? body.error : 'request_failed' },
+    );
+  }
+  if (!body || typeof body !== 'object') {
+    throw new ApiError('The configuration server returned a response that could not be read.');
+  }
+  return body;
+}
+
+export function fetchConfigStatus(token = null) {
+  return postConfig({ action: 'status' }, token);
+}
+
+export function saveConfigValue({ name, value, token }) {
+  return postConfig({ action: 'put', name, value }, token);
+}
+
+export function forgetConfigSetting({ name, token }) {
+  return postConfig({ action: 'forget', name }, token);
+}

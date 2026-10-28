@@ -18,6 +18,9 @@ const OVERALL = {
   ok: ['All paths read', 'pos'],
   limited: ['Some paths truncated', 'neu'],
   exhausted: ['A source stopped supplying', 'neg'],
+  // Tanpa baris ini, satu sumber yang menjawab kosong jatuh ke OVERALL.ok dan bilah kepala
+  // menyatakan "All paths read" padahal tidak ada satu baris pun yang terbaca.
+  empty: ['A source answered with no rows', 'neu'],
   setup: ['Waiting for server credentials', 'slate'],
   idle: ['No pull on this instance yet', 'slate'],
 };
@@ -41,7 +44,7 @@ function Signal({ signal }) {
 function Value({ value, unit }) {
   return (
     <td className="px-2 py-1.5 text-right align-top">
-      <span className="num text-[11.5px] font-bold text-slate-200">{value ?? 'N/A'}</span>
+      <span className="num text-[11px] font-bold text-slate-200">{value ?? 'N/A'}</span>
       {unit && <span className="ml-1 text-[10px] text-slate-400">{unit}</span>}
     </td>
   );
@@ -97,7 +100,7 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
   const history = sources.flatMap(source => (source.history || []).map(attempt => ({ ...attempt, source: source.label })));
 
   return (
-    <div className="space-y-3">
+    <div className="reveal-group space-y-3">
       <section className="card overflow-hidden">
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 px-4 py-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -187,7 +190,7 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
                   </td>
                   <Value value={formatNumber(source.read)} />
                   <td className="px-2 py-1.5 text-right align-top">
-                    <span className="num text-[11.5px] font-bold text-slate-200">{formatNumber(source.reported)}</span>
+                    <span className="num text-[11px] font-bold text-slate-200">{formatNumber(source.reported)}</span>
                     <span className="num mt-0.5 block text-[10px] text-slate-400">{formatNumber(source.reportedRatings)} {t('ratings')}</span>
                   </td>
                   <Value value={formatNumber(source.pages)} />
@@ -217,7 +220,7 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
         </div>
 
         {error && (
-          <p className="flex items-start gap-1.5 border-t border-neg/25 bg-neg/[0.07] px-3 py-2 text-[10.5px] text-neg">
+          <p className="flex items-start gap-1.5 border-t border-neg/25 bg-neg/[0.07] px-3 py-2 text-[11px] text-neg">
             <IconAlert size={12} className="mt-0.5 shrink-0" />
             {error}
           </p>
@@ -276,7 +279,7 @@ export function LimitMonitor({ dataset, workspace, onToast }) {
             </table>
           </div>
         ) : (
-          <p className="px-3 py-4 text-center text-[10.5px] text-slate-400">
+          <p className="px-3 py-4 text-center text-[11px] text-slate-400">
             {t('The warm server instance has not logged an attempt on this channel yet. Press Refresh or run a pull to fill the log.')}
           </p>
         )}
