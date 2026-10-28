@@ -116,3 +116,33 @@ describe('dasbor punya gerak masuk', () => {
     assert.equal(/\.reveal-group[^\n]*\{[^}]*animation-iteration-count/.test(CSS), false);
   });
 });
+
+// Bilah filter diukur dari berkas sumber karena bentuknya yang paling mudah rusak diam-diam:
+// satu kontrol baru berarti satu baris tinggi tambahan, dan tinggi itu hanya terlihat setelah
+// puluhan topik terkumpul. Aturan di bawah menjaga keduanya tetap satu baris.
+const CHANNEL_STRIP = readFileSync(new URL('../src/components/ChannelStrip.jsx', import.meta.url), 'utf8');
+const FILTER_SELECT = readFileSync(new URL('../src/components/FilterSelect.jsx', import.meta.url), 'utf8');
+const REVIEWS = readFileSync(new URL('../src/components/ReviewsView.jsx', import.meta.url), 'utf8');
+
+describe('penyaring kanal dan topik adalah dropdown, bukan dinding chip', () => {
+  test('satu primitif dropdown dipakai bersama, jumlah ikut di dalam pilihan', () => {
+    assert.match(FILTER_SELECT, /<select /, 'penyaring panjang harus native <select> supaya keyboard dan pembaca layar ikut');
+    assert.match(FILTER_SELECT, /className="select[ "]/, 'primitif harus memakai kelas .select yang sudah ditoken');
+    assert.match(OVERVIEW, /<FilterSelect\s/, 'dasbor menulis dropdown-nya sendiri');
+    assert.match(REVIEWS, /<FilterSelect\s/, 'review menulis dropdown-nya sendiri');
+    assert.match(OVERVIEW, /label: `\$\{topicLabel\(entry\.topic\)\} · \$\{formatNumber\(entry\.count\)\}/);
+    assert.match(REVIEWS, /label: `\$\{platformLabel\(id\)\} · \$\{formatNumber\(count\)\}`/);
+  });
+
+  test('kanal dan topik tidak lagi dirender sebagai chip yang membungkus', () => {
+    assert.equal(OVERVIEW.includes('filter-chip'), false, 'bilah dasbor masih menulis chip');
+    assert.equal(/role="group"[\s\S]{0,80}Channel filter|Complaint topic filter/.test(REVIEWS), false, 'bilah review masih memuat kelompok chip kanal/topik');
+    assert.match(REVIEWS, /\{topics\.length > 0 && \(\s*<FilterSelect/, 'dropdown topik harus hilang saat korpus belum punya topik');
+  });
+
+  test('kanal tanpa catatan dalam snapshot tidak menghapus dasbor', () => {
+    // Ditemukan saat bilah filter diukur dengan korpus tiruan: toko yang dinyalakan tetapi
+    // tidak punya baris kanal membuat baris kesegaran membaca `channel.cache` dari undefined.
+    assert.match(CHANNEL_STRIP, /selected && !note && channel \?/, 'baris kesegaran ditulis tanpa penjaga kanal');
+  });
+});

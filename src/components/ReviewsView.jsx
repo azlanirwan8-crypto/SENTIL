@@ -11,8 +11,9 @@ import {
 import { t, topicLabel } from '../lib/i18n.js';
 import { AnalystLine, aiText } from './Analyst.jsx';
 import { EmptyState } from './EmptyState.jsx';
+import { FilterSelect } from './FilterSelect.jsx';
 import { StoreMark } from './Brand.jsx';
-import { IconChevronDown, IconExternal, IconQuote, IconSearch, IconStar, IconX } from './icons.jsx';
+import { IconExternal, IconQuote, IconSearch, IconStar, IconX } from './icons.jsx';
 import { SERIES_COLORS } from './charts/palette.js';
 
 const PAGE = 25;
@@ -158,7 +159,6 @@ export function ReviewsView({ dataset }) {
   const [topic, setTopic] = useState('all');
   const [rating, setRating] = useState('all');
   const [sort, setSort] = useState('newest');
-  const [allTopics, setAllTopics] = useState(false);
   const [visible, setVisible] = useState(PAGE);
   const reviews = Array.isArray(dataset.reviews) ? dataset.reviews : [];
   const topics = Array.isArray(dataset.model?.topics) ? dataset.model.topics : [];
@@ -221,14 +221,25 @@ export function ReviewsView({ dataset }) {
   }, [reviews, platform, sentiment, topic, rating, deferredQuery, sort]);
 
   const shown = filtered.slice(0, visible);
-  // Topik terpilih harus tetap tampil walau daftar ditutup; kalau tidak, filter berjalan tanpa
-  // ada satu pun badge yang menunjukkannya.
-  const shownTopics = useMemo(() => {
-    if (allTopics || topics.length <= 8) return topics;
-    const head = topics.slice(0, 8);
-    const selected = topics.find(item => item.id === topic);
-    return selected && !head.some(item => item.id === selected.id) ? [...head, selected] : head;
-  }, [allTopics, topics, topic]);
+  // Daftar pilihan dibangun setiap render, bukan di-memo: sebutan kamus harus ikut berganti saat
+  // bahasa diubah, dan memo dengan dependensi hanya pada topik akan membekukan bahasa pertama
+  // yang dibuka. Jumlahnya puluhan, biayanya tidak terlihat.
+  const platformChoices = [
+    { value: 'all', label: `${t('All channels')} · ${formatNumber(reviews.length)}` },
+    ...[...platformCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([id, count]) => ({ value: id, label: `${platformLabel(id)} · ${formatNumber(count)}` })),
+  ];
+  const topicChoices = [
+    { value: 'all', label: `${t('All topics')} · ${formatNumber(reviews.length)}` },
+    ...topics.map(item => ({
+      value: item.id,
+      label: `${topicLabel(item)} · ${formatNumber(item.total)}`,
+      title: Number.isInteger(item.low)
+        ? `${formatNumber(item.low)} 1–2★ ${t('and')} ${formatNumber(item.high ?? 0)} 4–5★ ${t('reviews mention this topic')}`
+        : undefined,
+    })),
+  ];
   const activeFilters = platform !== 'all' || sentiment !== 'all' || topic !== 'all' || rating !== 'all' || Boolean(query.trim());
 
   function resetFilters() {
@@ -267,29 +278,34 @@ export function ReviewsView({ dataset }) {
             )}
           </div>
 
-          <label className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            {t('Stars')}
-            <span className="relative">
-              <select value={rating} onChange={event => change(setRating, event.target.value)} className="select">
-                <option value="all">{t('All')}</option>
-                {[5, 4, 3, 2, 1].map(star => <option key={star} value={String(star)}>{star}★</option>)}
-                <option value="none">{t('No stars')}</option>
-              </select>
-              <IconChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
-            </span>
-          </label>
-          <label className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            {t('Sort')}
-            <span className="relative">
-              <select value={sort} onChange={event => change(setSort, event.target.value)} className="select">
-                <option value="newest">{t('Newest')}</option>
-                <option value="oldest">{t('Oldest')}</option>
-                <option value="ratingHigh">{t('Highest stars')}</option>
-                <option value="ratingLow">{t('Lowest stars')}</option>
-              </select>
-              <IconChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
-            </span>
-          </label>
+          {platformCounts.size > 1 && (
+            <FilterSelect label={t('Channel')} value={platform} onChange={value => change(setPlatform, value)} options={platformChoices} />
+          )}
+          {topics.length > 0 && (
+            <FilterSelect label={t('Topic')} value={topic} onChange={value => change(setTopic, value)} options={topicChoices} />
+          )}
+
+          <FilterSelect
+            label={t('Stars')}
+            value={rating}
+            onChange={value => change(setRating, value)}
+            options={[
+              { value: 'all', label: `${t('All')} · ${formatNumber(reviews.length)}` },
+              ...[5, 4, 3, 2, 1].map(star => ({ value: String(star), label: `${star}★` })),
+              { value: 'none', label: t('No stars') },
+            ]}
+          />
+          <FilterSelect
+            label={t('Sort')}
+            value={sort}
+            onChange={value => change(setSort, value)}
+            options={[
+              { value: 'newest', label: t('Newest') },
+              { value: 'oldest', label: t('Oldest') },
+              { value: 'ratingHigh', label: t('Highest stars') },
+              { value: 'ratingLow', label: t('Lowest stars') },
+            ]}
+          />
           {activeFilters && (
             <button type="button" onClick={resetFilters} className="btn btn-ghost btn-xs ml-auto">
               <IconX size={11} /> {t('Clear')}
@@ -298,17 +314,6 @@ export function ReviewsView({ dataset }) {
         </div>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-800/70 pt-2.5">
-          <div role="group" aria-label={t('Channel filter')} className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            <button type="button" onClick={() => change(setPlatform, 'all')} aria-pressed={platform === 'all'} className={`filter-chip ${platform === 'all' ? 'filter-chip-active' : ''}`}>
-              {t('All channels')} <span className="num">{formatNumber(reviews.length)}</span>
-            </button>
-            {[...platformCounts.entries()].map(([id, count]) => (
-              <button key={id} type="button" onClick={() => change(setPlatform, id)} aria-pressed={platform === id} className={`filter-chip ${platform === id ? 'filter-chip-active' : ''}`}>
-                {platformLabel(id)} <span className="num">{formatNumber(count)}</span>
-              </button>
-            ))}
-          </div>
-          <span className="mx-1 hidden h-4 w-px bg-slate-800 sm:block" />
           <div role="group" aria-label={t('Sentiment label filter')} className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             {SENTIMENTS.map(option => (
               <button
@@ -324,37 +329,6 @@ export function ReviewsView({ dataset }) {
             ))}
           </div>
         </div>
-
-        {topics.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-800/70 pt-2.5" role="group" aria-label={t('Complaint topic filter')}>
-            <span className="label-sm mr-0.5">{t('Topics')}</span>
-            <button type="button" onClick={() => change(setTopic, 'all')} aria-pressed={topic === 'all'} className={`filter-chip ${topic === 'all' ? 'filter-chip-active' : ''}`}>
-              {t('All topics')} <span className="num">{formatNumber(reviews.length)}</span>
-            </button>
-            {shownTopics.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => change(setTopic, item.id)}
-                aria-pressed={topic === item.id}
-                title={`${formatNumber(item.low)} 1–2★ ${t('and')} ${formatNumber(item.high)} 4–5★ ${t('reviews mention this topic')}`}
-                className={`filter-chip ${topic === item.id ? 'filter-chip-active' : ''}`}
-              >
-                {topicLabel(item)} <span className="num">{formatNumber(item.total)}</span>
-              </button>
-            ))}
-            {topics.length > 8 && (
-              <button
-                type="button"
-                onClick={() => setAllTopics(value => !value)}
-                aria-expanded={allTopics}
-                className="link-quiet text-[10px] font-semibold"
-              >
-                {allTopics ? t('Show fewer') : `${t('Show all')} ${topics.length} ${t('topics')}`}
-              </button>
-            )}
-          </div>
-        )}
       </section>
 
       {ai && aiText(ai.reading.reviews) ? (

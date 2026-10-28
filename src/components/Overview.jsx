@@ -4,6 +4,7 @@ import { t, topicLabel } from '../lib/i18n.js';
 import { scopeDataset } from '../lib/scope.js';
 import { KpiRow } from './KpiRow.jsx';
 import { ChannelStrip } from './ChannelStrip.jsx';
+import { FilterSelect } from './FilterSelect.jsx';
 import { PainLabels } from './PainLabels.jsx';
 import { Signals } from './Signals.jsx';
 import { DailyTrend } from './charts/DailyTrend.jsx';
@@ -11,46 +12,42 @@ import { ChannelDonut } from './charts/ChannelDonut.jsx';
 import { TopicMap } from './charts/TopicMap.jsx';
 import { PlatformBars } from './charts/PlatformBars.jsx';
 
-function Chip({ active, onClick, children, count }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`filter-chip ${active ? 'filter-chip-active' : ''}`}
-    >
-      {children}
-      {count != null && <span className="count-quiet">{formatNumber(count)}</span>}
-    </button>
-  );
-}
-
 function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, matched, total, onReset }) {
   if (!options.platforms.length && !options.topics.length) return null;
+  const topicTitle = entry => (Number.isInteger(entry.topic?.low)
+    ? `${formatNumber(entry.topic.low)} 1–2★ ${t('and')} ${formatNumber(entry.topic.high ?? 0)} 4–5★ ${t('reviews mention this topic')}`
+    : undefined);
   return (
     <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" aria-label={t('Dashboard filters')}>
       {options.platforms.length > 1 && (
-        <div role="group" aria-label={t('Channel filter')} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          <span className="label-sm shrink-0">{t('Channel')}</span>
-          <Chip active={platform === 'all'} onClick={() => onPlatform('all')} count={total}>{t('All')}</Chip>
-          {options.platforms.map(entry => (
-            <Chip key={entry.id} active={platform === entry.id} onClick={() => onPlatform(entry.id)} count={entry.count}>
-              {platformLabel(entry.id)}
-            </Chip>
-          ))}
-        </div>
+        <FilterSelect
+          label={t('Channel')}
+          value={platform}
+          onChange={onPlatform}
+          options={[
+            { value: 'all', label: `${t('All channels')} · ${formatNumber(total)}` },
+            ...options.platforms.map(entry => ({
+              value: entry.id,
+              label: `${platformLabel(entry.id)} · ${formatNumber(entry.count)}`,
+            })),
+          ]}
+        />
       )}
 
       {options.topics.length > 0 && (
-        <div role="group" aria-label={t('Topic filter')} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          <span className="label-sm shrink-0">{t('Topic')}</span>
-          <Chip active={topic === 'all'} onClick={() => onTopic('all')} count={total}>{t('All')}</Chip>
-          {options.topics.map(entry => (
-            <Chip key={entry.id} active={topic === entry.id} onClick={() => onTopic(entry.id)} count={entry.count}>
-              {topicLabel(entry.topic)}
-            </Chip>
-          ))}
-        </div>
+        <FilterSelect
+          label={t('Topic')}
+          value={topic}
+          onChange={onTopic}
+          options={[
+            { value: 'all', label: `${t('All topics')} · ${formatNumber(total)}` },
+            ...options.topics.map(entry => ({
+              value: entry.id,
+              label: `${topicLabel(entry.topic)} · ${formatNumber(entry.count)}`,
+              title: topicTitle(entry),
+            })),
+          ]}
+        />
       )}
 
       {filtered && (

@@ -74,12 +74,16 @@ function ChannelRow({ channel, store, workspaceStore, fetchedAt }) {
         </p>
       )}
 
-      {selected && !note && (
+      {/* Baris kesegaran hanya ada kalau kanal itu benar-benar punya catatan dalam snapshot.
+          Tanpa penjaga ini, project yang menyalakan satu toko tetapi snapshot-nya hanya memuat
+          toko lain membaca `channel.cache` dari undefined dan seluruh dasbor hilang — dan
+          klaim "fresh pull" untuk kanal yang tidak pernah di tarik bukan kebenaran. */}
+      {selected && !note && channel ? (
         <p className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-400">
           <IconInfo size={11} />
           {channel.cache?.hit ? t('from cache') : t('fresh pull')} · {formatDateTime(channel.cache?.fetchedAt || fetchedAt)}
         </p>
-      )}
+      ) : null}
     </div>
   );
 }

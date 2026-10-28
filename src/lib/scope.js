@@ -123,8 +123,8 @@ export function scopeDataset(dataset, { platform = 'all', topic = 'all' } = {}) 
       nss: summary.nss,
     },
     options: {
-      // Jumlah pada chip dihitung atas seluruh baris, bukan atas hasil filter lain: kontrol
-      // tidak boleh hilang saat satu filter dipasang, dan angkanya tetap bisa dicocokkan
+      // Jumlah pada pilihan dropdown dihitung atas seluruh baris, bukan atas hasil filter lain:
+      // pilihan tidak boleh hilang saat satu filter dipasang, dan angkanya tetap bisa dicocokkan
       // dengan bilangan "x of y reviews" di sebelahnya.
       platforms: tallyOptions(rows, platformOf),
       topics: topicOptions(rows, model.topics),
@@ -142,7 +142,7 @@ function tallyOptions(rows, keyOf) {
 }
 
 function topicOptions(rows, modelTopics) {
-  // Chip filter membawa objek topik, bukan salah satu namanya, supaya penyaji bisa memilih
+  // Pilihan filter membawa objek topik, bukan salah satu namanya, supaya penyaji bisa memilih
   // sebutan sesuai bahasa aktif tanpa menyalin dua nama ke setiap pilihan.
   const byId = new Map((Array.isArray(modelTopics) ? modelTopics : []).map(topic => [topic.id, topic]));
   const counts = new Map();
