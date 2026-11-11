@@ -108,6 +108,89 @@ describe('gerbang asal permintaan', () => {
 });
 
 describe('/api/sync', () => {
+  test('Gemini action requires consent, accepts only a bounded social-text sample, and uses the server classifier', async () => {
+    invalidateConfigCache();
+    const calls = [];
+    const quotaCalls = [];
+    const handler = createSyncHandler(stubService(), {
+      db: { enabled: false, reason: 'test database disabled' },
+      quota: {
+        key: () => 'visitor',
+        take: async action => {
+          quotaCalls.push(action);
+          return { allowed: true };
+        },
+      },
+      classifySocial: async (rows, options) => {
+        calls.push({ rows, options });
+        return { status: 'answered', provider: 'gemini', model: 'test-model', items: [{ ref: 'c1', label: 'negative', confidence: 'medium', reason: 'clear_opinion' }] };
+      },
+      env: { GEMINI_API_KEY: 'server-key' },
+    });
+    const denied = await run(handler, fakeRequest({
+      body: { action: 'social-classify', rows: [{ ref: 'c1', platform: 'x', text: 'not sent' }] },
+    }));
+    assert.equal(denied.statusCode, 400);
+    assert.equal(denied.json().error, 'consent_required');
+    assert.equal(quotaCalls.length, 0, 'invalid consent must not consume paid-call quota');
+
+    const response = await run(handler, fakeRequest({
+      body: {
+        action: 'social-classify',
+        confirmed: true,
+        rows: [{ ref: 'c1', platform: 'x', text: 'This transfer failed.' }],
+      },
+    }));
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().model, 'test-model');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].rows, [{ ref: 'c1', platform: 'x', text: 'This transfer failed.' }]);
+    assert.equal(calls[0].options.env.GEMINI_API_KEY, 'server-key');
+    assert.deepEqual(quotaCalls, ['social-classify']);
+  });
+
+  test('Gemini action refuses store rows and oversized comments before quota is taken', async () => {
+    invalidateConfigCache();
+    const quotaCalls = [];
+    const handler = createSyncHandler(stubService(), {
+      db: { enabled: false },
+      quota: { key: () => 'visitor', take: async action => { quotaCalls.push(action); return { allowed: true }; } },
+      classifySocial: async () => assert.fail('invalid input must not reach Gemini'),
+    });
+    const response = await run(handler, fakeRequest({
+      body: {
+        action: 'social-classify',
+        confirmed: true,
+        rows: [{ ref: 'c1', platform: 'play', text: 'A store review is not a social comment.' }],
+      },
+    }));
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error, 'social_sample_invalid');
+    assert.equal(quotaCalls.length, 0);
+  });
+
+  test('missing Gemini configuration is reported without spending classification quota', async () => {
+    invalidateConfigCache();
+    const quotaCalls = [];
+    const handler = createSyncHandler(stubService(), {
+      db: { enabled: false },
+      quota: { key: () => 'visitor', take: async action => { quotaCalls.push(action); return { allowed: true }; } },
+      classifySocial: async () => assert.fail('Gemini must not be called without a key'),
+      env: {},
+    });
+    const response = await run(handler, fakeRequest({
+      body: {
+        action: 'social-classify',
+        confirmed: true,
+        rows: [{ ref: 'c1', platform: 'x', text: 'This transfer failed.' }],
+      },
+    }));
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().status, 'skipped');
+    assert.match(response.json().reason, /GEMINI_API_KEY/);
+    assert.equal(quotaCalls.length, 0);
+  });
+
   test('hanya menerima POST', async () => {
     const handler = createSyncHandler(stubService());
     const response = await run(handler, { method: 'GET', headers: { host: 'a.example' }, async *[Symbol.asyncIterator]() {} });

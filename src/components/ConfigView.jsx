@@ -240,7 +240,7 @@ export function ConfigView() {
           <div className="min-w-0">
             <h2 className="text-[13px] font-bold leading-tight text-slate-100">{t('Configuration')}</h2>
             <p className="mt-0.5 text-[11px] leading-snug text-slate-400">
-              {t('Keys used to be installed by hand in the hosting dashboard. They live in this project now, and the value saved here is the one that gets used.')}
+              {t('Store API credentials here or in the server environment. Saved values override environment values and apply to every workspace on this instance.')}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -307,6 +307,9 @@ export function ConfigView() {
         </dl>
 
         {!writable && gateReason ? <p className="mt-2 text-[11px] leading-relaxed text-amber-200">{gateReason}</p> : null}
+        <p className="mt-2 rounded border border-neu/25 bg-neu/[0.07] px-2.5 py-2 text-[11px] leading-relaxed text-neu">
+          {t('This deployment has no user accounts: configured credentials are shared by all workspaces. Never enter a customer-specific key on a shared instance.')}
+        </p>
         {!storage.enabled && storage.reason ? <p className="mt-2 text-[11px] leading-relaxed text-amber-200">{storage.reason}</p> : null}
         {tableError ? (
           <p className="mt-2 text-[11px] leading-relaxed text-amber-200">

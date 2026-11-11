@@ -8,7 +8,7 @@ import { t } from '../lib/i18n.js';
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: IconGrid, always: true },
   { id: 'reviews', label: 'Review', icon: IconDatabase, countKey: 'reviews' },
-  { id: 'limits', label: 'Platform', icon: IconLayers, always: true },
+  { id: 'limits', label: 'Sources', icon: IconLayers, always: true },
   { id: 'compare', label: 'Compare', icon: IconStar, always: true },
   { id: 'method', label: 'Metode', icon: IconGauge },
   // Config adalah layar server, bukan layar satu project: ia tetap boleh dibuka sebelum

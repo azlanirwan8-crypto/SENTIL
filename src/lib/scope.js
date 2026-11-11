@@ -4,14 +4,26 @@
 // ditelusuri ke baris yang sama yang dibaca menu Review.
 const sentimentOf = review => review.analysis?.sentiment || 'unclassified';
 const platformOf = review => review.platform || 'unknown';
-const rated = review => Number.isInteger(review.rating) && review.rating >= 1 && review.rating <= 5;
-const dayOf = review => (typeof review.date === 'string' && review.date ? review.date
-  : (typeof review.publishedAt === 'string' ? review.publishedAt.slice(0, 10) : null));
+const rated = review => ['play', 'appstore'].includes(String(review.platform || ''))
+  && Number.isInteger(review.rating)
+  && review.rating >= 1
+  && review.rating <= 5;
+const dayOf = review => {
+  const value = typeof review.date === 'string' && review.date
+    ? review.date
+    : typeof review.publishedAt === 'string' ? review.publishedAt.slice(0, 10) : null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  return Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ? null : value;
+};
 const topicIds = review => (Array.isArray(review.analysis?.topics) ? review.analysis.topics : []);
 
-function matches(review, { platform, topic }) {
+function matches(review, { platform, topic, startDate, endDate }) {
   if (platform !== 'all' && platformOf(review) !== platform) return false;
   if (topic !== 'all' && !topicIds(review).includes(topic)) return false;
+  if (startDate || endDate) {
+    const day = dayOf(review);
+    if (!day || (startDate && day < startDate) || (endDate && day > endDate)) return false;
+  }
   return true;
 }
 
@@ -94,11 +106,19 @@ function topicsOf(rows, modelTopics) {
   }).sort((a, b) => b.low - a.low || String(a.id).localeCompare(String(b.id)));
 }
 
-export function scopeDataset(dataset, { platform = 'all', topic = 'all' } = {}) {
+export function scopeDataset(dataset, { platform = 'all', topic = 'all', startDate = '', endDate = '' } = {}) {
   const rows = Array.isArray(dataset?.reviews) ? dataset.reviews : [];
   const model = dataset?.model || {};
-  const filtered = platform !== 'all' || topic !== 'all';
-  const kept = rows.filter(review => matches(review, { platform, topic }));
+  const dateRange = Boolean(startDate || endDate);
+  const invalidRange = Boolean(startDate && endDate && startDate > endDate);
+  const filtered = platform !== 'all' || topic !== 'all' || dateRange;
+  const baseRows = rows.filter(review => matches(review, { platform, topic, startDate: '', endDate: '' }));
+  const undatedExcluded = dateRange
+    ? baseRows.filter(review => !dayOf(review)).length
+    : 0;
+  const kept = invalidRange
+    ? []
+    : rows.filter(review => matches(review, { platform, topic, startDate, endDate }));
   const { daily, undated } = dailyOf(kept);
   const summary = tally(kept);
   summary.undated = undated;
@@ -110,8 +130,10 @@ export function scopeDataset(dataset, { platform = 'all', topic = 'all' } = {}) 
   summary.channels = platformsOf(kept).map(channel => ({ id: channel.id, status: 'filtered', fetched: channel.total }));
   return {
     filtered,
+    invalidRange,
     matched: kept.length,
     totalRows: rows.length,
+    undatedExcluded,
     rows: kept,
     summary,
     model: {

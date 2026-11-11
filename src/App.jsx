@@ -15,7 +15,7 @@ import { BootScreen, SyncScreen, WorkspaceEmpty } from './components/WorkspaceSt
 import { Notice, StorageWarning } from './components/Notices.jsx';
 import { ToastStack } from './components/Toast.jsx';
 import { fetchJob, recomputeWorkspace, syncWorkspace } from './lib/api.js';
-import { exportWorkspace } from './lib/export.js';
+import { exportReviewsCsv, exportWorkspace } from './lib/export.js';
 import { formatNumber, platformLabel } from './lib/format.js';
 import { t, useLanguage } from './lib/i18n.js';
 import {
@@ -110,6 +110,7 @@ export default function App() {
   const [storageIssue, setStorageIssue] = useState(null);
   const [view, setView] = useState('dashboard');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingWorkspace, setEditingWorkspace] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // Project yang barisnya sedang dituliskan ke database, sebelum penarikan pertamanya dimulai.
   // Tanpa penanda ini layar sempat menampilkan "belum ada snapshot" di tengah dua permintaan —
@@ -380,6 +381,27 @@ export default function App() {
     setStartingId(null);
   }
 
+  async function handleUpdate(draft) {
+    if (!editingWorkspace) return;
+    const workspace = {
+      ...editingWorkspace,
+      label: draft.label,
+      entity: draft.entity,
+      stores: draft.stores,
+      channels: draft.channels || {},
+      updatedAt: new Date().toISOString(),
+    };
+    const saved = await saveWorkspace(workspace);
+    if (saved.db) setDbStatus(saved.db);
+    const next = workspacesRef.current.map(item => item.id === workspace.id ? workspace : item);
+    applyWorkspaces(next);
+    setEditingWorkspace(null);
+    setDialogOpen(false);
+    if (!saved.saved) pushToast(saved.error || t('Settings are only available for this session.'), 'warning', t('Not stored in the database'));
+    else pushToast(t('Search scope saved. Refreshing this analysis now.'), 'success', t('Settings saved'));
+    void runSync(workspace, { force: true });
+  }
+
   async function handleDelete() {
     const target = activeIdRef.current;
     if (!target || deletingRef.current) return;
@@ -435,6 +457,18 @@ export default function App() {
     const ok = exportWorkspace(activeWorkspace, dataset);
     if (ok) pushToast(t('The full snapshot was exported as JSON.'), 'success', t('Export complete'));
     else pushToast(t('The export could not run in this browser.'), 'error');
+  }
+
+  function handleExportReviewsCsv(reviews) {
+    if (!activeWorkspace || !Array.isArray(reviews)) {
+      pushToast(t('There are no matching reviews to export.'), 'warning');
+      return;
+    }
+    if (exportReviewsCsv(activeWorkspace, reviews)) {
+      pushToast(t('Filtered reviews exported as CSV.'), 'success', t('Export complete'));
+    } else {
+      pushToast(t('The export could not run in this browser.'), 'error');
+    }
   }
 
   const notices = [];
@@ -528,7 +562,7 @@ export default function App() {
       />
     );
   } else if (view === 'reviews') {
-    content = <ReviewsView dataset={dataset} />;
+    content = <ReviewsView dataset={dataset} workspace={activeWorkspace} onExportCsv={handleExportReviewsCsv} />;
   } else if (view === 'method') {
     content = <ModelView dataset={dataset} workspace={activeWorkspace} db={dbStatus} onExport={handleExport} />;
   } else {
@@ -556,7 +590,8 @@ export default function App() {
           syncing={Boolean(syncing)}
           syncProgress={syncProgress}
           onSwitch={switchWorkspace}
-          onAdd={() => setDialogOpen(true)}
+          onAdd={() => { setEditingWorkspace(null); setDialogOpen(true); }}
+          onEdit={() => { setEditingWorkspace(activeWorkspace); setDialogOpen(true); }}
           onRefresh={() => runSync(activeWorkspace, { force: true })}
           onDelete={() => setConfirmOpen(true)}
         />
@@ -596,9 +631,10 @@ export default function App() {
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <WorkspaceDialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => { setDialogOpen(false); setEditingWorkspace(null); }}
         existingLabels={existingLabels}
-        onSave={handleCreate}
+        initialWorkspace={editingWorkspace}
+        onSave={editingWorkspace ? handleUpdate : handleCreate}
       />
       <ConfirmDeleteDialog
         open={confirmOpen}

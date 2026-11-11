@@ -104,6 +104,10 @@ export function recomputeWorkspace(workspaceId) {
   return post({ action: 'recompute', workspaceId });
 }
 
+export function classifySocialSample(rows) {
+  return post({ action: 'social-classify', confirmed: true, rows });
+}
+
 // Layar Config memakai endpoint sendiri karena jawabannya berbeda dari aksi lain: yang
 // kembali hanyalah daftar setelan beserta samarannya. Kunci admin dikirim sebagai bearer
 // dan hanya hidup di memori halaman — tidak pernah disimpan ke localStorage.

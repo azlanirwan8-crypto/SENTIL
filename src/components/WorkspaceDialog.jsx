@@ -164,32 +164,56 @@ const SOCIAL_OPTIONS = [
   { id: 'x', label: 'X / Twitter', needsKey: true, needs: 'needs an Apify token' },
 ];
 
-export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
+const EMPTY_TARGETS = Object.fromEntries(SOCIAL_OPTIONS.map(option => [option.id, {
+  query: '',
+  videoIds: '',
+  subreddits: '',
+}]));
+
+export function WorkspaceDialog({ open, onClose, existingLabels, onSave, initialWorkspace = null }) {
   const [label, setLabel] = useState('');
   const [entity, setEntity] = useState('');
   const [phase, setPhase] = useState('idle');
   const [result, setResult] = useState(null);
   const [selection, setSelection] = useState(EMPTY_SELECTION);
   const [channels, setChannels] = useState({ news: true });
+  const [targets, setTargets] = useState(EMPTY_TARGETS);
   const [fieldErrors, setFieldErrors] = useState({});
   const [requestError, setRequestError] = useState(null);
   const [summaryError, setSummaryError] = useState(null);
   const searchedForRef = useRef(null);
+  const originalEntityRef = useRef(null);
   const pendingRef = useRef(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
     if (!open) return;
-    setLabel('');
-    setEntity('');
+    setLabel(initialWorkspace?.label || '');
+    setEntity(initialWorkspace?.entity || '');
     setPhase('idle');
     setResult(null);
-    setSelection(EMPTY_SELECTION);
-    setChannels({ news: true });
+    setSelection({
+      play: initialWorkspace?.stores?.play || null,
+      appstore: initialWorkspace?.stores?.appstore || null,
+    });
+    const savedChannels = initialWorkspace?.channels || {};
+    setChannels(Object.fromEntries(SOCIAL_OPTIONS.map(option => [
+      option.id,
+      savedChannels[option.id]?.enabled === true,
+    ])));
+    setTargets(Object.fromEntries(SOCIAL_OPTIONS.map(option => {
+      const saved = savedChannels[option.id] || {};
+      return [option.id, {
+        query: typeof saved.query === 'string' ? saved.query : '',
+        videoIds: Array.isArray(saved.videoIds) ? saved.videoIds.join(', ') : '',
+        subreddits: Array.isArray(saved.subreddits) ? saved.subreddits.join(', ') : '',
+      }];
+    })));
     setFieldErrors({});
     setRequestError(null);
     setSummaryError(null);
     searchedForRef.current = null;
+    originalEntityRef.current = initialWorkspace?.entity || null;
     pendingRef.current = null;
     requestIdRef.current += 1;
   }, [open]);
@@ -238,12 +262,13 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
       setRequestError(null);
       return undefined;
     }
+    if (initialWorkspace && term === originalEntityRef.current) return undefined;
     if (pendingRef.current === term) return undefined;
     setSelection(EMPTY_SELECTION);
     setResult(null);
     const timer = window.setTimeout(() => { runDiscover(term); }, 550);
     return () => window.clearTimeout(timer);
-  }, [open, entity, runDiscover]);
+  }, [open, entity, runDiscover, initialWorkspace]);
 
   function selectCandidate(store, candidate) {
     setSelection(current => ({ ...current, [store]: candidate }));
@@ -259,7 +284,8 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     const target = entity.trim();
     if (name.length < 2) errors.label = 'The analysis name needs at least two characters.';
     else if (name.length > 60) errors.label = 'The analysis name takes at most 60 characters.';
-    else if (existingLabels.some(existing => existing.toLocaleLowerCase('id-ID') === name.toLocaleLowerCase('id-ID'))) {
+    else if (existingLabels.some(existing => existing !== initialWorkspace?.label
+      && existing.toLocaleLowerCase('id-ID') === name.toLocaleLowerCase('id-ID'))) {
       errors.label = 'This name is already in use.';
     }
     if (target.length < 2) errors.entity = 'The entity name needs at least two characters.';
@@ -268,6 +294,24 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     const socialOn = SOCIAL_OPTIONS.some(option => channels[option.id]);
     if (!hasStore && !socialOn) setSummaryError('Select at least one store identity or enable one social/news channel.');
     else setSummaryError(null);
+    for (const option of SOCIAL_OPTIONS) {
+      const target = targets[option.id] || {};
+      if (String(target.query || '').trim().length > 120) {
+        errors[`${option.id}Query`] = 'Search phrases take at most 120 characters.';
+      }
+      if (option.id === 'youtube') {
+        const ids = String(target.videoIds || '').split(/[,\n]+/).map(value => value.trim()).filter(Boolean);
+        if (ids.length > 25 || ids.some(id => !/^[\w-]{11}$/.test(id))) {
+          errors.youtubeVideoIds = 'YouTube video IDs must be 11 characters, with at most 25 IDs.';
+        }
+      }
+      if (option.id === 'reddit') {
+        const names = String(target.subreddits || '').split(/[,\n]+/).map(value => value.trim().replace(/^r\//, '')).filter(Boolean);
+        if (names.length > 12 || names.some(name => !/^[A-Za-z0-9][\w]{1,20}$/.test(name))) {
+          errors.redditSubreddits = 'Use subreddit names without r/; at most 12 are allowed.';
+        }
+      }
+    }
     setFieldErrors(errors);
     if (Object.keys(errors).length || (!hasStore && !socialOn)) return;
 
@@ -288,8 +332,13 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     const nextChannels = Object.fromEntries(SOCIAL_OPTIONS.map(option => [option.id, {
       enabled: channels[option.id] === true,
       handle: '',
-      videoIds: [],
-      subreddits: [],
+      query: String(targets[option.id]?.query || '').trim(),
+      videoIds: option.id === 'youtube'
+        ? String(targets.youtube.videoIds || '').split(/[,\n]+/).map(value => value.trim()).filter(Boolean)
+        : [],
+      subreddits: option.id === 'reddit'
+        ? String(targets.reddit.subreddits || '').split(/[,\n]+/).map(value => value.trim().replace(/^r\//, '')).filter(Boolean)
+        : [],
     }]));
     onSave({ label: name, entity: target, stores, channels: nextChannels });
   }
@@ -303,10 +352,14 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
     <DialogShell open={open} onClose={onClose} labelledBy="workspace-dialog-title" describedBy="workspace-dialog-desc" className="sm:max-w-[860px]" dismissible={!busy}>
       <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-800 px-4 py-3">
         <div className="min-w-0">
-          <p className="label-sm">{t('New analysis')}</p>
-          <h2 id="workspace-dialog-title" className="mt-1 text-[17px] font-extrabold tracking-tight text-slate-100">{t('Two fields, the rest is automatic')}</h2>
+          <p className="label-sm">{initialWorkspace ? t('Edit analysis') : t('New analysis')}</p>
+          <h2 id="workspace-dialog-title" className="mt-1 text-[17px] font-extrabold tracking-tight text-slate-100">
+            {initialWorkspace ? t('Adjust search scope and sources') : t('Two fields, the rest is automatic')}
+          </h2>
           <p id="workspace-dialog-desc" className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            {t('Candidates are searched automatically on Google Play and the App Store. You pick the identity that is right.')}
+            {initialWorkspace
+              ? t('Changes are saved to this workspace and trigger a fresh pull. Connector access and source limits still apply.')
+              : t('Candidates are searched automatically on Google Play and the App Store. You pick the identity that is right.')}
           </p>
         </div>
       </header>
@@ -411,7 +464,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
         <div className="card p-3">
           <div className="flex items-baseline justify-between gap-2">
             <h3 className="label">{t('Social & web channels')}</h3>
-            <p className="text-[10px] text-slate-400">{t('credentials are installed only in the server environment, never on this page')}</p>
+            <p className="text-[10px] text-slate-400">{t('API keys are managed once in Config and apply to all analyses. This list is not full platform coverage.')}</p>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={t('Non-store channels included in the pull')}>
             {SOCIAL_OPTIONS.map(option => {
@@ -431,8 +484,64 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
               );
             })}
           </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {SOCIAL_OPTIONS.filter(option => channels[option.id] && option.id !== 'news').map(option => (
+              <div key={option.id} className="rounded border border-slate-800/70 bg-slate-950/30 p-2">
+                <label className="block text-[10px] font-semibold text-slate-300">
+                  {option.id === 'instagram' ? t('Instagram hashtag or search term')
+                    : option.id === 'youtube' ? t('YouTube search phrase')
+                      : option.id === 'reddit' ? t('Reddit search phrase')
+                        : `${t(option.label)} ${t('search phrase')}`}
+                  <input
+                    type="text"
+                    maxLength={120}
+                    value={targets[option.id]?.query || ''}
+                    onChange={event => setTargets(current => ({
+                      ...current,
+                      [option.id]: { ...current[option.id], query: event.target.value },
+                    }))}
+                    placeholder={`${t('Default')}: ${entity.trim() || t('entity name')}`}
+                    className="field field-sm mt-1"
+                  />
+                </label>
+                {option.id === 'youtube' && (
+                  <label className="mt-2 block text-[10px] font-semibold text-slate-300">
+                    {t('Specific video IDs (optional)')}
+                    <textarea
+                      rows={2}
+                      value={targets.youtube.videoIds}
+                      onChange={event => setTargets(current => ({
+                        ...current,
+                        youtube: { ...current.youtube, videoIds: event.target.value },
+                      }))}
+                      placeholder={t('Comma-separated, 11 characters each')}
+                      className="field field-sm mt-1 resize-y"
+                    />
+                    {fieldErrors.youtubeVideoIds && <span className="mt-1 block text-neg" role="alert">{t(fieldErrors.youtubeVideoIds)}</span>}
+                  </label>
+                )}
+                {option.id === 'reddit' && (
+                  <label className="mt-2 block text-[10px] font-semibold text-slate-300">
+                    {t('Subreddits (optional)')}
+                    <textarea
+                      rows={2}
+                      value={targets.reddit.subreddits}
+                      onChange={event => setTargets(current => ({
+                        ...current,
+                        reddit: { ...current.reddit, subreddits: event.target.value },
+                      }))}
+                      placeholder={t('Comma-separated, without r/')}
+                      className="field field-sm mt-1 resize-y"
+                    />
+                    {fieldErrors.redditSubreddits && <span className="mt-1 block text-neg" role="alert">{t(fieldErrors.redditSubreddits)}</span>}
+                  </label>
+                )}
+                {fieldErrors[`${option.id}Query`] && <p className="mt-1 text-[10px] text-neg" role="alert">{t(fieldErrors[`${option.id}Query`])}</p>}
+              </div>
+            ))}
+          </div>
           <p className="mt-2 text-[10px] leading-snug text-slate-400">
-            {t('A channel without credentials is still pulled and reported as Needs credentials, never as zero reviews.')}
+            {t('Each connector returns only the posts/comments its search and access limits allow. Missing credentials or partial reads are reported as status, never as proof of zero conversation.')}
           </p>
         </div>
       </div>
@@ -448,7 +557,7 @@ export function WorkspaceDialog({ open, onClose, existingLabels, onSave }) {
             className="btn btn-primary"
             title={selectedCount || socialCount ? t('Save this workspace, then pull its data') : t('Pick one store candidate or enable one social channel')}
           >
-            {t('Save & pull data')}
+            {initialWorkspace ? t('Save settings & refresh') : t('Save & pull data')}
           </button>
         </div>
       </footer>

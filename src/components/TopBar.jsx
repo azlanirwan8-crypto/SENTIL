@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { LogoMark } from './Brand.jsx';
 import { Progress } from './Progress.jsx';
-import { IconChevronDown, IconCollapse, IconExpand, IconMoon, IconPlus, IconRefresh, IconSun, IconTrash } from './icons.jsx';
+import { IconChevronDown, IconCollapse, IconExpand, IconLayers, IconMoon, IconPlus, IconRefresh, IconSun, IconTrash } from './icons.jsx';
 import { formatNumber } from '../lib/format.js';
 import { setLanguage, t, useLanguage } from '../lib/i18n.js';
 import { toggleTheme, useTheme } from '../lib/theme.js';
@@ -82,7 +82,7 @@ function useFullscreen() {
   return [supported, active, toggle];
 }
 
-export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncProgress = null, onSwitch, onAdd, onRefresh, onDelete }) {
+export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncProgress = null, onSwitch, onAdd, onEdit, onRefresh, onDelete }) {
   const language = useLanguage();
   const theme = useTheme();
   const [canFullscreen, fullscreen, requestFullscreen] = useFullscreen();
@@ -179,6 +179,10 @@ export function TopBar({ workspaces, activeId, activeWorkspace, syncing, syncPro
           <button type="button" onClick={onAdd} disabled={syncing} className="btn btn-primary" title={t('Add a new analysis')}>
             <IconPlus size={14} />
             <span className="hidden sm:inline">{t('Add analysis')}</span>
+          </button>
+          <button type="button" onClick={onEdit} disabled={!hasWorkspace || syncing} className="btn btn-secondary" title={t('Edit analysis settings and search scope')}>
+            <IconLayers size={14} />
+            <span className="hidden lg:inline">{t('Edit analysis')}</span>
           </button>
           <button
             type="button"

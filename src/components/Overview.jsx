@@ -7,18 +7,35 @@ import { ChannelStrip } from './ChannelStrip.jsx';
 import { FilterSelect } from './FilterSelect.jsx';
 import { PainLabels } from './PainLabels.jsx';
 import { Signals } from './Signals.jsx';
+import { Notice } from './Notices.jsx';
 import { DailyTrend } from './charts/DailyTrend.jsx';
 import { ChannelDonut } from './charts/ChannelDonut.jsx';
 import { TopicMap } from './charts/TopicMap.jsx';
 import { PlatformBars } from './charts/PlatformBars.jsx';
 
-function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, matched, total, onReset }) {
-  if (!options.platforms.length && !options.topics.length) return null;
+function FilterBar({
+  options,
+  platform,
+  topic,
+  startDate,
+  endDate,
+  onPlatform,
+  onTopic,
+  onStartDate,
+  onEndDate,
+  filtered,
+  matched,
+  total,
+  undatedExcluded,
+  invalidRange,
+  onReset,
+}) {
   const topicTitle = entry => (Number.isInteger(entry.topic?.low)
     ? `${formatNumber(entry.topic.low)} 1–2★ ${t('and')} ${formatNumber(entry.topic.high ?? 0)} 4–5★ ${t('reviews mention this topic')}`
     : undefined);
   return (
-    <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" aria-label={t('Dashboard filters')}>
+    <section className="card px-4 py-3" aria-label={t('Dashboard filters')}>
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
       {options.platforms.length > 1 && (
         <FilterSelect
           label={t('Channel')}
@@ -50,23 +67,84 @@ function FilterBar({ options, platform, topic, onPlatform, onTopic, filtered, ma
         />
       )}
 
-      {filtered && (
-        <div className="ml-auto flex items-center gap-2">
-          <span className="num text-[10px] text-slate-400">{formatNumber(matched)} {t('of')} {formatNumber(total)} {t('reviews')}</span>
-          <button type="button" onClick={onReset} className="btn btn-ghost btn-xs">{t('Clear filter')}</button>
-        </div>
-      )}
+      <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-400">
+        <span>{t('From date')}</span>
+        <input
+          type="date"
+          value={startDate}
+          max={endDate || undefined}
+          onChange={event => onStartDate(event.target.value)}
+          className="field field-sm h-8"
+          aria-label={t('From date')}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-400">
+        <span>{t('To date')}</span>
+        <input
+          type="date"
+          value={endDate}
+          min={startDate || undefined}
+          onChange={event => onEndDate(event.target.value)}
+          className="field field-sm h-8"
+          aria-label={t('To date')}
+        />
+      </label>
+
+      <div className="ml-auto flex items-center gap-2">
+        {filtered && <span className="num text-[10px] text-slate-400">{formatNumber(matched)} {t('of')} {formatNumber(total)} {t('reviews')}</span>}
+        {filtered && <button type="button" onClick={onReset} className="btn btn-ghost btn-xs">{t('Clear filters')}</button>}
+      </div>
+      </div>
+      {invalidRange ? (
+        <p className="mt-2 text-[10px] font-semibold text-neg" role="alert">{t('The start date must be on or before the end date.')}</p>
+      ) : null}
+      {filtered && undatedExcluded > 0 ? (
+        <p className="mt-2 text-[10px] text-neu">
+          {formatNumber(undatedExcluded)} {t('undated rows are excluded from this date range.')}
+        </p>
+      ) : null}
+      {filtered ? (
+        <p className="mt-2 text-[10px] text-slate-400">
+          {t('KPIs and charts use these filters. Analyst signals and complaint clusters still describe all rows.')}
+        </p>
+      ) : null}
     </section>
   );
+}
+
+function negativeShare(summary) {
+  const analyzed = Number(summary?.analyzed) || 0;
+  return analyzed ? (Number(summary.negative || 0) / analyzed) * 100 : null;
+}
+
+function priorPeriod(startDate, endDate) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const length = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / dayMs + 1;
+  const previousEnd = new Date(Date.parse(`${startDate}T00:00:00Z`) - dayMs).toISOString().slice(0, 10);
+  const previousStart = new Date(Date.parse(`${previousEnd}T00:00:00Z`) - (length - 1) * dayMs).toISOString().slice(0, 10);
+  return { startDate: previousStart, endDate: previousEnd };
 }
 
 export function Overview({ dataset, workspace }) {
   const [platform, setPlatform] = useState('all');
   const [topic, setTopic] = useState('all');
-  const scoped = useMemo(() => scopeDataset(dataset, { platform, topic }), [dataset, platform, topic]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const scoped = useMemo(
+    () => scopeDataset(dataset, { platform, topic, startDate, endDate }),
+    [dataset, platform, topic, startDate, endDate],
+  );
+  const previousRange = useMemo(() => {
+    if (!startDate || !endDate || scoped.invalidRange) return null;
+    return priorPeriod(startDate, endDate);
+  }, [startDate, endDate, scoped.invalidRange]);
+  const previous = useMemo(() => (
+    previousRange ? scopeDataset(dataset, { platform, topic, ...previousRange }) : null
+  ), [dataset, platform, topic, previousRange]);
   const view = { ...dataset, reviews: scoped.rows, summary: scoped.summary, model: scoped.model };
   const total = scoped.totalRows;
-  const reset = () => { setPlatform('all'); setTopic('all'); };
+  const socialRows = scoped.rows.filter(review => !['play', 'appstore'].includes(review.platform)).length;
+  const reset = () => { setPlatform('all'); setTopic('all'); setStartDate(''); setEndDate(''); };
 
   return (
     <div className="space-y-3">
@@ -74,15 +152,59 @@ export function Overview({ dataset, workspace }) {
         options={scoped.options}
         platform={platform}
         topic={topic}
+        startDate={startDate}
+        endDate={endDate}
         onPlatform={setPlatform}
         onTopic={setTopic}
+        onStartDate={setStartDate}
+        onEndDate={setEndDate}
         filtered={scoped.filtered}
         matched={scoped.matched}
         total={total}
+        undatedExcluded={scoped.undatedExcluded}
+        invalidRange={scoped.invalidRange}
         onReset={reset}
       />
 
-      {scoped.filtered && scoped.matched === 0 ? (
+      {previous && (
+        <section className="card px-4 py-3" aria-label={t('Period comparison')}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="label">{t('Period comparison')}</h2>
+            <p className="num text-[10px] text-slate-400">{startDate} – {endDate} · {t('versus')} {previousRange.startDate} – {previousRange.endDate}</p>
+          </div>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            <div className="rounded border border-slate-800/70 bg-slate-950/30 p-2">
+              <p className="label-sm">{t('Current period volume')}</p>
+              <p className="num mt-1 text-[14px] font-bold text-slate-100">{formatNumber(scoped.summary.reviews)}</p>
+            </div>
+            <div className="rounded border border-slate-800/70 bg-slate-950/30 p-2">
+              <p className="label-sm">{t('Previous period volume')}</p>
+              <p className="num mt-1 text-[14px] font-bold text-slate-100">{formatNumber(previous.summary.reviews)}</p>
+            </div>
+            {(() => {
+              const currentNegative = negativeShare(scoped.summary);
+              const previousNegative = negativeShare(previous.summary);
+              const delta = currentNegative == null || previousNegative == null ? null : currentNegative - previousNegative;
+              return (
+                <div className="rounded border border-slate-800/70 bg-slate-950/30 p-2">
+                  <p className="label-sm">{t('Negative share change')}</p>
+                  <p className={`num mt-1 text-[14px] font-bold ${delta == null ? 'text-slate-400' : delta > 0 ? 'text-neg' : 'text-pos'}`}>
+                    {delta == null ? 'N/A' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)} pp`}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-slate-400">
+                    {currentNegative == null || previousNegative == null
+                      ? t('Not enough classified rows in both periods.')
+                      : `${currentNegative.toFixed(1)}% ${t('current')} · ${previousNegative.toFixed(1)}% ${t('previous')}`}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+          <p className="mt-2 text-[10px] text-slate-400">{t('Comparison uses only rows in this stored snapshot and the same channel/topic filters.')}</p>
+        </section>
+      )}
+
+      {scoped.invalidRange ? null : scoped.filtered && scoped.matched === 0 ? (
         <section className="card p-4" aria-label={t('No review matches this filter')}>
           <p className="label">{t('No review matches this filter')}</p>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
@@ -92,6 +214,12 @@ export function Overview({ dataset, workspace }) {
         </section>
       ) : (
         <>
+          {socialRows > 0 && (
+            <Notice tone="amber" title={t('Social sentiment is provisional')}>
+              {t('Sentiment terms are learned from app-store star ratings and applied to social text. They are weak labels, not probabilities, and have not been independently validated for social platforms.')}
+              {' '}{t('For a separate Gemini label, open Reviews and send a filtered sample explicitly. Gemini confidence is not calibrated.')}
+            </Notice>
+          )}
           <KpiRow dataset={view} />
 
           <div className="reveal-group grid gap-3 xl:grid-cols-12">

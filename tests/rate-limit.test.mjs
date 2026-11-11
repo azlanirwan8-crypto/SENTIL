@@ -55,6 +55,15 @@ describe('konfigurasi kuota', () => {
     assert.equal(quotaConfiguration({ QUOTA_SYNC_DAY: 'banyak' }).rules.sync[1].limit, 40);
   });
 
+  test('social Gemini calls have a separate, bounded quota', async () => {
+    const config = quotaConfiguration({ QUOTA_SOCIAL_CLASSIFY_BURST: '1', QUOTA_SOCIAL_CLASSIFY_DAY: '2' });
+    assert.deepEqual(config.rules['social-classify'].map(rule => rule.limit), [1, 2]);
+    const quota = createQuota({ env: { QUOTA_SOCIAL_CLASSIFY_BURST: '1' }, now: clock().now });
+    assert.equal((await quota.take('social-classify', 'visitor')).allowed, true);
+    assert.equal((await quota.take('social-classify', 'visitor')).allowed, false);
+    assert.equal((await quota.take('sync', 'visitor')).allowed, true, 'classification quota does not spend sync budget');
+  });
+
   test('gerbang bisa dimatikan dari environment', () => {
     assert.equal(quotaConfiguration({ QUOTA_ENABLED: 'false' }).enabled, false);
     assert.equal(quotaConfiguration({ QUOTA_ENABLED: 'off' }).enabled, false);

@@ -34,8 +34,8 @@ describe('normalisasi target kanal sosial', () => {
   test('hanya bentuk yang sah yang lolos dan kredensial tidak bisa diselipkan', () => {
     const targets = normalizeSocialTargets({
       news: { enabled: true, token: 'curian' },
-      youtube: { enabled: 'ya', videoIds: ['ABCDEFGHIJK', 'p<'] },
-      reddit: { enabled: true, subreddits: ['r/finansiastack', '!!', 'x'] },
+      youtube: { enabled: 'ya', videoIds: ['ABCDEFGHIJK', 'p<'], query: '  transaksi error  ' },
+      reddit: { enabled: true, subreddits: ['r/finansiastack', '!!', 'x'], query: ' saldo hilang ' },
       play: { enabled: true },
       tiktok: 'bukan objek',
     });
@@ -43,7 +43,9 @@ describe('normalisasi target kanal sosial', () => {
     assert.equal('token' in targets.news, false, 'bidang asing tidak boleh ikut tersimpan');
     assert.equal(targets.youtube.enabled, false, 'flag harus boolean sejati');
     assert.deepEqual(targets.youtube.videoIds, ['ABCDEFGHIJK']);
+    assert.equal(targets.youtube.query, 'transaksi error');
     assert.deepEqual(targets.reddit.subreddits, ['finansiastack']);
+    assert.equal(targets.reddit.query, 'saldo hilang');
     assert.equal('play' in targets, false, 'kanal toko tidak lewat jalur sosial');
     assert.equal(targets.tiktok.enabled, false);
   });
@@ -189,6 +191,55 @@ describe('konektor yang menunggu kredensial', () => {
       assert.equal(channel.status, 'needs_setup');
       assert.match(channel.message, /APIFY_API_TOKEN/);
     }
+  });
+
+  test('target video YouTube per workspace benar-benar dipakai', async () => {
+    const requests = [];
+    const youtube = await fetchYouTubeReviews('Nama Entitas', {
+      env: { YOUTUBE_API_KEY: 'test-key' },
+      target: { videoIds: ['abcdefghijk'] },
+      budgetMs: 4000,
+      fetchImpl: async url => {
+        requests.push(new URL(url));
+        if (url.includes('/videos?')) {
+          return ok(JSON.stringify({ items: [{ id: 'abcdefghijk', snippet: { title: 'Update', channelTitle: 'Channel' } }] }));
+        }
+        return ok(JSON.stringify({
+          items: [{
+            id: 'thread-1',
+            snippet: {
+              topLevelComment: {
+                id: 'comment-1',
+                snippet: { textDisplay: 'Aplikasi ini bermasalah', publishedAt: '2026-10-01T00:00:00Z' },
+              },
+              totalReplyCount: 0,
+            },
+          }],
+        }));
+      },
+    });
+    assert.equal(youtube.fetched, 1);
+    assert.equal(requests.some(url => url.searchParams.get('id') === 'abcdefghijk'), true);
+    assert.equal(youtube.reviews[0].meta.videoId, 'abcdefghijk');
+  });
+
+  test('target query dan subreddit Reddit per workspace benar-benar dipakai', async () => {
+    let searchUrl = null;
+    const reddit = await fetchRedditReviews('Nama Entitas', {
+      env: { REDDIT_CLIENT_ID: 'client', REDDIT_CLIENT_SECRET: 'secret' },
+      target: { query: 'saldo tertahan', subreddits: ['finansial'] },
+      budgetMs: 4000,
+      fetchImpl: async (url, options = {}) => {
+        if (String(url).includes('/api/v1/access_token')) {
+          return ok(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }));
+        }
+        searchUrl = new URL(url, 'https://oauth.reddit.com');
+        return ok(JSON.stringify({ data: { children: [], after: null } }));
+      },
+    });
+    assert.equal(reddit.status, 'empty');
+    assert.equal(searchUrl.pathname, '/r/finansial/search');
+    assert.equal(searchUrl.searchParams.get('q'), '"saldo tertahan"');
   });
 
   test('penolakan kredensial dipetakan ke sinyal yang dikenali monitor', async () => {

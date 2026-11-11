@@ -129,6 +129,19 @@ describe('scope dashboard: hitung ulang agregat dari baris yang tersaring', () =
     assert.equal(scoped.model.daily.reduce((sum, day) => sum + day.total, 0), scoped.matched - undated);
   });
 
+  test('rentang tanggal inklusif, tanggal kosong dilaporkan, dan rentang terbalik ditolak', () => {
+    const dataset = buildDataset();
+    const scoped = scopeDataset(dataset, { startDate: '2026-08-03', endDate: '2026-08-04' });
+    assert.ok(scoped.rows.length > 0);
+    assert.ok(scoped.rows.every(row => row.date >= '2026-08-03' && row.date <= '2026-08-04'));
+    assert.equal(scoped.undatedExcluded, dataset.reviews.filter(row => !row.date).length);
+    assert.equal(scoped.filtered, true);
+
+    const invalid = scopeDataset(dataset, { startDate: '2026-08-05', endDate: '2026-08-01' });
+    assert.equal(invalid.invalidRange, true);
+    assert.equal(invalid.matched, 0);
+  });
+
   test('pilihan filter dihitung atas seluruh baris supaya kontrol tidak berpindah-pindah', () => {
     const dataset = buildDataset();
     const plain = scopeDataset(dataset, {});

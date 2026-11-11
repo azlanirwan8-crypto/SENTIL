@@ -34,7 +34,10 @@ export function KpiRow({ dataset }) {
     .map(channel => ({ id: channel.id, count: toNumber(channel.fetched) }));
   const channelSum = channelTotals.reduce((sum, channel) => sum + channel.count, 0) || 1;
 
-  const ratingCounts = [1, 2, 3, 4, 5].map(stars => ({ stars, count: reviews.filter(review => review.rating === stars).length }));
+  const ratingCounts = [1, 2, 3, 4, 5].map(stars => ({
+    stars,
+    count: reviews.filter(review => ['play', 'appstore'].includes(String(review.platform || '')) && review.rating === stars).length,
+  }));
   const rated = ratingCounts.reduce((sum, entry) => sum + entry.count, 0);
   const maxRatingCount = Math.max(1, ...ratingCounts.map(entry => entry.count));
 

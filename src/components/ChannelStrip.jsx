@@ -1,4 +1,4 @@
-import { channelStatusLabel, formatDateTime, formatDecimal, formatNumber, isNumber } from '../lib/format.js';
+import { channelStatusLabel, formatDateTime, formatDecimal, formatNumber, isNumber, platformLabel } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
 import { StoreMark } from './Brand.jsx';
 import { IconAlert, IconExternal, IconInfo } from './icons.jsx';
@@ -6,6 +6,8 @@ import { IconAlert, IconExternal, IconInfo } from './icons.jsx';
 const STATUS_STYLES = {
   success: 'border-pos/25 bg-pos/10 text-pos',
   partial: 'border-neu/25 bg-neu/10 text-neu',
+  needs_setup: 'border-neu/25 bg-neu/10 text-neu',
+  consent_required: 'border-neu/25 bg-neu/10 text-neu',
   empty: 'border-slate-700 bg-slate-800/70 text-slate-400',
   error: 'border-neg/30 bg-neg/10 text-neg',
 };
@@ -91,11 +93,12 @@ function ChannelRow({ channel, store, workspaceStore, fetchedAt }) {
 export function ChannelStrip({ dataset, workspace }) {
   const channels = Array.isArray(dataset.channels) ? dataset.channels : [];
   const byId = new Map(channels.map(channel => [channel.id, channel]));
+  const social = channels.filter(channel => channel.id !== 'play' && channel.id !== 'appstore');
   return (
     <section aria-labelledby="sumber-title" className="card overflow-hidden">
       <header className="flex items-center justify-between gap-3 border-b border-slate-800/70 px-4 py-2">
-        <h2 id="sumber-title" className="label">{t('Sources')}</h2>
-        <p className="text-[10px] text-slate-400">{t('Store figures shown as published, never forced to match what was read')}</p>
+        <h2 id="sumber-title" className="label">{t('Source coverage')}</h2>
+        <p className="text-[10px] text-slate-400">{t('Counts are limited to the configured search, provider access, and source caps.')}</p>
       </header>
       <div className="grid gap-0 md:grid-cols-2 md:divide-x divide-slate-800/70">
         {['play', 'appstore'].map(store => (
@@ -108,6 +111,48 @@ export function ChannelStrip({ dataset, workspace }) {
           />
         ))}
       </div>
+      {social.length > 0 && (
+        <div className="border-t border-slate-800/70">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2">
+            <h3 className="label">{t('Social and web sources')}</h3>
+            <p className="text-[10px] text-slate-400">{t('This is a bounded sample, not the full conversation on a platform.')}</p>
+          </div>
+          <ul className="grid gap-2 px-4 pb-3 sm:grid-cols-2 xl:grid-cols-3">
+            {social.map(channel => {
+              const status = channel.status || 'empty';
+              const style = STATUS_STYLES[status] || STATUS_STYLES.empty;
+              const coverage = channel.coverage || {};
+              return (
+                <li key={channel.id} className="min-w-0 rounded border border-slate-800/70 bg-slate-950/30 p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-[11px] font-bold text-slate-200">{platformLabel(channel.id)}</p>
+                    <span className={`pill ${style}`}>{channelStatusLabel(status)}</span>
+                  </div>
+                  <p className="num mt-1 text-[10px] text-slate-400">
+                    {formatNumber(channel.fetched || 0)} {t('posts/comments read')}
+                    {channel.truncated ? ` · ${t('partial coverage')}` : ''}
+                  </p>
+                  {coverage.videosFound != null && (
+                    <p className="num mt-1 text-[10px] text-slate-400">
+                      {formatNumber(coverage.videosFound)} {t('videos found')} · {formatNumber(coverage.videosRead)} {t('comment threads read')}
+                    </p>
+                  )}
+                  {coverage.postsRead != null && (
+                    <p className="num mt-1 text-[10px] text-slate-400">
+                      {formatNumber(coverage.postsRead)} {t('posts scanned')}
+                    </p>
+                  )}
+                  {channel.message ? (
+                    <p className={`mt-1.5 line-clamp-3 text-[10px] leading-relaxed ${status === 'error' ? 'text-neg' : status === 'partial' ? 'text-neu' : 'text-slate-400'}`}>
+                      {channel.message}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

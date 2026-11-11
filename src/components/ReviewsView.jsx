@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   formatDate,
   formatDecimal,
@@ -9,14 +9,20 @@ import {
   sentimentLabel,
 } from '../lib/format.js';
 import { t, topicLabel } from '../lib/i18n.js';
+import { loadSentimentAnnotations, saveSentimentAnnotations } from '../lib/annotations.js';
+import { classifySocialSample } from '../lib/api.js';
+import { loadSocialClassifications, saveSocialClassifications } from '../lib/social-classifications.js';
 import { AnalystLine, aiText } from './Analyst.jsx';
 import { EmptyState } from './EmptyState.jsx';
 import { FilterSelect } from './FilterSelect.jsx';
 import { StoreMark } from './Brand.jsx';
-import { IconExternal, IconQuote, IconSearch, IconStar, IconX } from './icons.jsx';
+import { IconDownload, IconExternal, IconQuote, IconSearch, IconStar, IconX } from './icons.jsx';
 import { SERIES_COLORS } from './charts/palette.js';
 
 const PAGE = 25;
+const SOCIAL_CLASSIFY_BATCH_SIZE = 25;
+const SOCIAL_PLATFORMS = new Set(['youtube', 'reddit', 'facebook', 'instagram', 'tiktok', 'x']);
+const reviewKey = review => `${review.platform}:${review.id}`;
 const SENTIMENTS = [
   { id: 'all', label: 'All' },
   { id: 'positive', label: 'Positive' },
@@ -53,7 +59,7 @@ function Stars({ rating }) {
   );
 }
 
-function ReviewRow({ review, topicLabels, sourceUrls }) {
+function ReviewRow({ review, topicLabels, sourceUrls, humanLabel, onHumanLabel, socialClassification }) {
   const [expanded, setExpanded] = useState(false);
   const sentiment = review.analysis?.sentiment || 'unclassified';
   const text = typeof review.text === 'string' ? review.text : '';
@@ -106,6 +112,28 @@ function ReviewRow({ review, topicLabels, sourceUrls }) {
       )}
 
       <div className="mt-2.5 space-y-1.5 border-t border-slate-800/70 pt-2.5">
+        {socialClassification ? (
+          <p className="text-[10px] text-slate-400">
+            <span className="font-semibold text-slate-300">{t('Gemini')}</span>
+            {' · '}{t(socialClassification.label)}
+            {' · '}{t('Model-reported confidence')}: {t(socialClassification.confidence)}
+            {' · '}{t(socialClassification.reason)}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterSelect
+            label={t('Human audit')}
+            value={humanLabel || ''}
+            onChange={onHumanLabel}
+            options={[
+              { value: '', label: t('Not audited') },
+              { value: 'positive', label: t('Positive') },
+              { value: 'neutral', label: t('Neutral') },
+              { value: 'negative', label: t('Negative') },
+            ]}
+          />
+          {humanLabel ? <span className="tag-quiet">{t('Human label saved in this browser')}</span> : null}
+        </div>
         {topicLabels.length > 1 && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t('also')}</span>
@@ -151,7 +179,7 @@ function ReviewRow({ review, topicLabels, sourceUrls }) {
   );
 }
 
-export function ReviewsView({ dataset }) {
+export function ReviewsView({ dataset, workspace, onExportCsv }) {
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [platform, setPlatform] = useState('all');
@@ -160,7 +188,25 @@ export function ReviewsView({ dataset }) {
   const [rating, setRating] = useState('all');
   const [sort, setSort] = useState('newest');
   const [visible, setVisible] = useState(PAGE);
+  const [annotations, setAnnotations] = useState({});
+  const [socialClassifications, setSocialClassifications] = useState({});
+  const [auditError, setAuditError] = useState(null);
+  const [classifyError, setClassifyError] = useState(null);
+  const [classifyNotice, setClassifyNotice] = useState(null);
+  const [classifying, setClassifying] = useState(false);
   const reviews = Array.isArray(dataset.reviews) ? dataset.reviews : [];
+  const activeWorkspaceIdRef = useRef(workspace?.id || null);
+  activeWorkspaceIdRef.current = workspace?.id || null;
+  useEffect(() => {
+    const loaded = loadSentimentAnnotations(workspace?.id);
+    const loadedClassifications = loadSocialClassifications(workspace?.id);
+    setAnnotations(loaded.annotations);
+    setAuditError(loaded.error);
+    setSocialClassifications(loadedClassifications.classifications);
+    setClassifyError(loadedClassifications.error);
+    setClassifyNotice(null);
+    setClassifying(false);
+  }, [workspace?.id]);
   const topics = Array.isArray(dataset.model?.topics) ? dataset.model.topics : [];
   const ai = dataset.model?.ai?.status === 'answered' ? dataset.model.ai : null;
   const topicsById = useMemo(() => new Map(topics.map(topic => [topic.id, topic])), [topics]);
@@ -241,6 +287,90 @@ export function ReviewsView({ dataset }) {
     })),
   ];
   const activeFilters = platform !== 'all' || sentiment !== 'all' || topic !== 'all' || rating !== 'all' || Boolean(query.trim());
+  const auditedRows = reviews
+    .map(review => ({ review, label: annotations[`${review.platform}:${review.id}`] }))
+    .filter(entry => entry.label);
+  const agreement = auditedRows.length
+    ? auditedRows.filter(({ review, label }) => (review.analysis?.sentiment || 'unclassified') === label).length / auditedRows.length
+    : null;
+  const geminiAuditedRows = auditedRows
+    .map(({ review, label }) => ({ label, classification: socialClassifications[reviewKey(review)] }))
+    .filter(entry => entry.classification);
+  const geminiAgreement = geminiAuditedRows.length
+    ? geminiAuditedRows.filter(({ label, classification }) => classification.label === label).length / geminiAuditedRows.length
+    : null;
+  const socialClassificationCount = reviews
+    .filter(review => SOCIAL_PLATFORMS.has(review.platform) && socialClassifications[reviewKey(review)])
+    .length;
+  const socialReviewCount = reviews.filter(review => SOCIAL_PLATFORMS.has(review.platform)).length;
+  const socialCandidates = filtered
+    .filter(review => SOCIAL_PLATFORMS.has(review.platform)
+      && typeof review.id === 'string'
+      && typeof review.text === 'string'
+      && review.text.trim()
+      && !socialClassifications[reviewKey(review)])
+    .slice(0, SOCIAL_CLASSIFY_BATCH_SIZE);
+
+  function setHumanLabel(review, label) {
+    const key = reviewKey(review);
+    const next = { ...annotations };
+    if (label) next[key] = label;
+    else delete next[key];
+    const saved = saveSentimentAnnotations(workspace?.id, next);
+    if (!saved.ok) {
+      setAuditError(saved.error);
+      return;
+    }
+    setAnnotations(next);
+    setAuditError(null);
+  }
+
+  async function classifyNextSocialSample() {
+    if (classifying || !workspace?.id || !socialCandidates.length) return;
+    const workspaceId = workspace.id;
+    const isActiveWorkspace = () => activeWorkspaceIdRef.current === workspaceId;
+    setClassifying(true);
+    setClassifyError(null);
+    setClassifyNotice(null);
+    const sample = socialCandidates.map((review, index) => ({
+      ref: `c${index + 1}`,
+      platform: review.platform,
+      text: review.text.trim().slice(0, 300),
+    }));
+    try {
+      const result = await classifySocialSample(sample);
+      if (result.status !== 'answered' || !Array.isArray(result.items) || !result.items.length) {
+        if (isActiveWorkspace()) setClassifyError(result.reason || 'Gemini returned no usable social labels.');
+        return;
+      }
+      const byRef = new Map(sample.map((entry, index) => [entry.ref, socialCandidates[index]]));
+      const next = { ...socialClassifications };
+      for (const item of result.items) {
+        const review = byRef.get(item.ref);
+        if (!review) continue;
+        next[reviewKey(review)] = {
+          label: item.label,
+          confidence: item.confidence,
+          reason: item.reason,
+          model: result.model || 'Gemini',
+          at: new Date().toISOString(),
+        };
+      }
+      const saved = saveSocialClassifications(workspaceId, next);
+      if (!saved.ok) {
+        if (isActiveWorkspace()) setClassifyError(saved.error);
+        return;
+      }
+      if (isActiveWorkspace()) {
+        setSocialClassifications(next);
+        setClassifyNotice(`${formatNumber(result.items.length)} ${t('social comments classified by Gemini')}${result.rejected ? ` · ${formatNumber(result.rejected)} ${t('results not accepted')}` : ''}`);
+      }
+    } catch (error) {
+      if (isActiveWorkspace()) setClassifyError(error?.message || 'Gemini social classification failed.');
+    } finally {
+      if (isActiveWorkspace()) setClassifying(false);
+    }
+  }
 
   function resetFilters() {
     setQuery('');
@@ -331,17 +461,73 @@ export function ReviewsView({ dataset }) {
         </div>
       </section>
 
+      <section className="card flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" aria-label={t('Human sentiment audit')}>
+        <div>
+          <p className="label">{t('Human-audited sample')}</p>
+          <p className="mt-1 text-[10px] text-slate-400">
+            {formatNumber(auditedRows.length)} {t('labels saved on this browser')}
+            {agreement == null ? '' : ` · ${t('agreement')} ${Math.round(agreement * 100)}%`}
+            {geminiAgreement == null ? '' : ` · ${t('Gemini agreement')} ${Math.round(geminiAgreement * 100)}% (${formatNumber(geminiAuditedRows.length)} ${t('human-audited social rows')})`}
+          </p>
+        </div>
+        <p className="max-w-2xl text-[10px] leading-relaxed text-slate-400">
+          {t('This is agreement on rows you chose to audit, not an unbiased accuracy estimate. Labels stay in this browser and are not sent to the server.')}
+        </p>
+        {auditError ? <p className="w-full text-[10px] text-neg" role="alert">{t(auditError)}</p> : null}
+      </section>
+
+      <section className="card space-y-2 px-4 py-3" aria-label={t('Gemini social classification')}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="label">{t('Gemini social classification')}</p>
+            <p className="mt-1 text-[10px] text-slate-400">
+              {formatNumber(socialClassificationCount)} / {formatNumber(socialReviewCount)} {t('social rows classified in this browser')}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-xs"
+            onClick={classifyNextSocialSample}
+            disabled={classifying || !workspace?.id || !socialCandidates.length}
+            aria-describedby="gemini-social-privacy"
+          >
+            {classifying
+              ? t('Classifying with Gemini…')
+              : `${t('Send next filtered sample to Gemini')} · ${formatNumber(socialCandidates.length)}`}
+          </button>
+        </div>
+        <p id="gemini-social-privacy" className="text-[10px] leading-relaxed text-slate-400">
+          {t('Clicking sends up to 25 comment texts and channel names to Google Gemini. Author, title, URL, and date are not sent. Google processing terms and any API charges apply. Confidence is model-reported, not calibrated; results stay in this browser and are not used to train Sentil’s model.')}
+        </p>
+        {classifyError ? <p className="text-[10px] text-neg" role="alert">{t(classifyError)}</p> : null}
+        {classifyNotice ? <p className="text-[10px] text-emerald-300" role="status">{classifyNotice}</p> : null}
+      </section>
+
       {ai && aiText(ai.reading.reviews) ? (
         <div className="rounded border border-slate-800/80 bg-slate-950/40 px-3 py-2">
           <AnalystLine field={ai.reading.reviews} model={ai.model} label={t('How reviewers write')} />
         </div>
       ) : null}
 
-      <div className="flex items-baseline justify-between px-0.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
         <p role="status" aria-live="polite" className="text-[11px] text-slate-400">
           <span className="num font-bold text-slate-200">{formatNumber(filtered.length)}</span> {t('reviews')}{activeFilters ? ` ${t('match the filters')}` : ''}
         </p>
-        <p className="num text-[10px] text-slate-400">{t('showing')} {formatNumber(shown.length)} · {t('every row is still counted in the statistics')}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="num text-[10px] text-slate-400">{t('showing')} {formatNumber(shown.length)} · {t('every row is still counted in the statistics')}</p>
+          <button
+            type="button"
+            onClick={() => onExportCsv?.(filtered.map(review => ({
+              ...review,
+              humanLabel: annotations[reviewKey(review)] || '',
+              socialClassification: socialClassifications[reviewKey(review)] || null,
+            })))}
+            disabled={!filtered.length}
+            className="btn btn-secondary btn-xs"
+          >
+            <IconDownload size={12} /> {t('Export filtered CSV')}
+          </button>
+        </div>
       </div>
 
       {shown.length ? (
@@ -352,6 +538,9 @@ export function ReviewsView({ dataset }) {
               review={review}
               sourceUrls={dataset.sourceUrls}
               topicLabels={topicBadges(review)}
+              humanLabel={annotations[reviewKey(review)] || ''}
+              socialClassification={socialClassifications[reviewKey(review)] || null}
+              onHumanLabel={label => setHumanLabel(review, label)}
             />
           ))}
         </ol>

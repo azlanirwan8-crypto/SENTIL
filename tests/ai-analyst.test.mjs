@@ -12,9 +12,14 @@ import {
   applyCompare,
   applyNames,
   applyReading,
+  classifySocialSample,
   compareFactSheet,
   compareRequest,
   factSheet,
+  SOCIAL_CLASSIFIER_BATCH_SIZE,
+  SOCIAL_CLASSIFIER_TEXT_LIMIT,
+  SOCIAL_CLASSIFIER_VERSION,
+  socialClassifierRequest,
 } from '../lib/ai-analyst.mjs';
 
 // Id gerombol ADALAH teks frasa, jadi fixture ini sengaja memuat id dengan digit: itulah kasus
@@ -126,6 +131,40 @@ test('tanpa kunci, lapisan di-skip dan tidak ada satu pun teks AI yang dibuat', 
   assert.match(result.reason, /GEMINI_API_KEY/);
   assert.deepEqual(result.names, {});
   assert.deepEqual(result.reading, { narrative: null, reviews: null, method: null, labels: {}, platforms: {} });
+});
+
+test('klasifikasi sosial Gemini memakai teks saja, menerima label terstruktur, dan membatasi batch', async () => {
+  const rows = [
+    { platform: 'x', text: 'Transfer saya gagal, dana belum masuk.', author: 'private author', url: 'https://example.test/review' },
+    { platform: 'reddit', text: 'Aplikasinya mudah dipakai.', title: 'Private title' },
+  ];
+  const request = socialClassifierRequest(rows);
+  const sent = request.contents[0].parts[0].text;
+  assert.match(sent, /Transfer saya gagal/);
+  assert.doesNotMatch(sent, /author|reviewer|url/i);
+  assert.match(request.systemInstruction.parts[0].text, /untrusted quoted data/);
+  assert.equal(SOCIAL_CLASSIFIER_BATCH_SIZE, 25);
+  assert.equal(SOCIAL_CLASSIFIER_TEXT_LIMIT, 300);
+  assert.equal(SOCIAL_CLASSIFIER_VERSION, 'social-gemini-v1');
+
+  const result = await classifySocialSample(rows, {
+    env: { GEMINI_API_KEY: 'test-key' },
+    fetchImpl: async url => {
+      if (isList(url)) return listRefused();
+      return reply({
+        items: [
+          { ref: 'c1', label: 'negative', confidence: 'high', reason: 'clear_opinion' },
+          { ref: 'c2', label: 'positive', confidence: 'medium', reason: 'clear_opinion' },
+          { ref: 'c99', label: 'positive', confidence: 'high', reason: 'clear_opinion' },
+          { ref: 'c1', label: 'positive', confidence: 'high', reason: 'clear_opinion' },
+        ],
+      });
+    },
+  });
+  assert.equal(result.status, 'answered');
+  assert.equal(result.items.length, 2);
+  assert.deepEqual(result.items[0], { ref: 'c1', label: 'negative', confidence: 'high', reason: 'clear_opinion' });
+  assert.equal(result.rejected, 2, 'foreign and duplicate refs are explicitly counted');
 });
 
 // Ini inti dari "akal di atas angka": yang boleh menyeberang hanyalah kata dan urutan. Test ini

@@ -163,6 +163,7 @@ export function channelStatusLabel(status) {
   if (status === 'empty') return t('Empty');
   if (status === 'error') return t('Failed');
   if (status === 'needs_setup') return t('Needs credentials');
+  if (status === 'consent_required') return t('Owner permission required');
   return 'N/A';
 }
 

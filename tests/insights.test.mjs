@@ -318,7 +318,7 @@ describe('lapisan sinyal', () => {
     assert.equal(theme.subject, head.name);
 
     // Hitung ulang dukungan label dari teks mentah: frasa anggotanya dicari satu per satu.
-    const negative = rows.filter(row => row.rating <= 2);
+    const negative = rows.filter(row => row.rating != null && row.rating <= 2);
     const memberTexts = new Set(head.phrases.map(entry => entry.text));
     const recomputed = negative.filter(row => head.phrases.some(entry => row.text.split(/\s+/).join(' ').includes(entry.text))).length;
     assert.equal(theme.facts.find(entry => entry.key === 'reviews').value, recomputed, 'jumlah ulasan sinyal harus sama dengan hitungan teks mentah');

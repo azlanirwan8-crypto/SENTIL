@@ -155,6 +155,25 @@ describe('mesin korpus tanpa kamus', () => {
     assert.ok(Math.abs(positive.weight) <= 4 && Math.abs(negative.weight) <= 4, 'bobot harus tercekang rentang');
   });
 
+  test('rating sosial tidak ikut melatih model atau dihitung sebagai rating toko', () => {
+    const rows = buildCorpus();
+    rows.push({
+      id: 'social-vote',
+      platform: 'reddit',
+      rating: 5,
+      text: 'eror transaksi gagal',
+      publishedAt: '2026-03-20T00:00:00.000Z',
+    });
+    const { rows: enriched, model } = analyzeCorpus(rows);
+    assert.equal(model.coverage.lowRatings, 20);
+    assert.equal(model.coverage.highRatings, 20);
+    assert.equal(model.coverage.ratedReviews, 40);
+    assert.deepEqual(model.coverage.ratingBreakdown, [20, 0, 0, 0, 20]);
+    const socialReview = enriched.find(row => row.id === 'social-vote');
+    assert.equal(socialReview.rating, null);
+    assert.equal(socialReview.analysis.sentiment, 'negative');
+  });
+
   test('NSS dan label dihitung dari rumus yang sama seperti yang ditampilkan', () => {
     const { model } = analyzeCorpus(buildCorpus());
     const { positive, negative, neutral } = model.labels;

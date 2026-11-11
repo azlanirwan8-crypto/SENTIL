@@ -12,18 +12,27 @@ import { buildComparison } from '../lib/compare-engine.mjs';
 import { storeResult } from '../lib/persist.mjs';
 import { projectDataset } from '../lib/dataset-view.mjs';
 import { pullProgress, percentOf } from '../lib/pull-progress.mjs';
-import { ANALYST_VERSION, analyseComparison, analyseCorpus } from '../lib/ai-analyst.mjs';
+import {
+  ANALYST_VERSION,
+  SOCIAL_CLASSIFIER_BATCH_SIZE,
+  SOCIAL_CLASSIFIER_TEXT_LIMIT,
+  analyseComparison,
+  analyseCorpus,
+  analystConfiguration,
+  classifySocialSample,
+} from '../lib/ai-analyst.mjs';
 import { createQuota } from '../lib/rate-limit.mjs';
 import { loadConfigValues } from '../lib/config-store.mjs';
 import { analyzeCorpus, ENGINE_VERSION } from '../lib/corpus-engine.mjs';
 
-const BODY_LIMIT = 16384;
+const BODY_LIMIT = 65536;
+const STANDARD_BODY_LIMIT = 16384;
 // Aksi yang membakar kuota sumber publik atau token model. Aksi baca (state, dataset, limits,
 // job) tidak dikenai kuota: murah, dan memblokirnya justru membuat dasbor tidak terbaca. Compare
 // juga tidak — tetapi ia kini membayar satu panggilan model untuk bacaan lintas project, jadi
 // waktunya dibatasi lebih ketat daripada penarikan: matriksnya sudah dihitung mesin dan selalu
 // dikirim, yang boleh menunggu hanyalah kalimat pembacanya.
-const QUOTA_ACTIONS = new Set(['sync', 'discover']);
+const QUOTA_ACTIONS = new Set(['sync', 'discover', 'social-classify']);
 const COMPARE_READ_TIMEOUT_MS = 30_000;
 // Seberapa sering progres penarikan boleh menyentuh database. Peramban bertanya tiap 2 detik, jadi
 // lebih sering dari ini hanya menambah permintaan tanpa angka baru untuk dibaca.
@@ -101,7 +110,7 @@ async function readJsonBody(request) {
   try {
     const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('not object');
-    return value;
+    return { value, size };
   } catch {
     throw new SyncError('body_invalid', 'The request body is not a valid JSON object.');
   }
@@ -123,9 +132,39 @@ function workspaceIdsFrom(value) {
   return ids;
 }
 const STORE_IDS = ['play', 'appstore'];
+const SOCIAL_CLASSIFY_CHANNELS = new Set(['youtube', 'reddit', 'facebook', 'instagram', 'tiktok', 'x']);
 
 function textOf(value, max) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function socialClassificationBatch(payload) {
+  if (payload.confirmed !== true) {
+    throw new SyncError('consent_required', 'Confirm that up to 25 social comment texts may be sent to Google Gemini.', 400);
+  }
+  if (!Array.isArray(payload.rows) || payload.rows.length < 1 || payload.rows.length > SOCIAL_CLASSIFIER_BATCH_SIZE) {
+    throw new SyncError('social_sample_invalid', `Select between 1 and ${SOCIAL_CLASSIFIER_BATCH_SIZE} social comments.`, 400);
+  }
+  const refs = new Set();
+  return payload.rows.map((row, index) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw new SyncError('social_sample_invalid', 'Every social sample entry must be an object.', 400);
+    }
+    const ref = typeof row.ref === 'string' ? row.ref : '';
+    const text = typeof row.text === 'string' ? row.text.trim() : '';
+    const platform = typeof row.platform === 'string' ? row.platform : '';
+    if (ref !== `c${index + 1}` || refs.has(ref)) {
+      throw new SyncError('social_sample_invalid', 'Social sample references must be unique and sequential.', 400);
+    }
+    refs.add(ref);
+    if (!SOCIAL_CLASSIFY_CHANNELS.has(platform)) {
+      throw new SyncError('social_sample_invalid', 'Only social-channel comments can be classified.', 400);
+    }
+    if (!text || text.length > SOCIAL_CLASSIFIER_TEXT_LIMIT) {
+      throw new SyncError('social_sample_invalid', `Comment text must contain 1–${SOCIAL_CLASSIFIER_TEXT_LIMIT} characters.`, 400);
+    }
+    return { ref, platform, text };
+  });
 }
 
 // Bentuk workspace diterima apa adanya dari peramban, jadi dibatasi ke kolom yang
@@ -162,11 +201,16 @@ function workspaceFrom(value) {
   };
 }
 
-export function createSyncHandler(service = syncService, { db = database, quota = createQuota({ db }), env: baseEnv = process.env } = {}) {
+export function createSyncHandler(service = syncService, {
+  db = database,
+  quota = createQuota({ db }),
+  env: baseEnv = process.env,
+  classifySocial = classifySocialSample,
+} = {}) {
   // Kunci API boleh disimpan di konfigurasi induk, dan nilainya mengalahkan environment
   // platform. Dibaca per permintaan untuk aksi yang benar-benar memakai kunci — polling
   // progres dan pembacaan dataset tidak boleh menambah permintaan database tiap dua detik.
-  const CONFIG_ACTIONS = new Set(['sync', 'recompute', 'compare', 'limits', 'limits-reset']);
+  const CONFIG_ACTIONS = new Set(['sync', 'recompute', 'compare', 'limits', 'limits-reset', 'social-classify']);
   async function environmentFor(action) {
     if (!CONFIG_ACTIONS.has(action)) return baseEnv;
     try {
@@ -363,7 +407,11 @@ export function createSyncHandler(service = syncService, { db = database, quota 
     }
     let payload;
     try {
-      payload = await readJsonBody(request);
+      const read = await readJsonBody(request);
+      payload = read.value;
+      if (payload.action !== 'social-classify' && read.size > STANDARD_BODY_LIMIT) {
+        throw new SyncError('body_too_large', 'The request exceeds the size limit.', 413);
+      }
     } catch (error) {
       json(response, error.status || 400, { error: error.code || 'body_invalid', message: error.message });
       return;
@@ -377,6 +425,17 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       // Target kanal sosial dinormalisasi ulang di sync-core; permintaan tidak pernah
       // bisa membawa token atau kunci, hanya flag aktif dan target yang sah bentuknya.
       const social = payload.social && typeof payload.social === 'object' && !Array.isArray(payload.social) ? payload.social : {};
+      const classificationRows = payload.action === 'social-classify' ? socialClassificationBatch(payload) : null;
+      if (payload.action === 'social-classify' && !analystConfiguration(env).enabled) {
+        json(response, 200, {
+          action: 'social-classify',
+          status: 'skipped',
+          reason: 'GEMINI_API_KEY is not set in the server environment',
+          items: [],
+          rejected: 0,
+        });
+        return;
+      }
       if (QUOTA_ACTIONS.has(payload.action)) {
         // Setelah isi permintaan sah, baru jatah diambil: permintaan yang cacat bentuk
         // tidak boleh menghabiskan kuota pengunjung.
@@ -396,6 +455,11 @@ export function createSyncHandler(service = syncService, { db = database, quota 
       }
       if (payload.action === 'discover') {
         json(response, 200, await service.discover(payload.entity, { force }));
+        return;
+      }
+      if (payload.action === 'social-classify') {
+        const result = await classifySocial(classificationRows, { env });
+        json(response, 200, { action: 'social-classify', ...result });
         return;
       }
       if (payload.action === 'sync') {
@@ -568,7 +632,7 @@ export function createSyncHandler(service = syncService, { db = database, quota 
         }));
         return;
       }
-      throw new SyncError('action_invalid', 'The action must be "discover", "sync", "recompute", "job", "limits", "limits-reset", "state", "dataset", "compare", "workspace-save", or "workspace-delete".');
+      throw new SyncError('action_invalid', 'The action must be "discover", "sync", "recompute", "social-classify", "job", "limits", "limits-reset", "state", "dataset", "compare", "workspace-save", or "workspace-delete".');
     } catch (error) {
       if (error instanceof SyncError || (error && Number.isInteger(error.status) && error.status >= 400 && error.status < 500)) {
         json(response, error.status || 400, { error: error.code || 'request_invalid', message: error.message });
