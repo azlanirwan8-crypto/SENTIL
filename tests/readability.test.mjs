@@ -73,8 +73,24 @@ test('satu kalimat panel tidak lebih panjang dari yang bisa dibaca sekali pandan
   assert.deepEqual(offenders, [], `${offenders.length} kalimat melewati ${MAX_WORDS} kata:\n${offenders.slice(0, 8).join('\n')}`);
 });
 
-test('panel Metode justru tempat istilah teknis dijelaskan, tidak didiamkan', () => {
+test('panel Metode tetap menjelaskan topik dan gerombol yang ditampilkan', () => {
   const method = readFileSync(new URL('../src/components/ModelView.jsx', import.meta.url), 'utf8');
-  assert.match(method, /simpangan baku/, 'Metode harus tetap menyebut nama uji yang dipakai mesin');
-  assert.match(method, /t\(/, 'Metode dibaca lewat tabel frasa, bukan string lepas');
+  assert.match(method, /Topik dari kamus domain/, 'Metode tetap menjelaskan sumber topik');
+  assert.match(method, /Gerombol frasa jadi label/, 'Metode tetap menjelaskan kelompok keluhan');
+  assert.doesNotMatch(method, /Sinyal analis|Kosakata terpelajar/);
+});
+
+test('panel yang diminta dihapus tidak lagi tampil di layar', () => {
+  const files = ['Overview.jsx', 'ChannelStrip.jsx', 'ReviewsView.jsx', 'ModelView.jsx'];
+  const source = files.map(file => readFileSync(new URL(`../src/components/${file}`, import.meta.url), 'utf8')).join('\n');
+  for (const removed of [
+    'Social sentiment is provisional',
+    'Sinyal analis',
+    'Social and web sources',
+    'Human-audited sample',
+    'Gemini social classification',
+    'Kosakata terpelajar',
+  ]) {
+    assert.doesNotMatch(source, new RegExp(removed), `${removed} must stay out of the interface`);
+  }
 });

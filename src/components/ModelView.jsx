@@ -4,7 +4,6 @@ import {
   formatDecimal,
   formatNumber,
   formatPercent,
-  formatWeight,
   isNumber,
   platformLabel,
   toNumber,
@@ -12,7 +11,6 @@ import {
 import { bilingual, bilingualAlias, t, topicAlias, topicLabel } from '../lib/i18n.js';
 import { AnalystBadge, aiText } from './Analyst.jsx';
 import { EmptyState } from './EmptyState.jsx';
-import { Signal, signalAreaLookup } from './Signals.jsx';
 import { Notice } from './Notices.jsx';
 import { StoreMark } from './Brand.jsx';
 import { IconDownload, IconExternal, IconInfo } from './icons.jsx';
@@ -29,14 +27,6 @@ const SERIES_LABELS_ID = {
 };
 
 // Aturan penerbitan sinyal dikirim model sebagai teks; peta ini hanya memberi judul Indonesianya.
-const RULE_LABELS = {
-  emission: 'Penerbitan',
-  numbers: 'Angka',
-  ranking: 'Urutan',
-  silence: 'Bagian yang kosong',
-  maxSignals: 'Anggaran tampil',
-};
-
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return 'N/A';
   if (bytes < 1024) return `${bytes} B`;
@@ -133,34 +123,6 @@ function ScoreScale({ metrics, labels }) {
   );
 }
 
-function TermColumn({ title, terms, tone }) {
-  const maxAbs = Math.max(1, ...terms.map(term => Math.abs(toNumber(term.weight) || 0)));
-  const color = tone === 'positive' ? SERIES_COLORS.positive : SERIES_COLORS.negative;
-  return (
-    <div className="min-w-0">
-      <p className="label-sm flex items-center gap-1.5">
-        <span className="h-1.5 w-1.5 rounded-[1px]" style={{ backgroundColor: color }} /> {title}
-      </p>
-      {terms.length ? (
-        <ul className="mt-1.5">
-          {terms.map((term, index) => (
-            <li key={term.term} className="grid grid-cols-[16px_minmax(52px,0.9fr)_1fr_42px] items-center gap-2 border-b border-slate-800/60 py-1 last:border-0">
-              <span className="num text-[10px] text-slate-400">{String(index + 1).padStart(2, '0')}</span>
-              <span className="truncate font-mono text-[10px] font-semibold text-slate-300" title={`${term.term} · ${formatNumber(term.highReviews)} ${t('ulasan tinggi')} · ${formatNumber(term.lowReviews)} ${t('ulasan rendah')}`}>{term.term}</span>
-              <span className="relative h-1 overflow-hidden rounded-full bg-slate-800">
-                <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${(Math.abs(toNumber(term.weight)) / maxAbs) * 100}%`, backgroundColor: color }} />
-              </span>
-              <span className="num text-right text-[10px] font-bold" style={{ color }}>{formatWeight(term.weight)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-2 rounded border border-dashed border-slate-800 px-2 py-3 text-center text-[10px] text-slate-400">{t('Belum ada istilah berbobot ini.')}</p>
-      )}
-    </div>
-  );
-}
-
 function AuditPanel({ channel, store, workspaceStore }) {
   const selected = Boolean(workspaceStore?.appId);
   const app = channel?.app || null;
@@ -244,12 +206,6 @@ export function ModelView({ dataset, workspace, db, onExport }) {
   const ai = model.ai || null;
   const aiNames = ai?.status === 'answered' ? ai.names || {} : null;
   const labelMetrics = pain.labelMetrics || {};
-  const signals = model.signals || null;
-  const signalItems = Array.isArray(signals?.items) ? signals.items : [];
-  // Baris sinyal memakai nama area yang sama dengan tabel keluhan di bawahnya: sumber namanya
-  // tetap bertanda, kalimat sinyalnya tetap tulisan mesin pengukuran.
-  const areaForSignal = useMemo(() => signalAreaLookup({ pain, topics, ai }), [pain, topics, ai]);
-  const terms = model.terms || {};
   const coverage = model.coverage || {};
   const languages = model.languages || { total: 0, counts: {} };
   const taxonomy = model.taxonomy || {};
@@ -302,38 +258,18 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           />
           <Step
             index="03"
-            title={t('Pemisah kosakata')}
-            detail={t('Suatu istilah dianggap beban kosakata hanya kalau bobotnya tidak bisa dibedakan dari nol pada korpus ini. Tidak ada fraksi frekuensi dan tidak ada daftar kata.')}
-            metric={`${formatNumber(metrics.informativeTerms)} ${t('informatif')} · ${formatNumber(metrics.nonInformativeTerms)} ${t('beban kosakata')}`}
-          />
-          <Step
-            index="04"
-            title={t('Bobot korelasi bintang')}
-            detail={t('Rasio kemunculan 4–5★ terhadap 1–2★ dengan smoothing Jeffreys dan penyusutan dukungan.')}
-            metric={`${formatNumber(metrics.learnedTerms)} ${t('istilah')} · ${formatNumber(coverage.lowRatings)} ${t('rendah')} vs ${formatNumber(coverage.highRatings)} ${t('tinggi')}`}
-          />
-          <Step
-            index="05"
             title={t('Topik dari kamus domain')}
             detail={t('Nama topik diambil dari kamus fitur produk yang dituliskan tangan dalam dua bahasa, bukan dari kata yang kebetulan sering muncul. Kosakata halaman toko tetap dihitung dan dilaporkan, tetapi tidak lagi boleh menamai sesuatu.')}
             metric={`${formatNumber(topics.length)} ${t('topik dilaporkan')} ${t('dari')} ${formatNumber(taxonomy.defined || 0)} ${t('definisi')} · ${formatNumber(coverage.topicReviews)} ${t('ulasan menyebut minimal satu topik')}`}
           />
           <Step
-            index="06"
+            index="04"
             title={t('Gerombol frasa jadi label')}
             detail={t('Frasa 2–4 token yang benar-benar ditulis reviewers digabung hanya kalau ulasan yang memuat keduanya melampaui kebetulan. Namanya diambil dari kata jangkar yang dijagokan lebih dari satu anggota, dan arah dihitung dari rentang tanggal yang teramati.')}
             metric={`${formatNumber(labelMetrics.clusters || 0)} ${t('gerombol')} · ${formatNumber(labelMetrics.namedFromTerm || 0)} ${t('nama dari jangkar')} · ${formatNumber(labelMetrics.trimmedLabels || 0)} ${t('terpangkas')}`}
           />
           <Step
-            index="07"
-            title={t('Tulis sinyal dari hasil ukur')}
-            detail={t('Tiap baris analisis ditulis mesin dari dua proporsi yang dibandingkan: kalau selisihnya tidak lebih besar daripada simpangan baku selisih itu, barisnya tidak ada. Tidak ada kalimat yang dirangkai manusia atau model bahasa.')}
-            metric={signals
-              ? `${formatNumber(signals.metrics?.reported || 0)} ${t('dari')} ${formatNumber(signals.metrics?.candidates || 0)} ${t('kandidat lolos uji')}`
-              : t('lapisan sinyal belum ada di snapshot ini')}
-          />
-          <Step
-            index="08"
+            index="05"
             title={t('Lapisan analis di atas angka')}
             detail={t('Satu panggilan model per penarikan, dan isinya hanya bisa berupa kata: yang dikirim hanyalah urutan, arah, nama kamus, dan redaksi reviewers; setiap kalimat yang kembali memuat satu pun angka dibuang sebelum tampil. Bacaannya memakai dua bahasa sekaligus, dan seluruh panel yang menampiknya menandai sumbernya dengan AI · model.')}
             metric={ai
@@ -342,47 +278,6 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           />
         </div>
       </section>
-
-      <Panel
-        title={t('Sinyal analis')}
-        meta={signals
-          ? `${formatNumber(signals.metrics?.reported || 0)} ${t('tampil')} · ${formatNumber(signals.metrics?.candidates || 0)} ${t('kandidat')} · ${signals.status === 'ready' ? t('label tersedia') : t('belum ada label')}`
-          : t('belum ada di snapshot ini')}
-        action={<span className="hidden text-[10px] text-slate-400 sm:inline">{t('kalimatnya data: ditulis mesin, angka-angkanya ikut terkirim')}</span>}
-      >
-        {signalItems.length ? (
-          <>
-            <ul className="grid items-start gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {signalItems.map(item => <Signal key={item.id} item={item} area={areaForSignal(item)} />)}
-            </ul>
-            <dl className="mt-3 grid gap-x-4 gap-y-2 border-t border-slate-800/70 pt-2.5 sm:grid-cols-2">
-              {Object.entries(signals.rules || {}).map(([key, value]) => (
-                <div key={key}>
-                  <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t(RULE_LABELS[key] || key)}</dt>
-                  <dd className="mt-0.5 text-[10px] leading-relaxed text-slate-400">{typeof value === 'number' ? formatNumber(value) : t(String(value))}</dd>
-                </div>
-              ))}
-            </dl>
-            <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-              {t("Kalimat sinyal ditulis mesin dalam dua bahasa dari angka yang sama, jadi memindahkan bendera tidak mengubah klaimnya. Snapshot lama hanya punya bahasa Inggris, dan itu yang ditampilkan — tidak ada terjemahan yang dikarang.")}{' '}
-              {signals.metrics?.trimmed
-                ? `${formatNumber(signals.metrics.trimmed)} ${t('kandidat di luar anggaran tampil tetap dihitung di angka kandidat.')}`
-                : t('Tidak ada kandidat yang dipangkas.')}{' '}
-              {t('Basis hitungan')}: {formatNumber(signals.basis?.reviews || 0)} {t('ulasan')}, {t('pool keluhan')} {formatNumber(signals.basis?.negativePool || 0)}, {t('pool pujian')} {formatNumber(signals.basis?.positivePool || 0)}
-              {signals.basis?.trend ? `, ${t('rentang arah')} ${signals.basis.trend.firstDay} ${t('sampai')} ${signals.basis.trend.lastDay}` : ''}.
-            </p>
-          </>
-        ) : (
-          <EmptyState
-            compact
-            icon={IconInfo}
-            title={signals ? t('Belum ada pembacaan yang lolos uji') : t('Snapshot ini dibuat sebelum lapisan sinyal')}
-            body={signals
-              ? `${t('Korpus menghasilkan')} ${formatNumber(signals.basis?.labels || 0)} ${t('label')}, ${t('tetapi tidak satu pun selisih proporsi yang bisa dibedakan dari kebetulan. Panel kosong di sini adalah hasilnya, bukan kegagalannya.')}`
-              : `${t('Model tersimpan oleh')} ${model.version || t('versi lama')}, ${t('yang belum menulis lapisan sinyal. Tarik ulang project ini untuk membuatnya dari angka yang sama.')}`}
-          />
-        )}
-      </Panel>
 
       <div className="grid gap-3 xl:grid-cols-12">
         <Panel title={t('Batas label')} meta={`${formatNumber(coverage.analyzed)} ${t('dianalisis')}`} className="xl:col-span-7">
@@ -422,23 +317,6 @@ export function ModelView({ dataset, workspace, db, onExport }) {
           </ul>
         </Panel>
       </div>
-
-      <Panel title={t('Kosakata terpelajar')} meta={t('bobot · dukungan')} action={<span className="text-[10px] text-slate-400">{t('dipelajari dari korpus ini saja')}</span>}>
-        <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
-          <TermColumn title={t('Condong ke bintang 4–5')} terms={Array.isArray(terms.positive) ? terms.positive : []} tone="positive" />
-          <TermColumn title={t('Condong ke bintang 1–2')} terms={Array.isArray(terms.negative) ? terms.negative : []} tone="negative" />
-        </div>
-        <div className="mt-3 border-t border-slate-800/70 pt-3">
-          <p className="label-sm">{t('Beban kosakata — bobotnya tidak bisa dibedakan dari nol')}</p>
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {(terms.stopwords || []).length ? terms.stopwords.map(entry => (
-              <span key={entry.term} className="rounded bg-slate-800/60 px-1.5 py-0.5 font-mono text-[10px] text-slate-400" title={`${formatNumber(entry.count)} ${t('kemunculan')}`}>
-                {entry.term} <span className="count-quiet">{formatNumber(entry.count)}×</span>
-              </span>
-            )) : <span className="text-[10px] text-slate-400">{t('Belum ada.')}</span>}
-          </div>
-        </div>
-      </Panel>
 
       <Panel
         title={t('Topik keluhan')}

@@ -38,8 +38,7 @@ const csvCell = value => {
 
 export function reviewsCsv(reviews) {
   const headers = [
-    'date', 'source', 'author', 'title', 'text', 'rating', 'sentiment', 'human_label',
-    'gemini_sentiment', 'gemini_confidence', 'gemini_reason', 'gemini_model', 'score', 'topics', 'source_url',
+    'date', 'source', 'author', 'title', 'text', 'rating', 'sentiment', 'score', 'topics', 'source_url',
   ];
   const rows = Array.isArray(reviews) ? reviews : [];
   return [
@@ -52,11 +51,6 @@ export function reviewsCsv(reviews) {
       review.text,
       review.rating,
       review.analysis?.sentiment,
-      review.humanLabel,
-      review.socialClassification?.label,
-      review.socialClassification?.confidence,
-      review.socialClassification?.reason,
-      review.socialClassification?.model,
       review.analysis?.score,
       Array.isArray(review.analysis?.topicNames) ? review.analysis.topicNames.join('; ') : '',
       review.sourceUrl,

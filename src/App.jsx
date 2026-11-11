@@ -562,7 +562,7 @@ export default function App() {
       />
     );
   } else if (view === 'reviews') {
-    content = <ReviewsView dataset={dataset} workspace={activeWorkspace} onExportCsv={handleExportReviewsCsv} />;
+    content = <ReviewsView dataset={dataset} onExportCsv={handleExportReviewsCsv} />;
   } else if (view === 'method') {
     content = <ModelView dataset={dataset} workspace={activeWorkspace} db={dbStatus} onExport={handleExport} />;
   } else {

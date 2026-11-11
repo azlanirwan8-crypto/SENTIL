@@ -36,24 +36,16 @@ test('invalid saved audit data is reported instead of silently overwritten', () 
   assert.match(result.error, /could not be read/);
 });
 
-test('CSV export includes the human audit label and escapes spreadsheet formulas', async () => {
+test('CSV export includes review analysis and escapes spreadsheet formulas', async () => {
   const { reviewsCsv } = await import('../src/lib/export.js');
   const csv = reviewsCsv([{
     platform: 'x',
     author: 'reviewer',
     text: '=1+1',
-    humanLabel: 'negative',
-    socialClassification: {
-      label: 'negative',
-      confidence: 'medium',
-      reason: 'clear_opinion',
-      model: 'gemini-test',
-    },
     analysis: { sentiment: 'positive' },
   }]);
-  assert.match(csv, /human_label/);
-  assert.match(csv, /"negative"/);
-  assert.match(csv, /gemini_confidence/);
-  assert.match(csv, /"medium"/);
+  assert.match(csv, /"sentiment"/);
+  assert.match(csv, /"positive"/);
+  assert.doesNotMatch(csv, /human_label|gemini_/);
   assert.match(csv, /"'=1\+1"/);
 });

@@ -6,8 +6,6 @@ import { KpiRow } from './KpiRow.jsx';
 import { ChannelStrip } from './ChannelStrip.jsx';
 import { FilterSelect } from './FilterSelect.jsx';
 import { PainLabels } from './PainLabels.jsx';
-import { Signals } from './Signals.jsx';
-import { Notice } from './Notices.jsx';
 import { DailyTrend } from './charts/DailyTrend.jsx';
 import { ChannelDonut } from './charts/ChannelDonut.jsx';
 import { TopicMap } from './charts/TopicMap.jsx';
@@ -105,7 +103,7 @@ function FilterBar({
       ) : null}
       {filtered ? (
         <p className="mt-2 text-[10px] text-slate-400">
-          {t('KPIs and charts use these filters. Analyst signals and complaint clusters still describe all rows.')}
+          {t('KPIs and charts use these filters. Complaint clusters still describe all rows.')}
         </p>
       ) : null}
     </section>
@@ -143,7 +141,6 @@ export function Overview({ dataset, workspace }) {
   ), [dataset, platform, topic, previousRange]);
   const view = { ...dataset, reviews: scoped.rows, summary: scoped.summary, model: scoped.model };
   const total = scoped.totalRows;
-  const socialRows = scoped.rows.filter(review => !['play', 'appstore'].includes(review.platform)).length;
   const reset = () => { setPlatform('all'); setTopic('all'); setStartDate(''); setEndDate(''); };
 
   return (
@@ -214,18 +211,9 @@ export function Overview({ dataset, workspace }) {
         </section>
       ) : (
         <>
-          {socialRows > 0 && (
-            <Notice tone="amber" title={t('Social sentiment is provisional')}>
-              {t('Sentiment terms are learned from app-store star ratings and applied to social text. They are weak labels, not probabilities, and have not been independently validated for social platforms.')}
-              {' '}{t('For a separate Gemini label, open Reviews and send a filtered sample explicitly. Gemini confidence is not calibrated.')}
-            </Notice>
-          )}
           <KpiRow dataset={view} />
 
           <div className="reveal-group grid gap-3 xl:grid-cols-12">
-            <div className="min-w-0 xl:col-span-12">
-              <Signals signals={dataset.model?.signals} pain={dataset.model?.painPoints} topics={dataset.model?.topics} ai={dataset.model?.ai} filtered={scoped.filtered} />
-            </div>
             <div className="min-w-0 xl:col-span-8">
               <DailyTrend daily={scoped.model.daily} />
             </div>
