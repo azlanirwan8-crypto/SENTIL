@@ -94,3 +94,11 @@ test('panel yang diminta dihapus tidak lagi tampil di layar', () => {
     assert.doesNotMatch(source, new RegExp(removed), `${removed} must stay out of the interface`);
   }
 });
+
+test('dashboard keeps its overview charts without the complaint-label panel', () => {
+  const overview = readFileSync(new URL('../src/components/Overview.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(overview, /PainLabels|Complaint labels/);
+  for (const chart of ['DailyTrend', 'ChannelDonut', 'TopicMap', 'PlatformBars']) {
+    assert.match(overview, new RegExp(`<${chart}\\b`), `${chart} remains available on the dashboard`);
+  }
+});

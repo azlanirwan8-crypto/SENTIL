@@ -5,7 +5,6 @@ import { scopeDataset } from '../lib/scope.js';
 import { KpiRow } from './KpiRow.jsx';
 import { ChannelStrip } from './ChannelStrip.jsx';
 import { FilterSelect } from './FilterSelect.jsx';
-import { PainLabels } from './PainLabels.jsx';
 import { DailyTrend } from './charts/DailyTrend.jsx';
 import { ChannelDonut } from './charts/ChannelDonut.jsx';
 import { TopicMap } from './charts/TopicMap.jsx';
@@ -99,11 +98,6 @@ function FilterBar({
       {filtered && undatedExcluded > 0 ? (
         <p className="mt-2 text-[10px] text-neu">
           {formatNumber(undatedExcluded)} {t('undated rows are excluded from this date range.')}
-        </p>
-      ) : null}
-      {filtered ? (
-        <p className="mt-2 text-[10px] text-slate-400">
-          {t('KPIs and charts use these filters. Complaint clusters still describe all rows.')}
         </p>
       ) : null}
     </section>
@@ -225,9 +219,6 @@ export function Overview({ dataset, workspace }) {
             </div>
             <div className="min-w-0 xl:col-span-5">
               <PlatformBars platforms={scoped.model.platforms} ai={dataset.model?.ai} />
-            </div>
-            <div className="min-w-0 xl:col-span-12">
-              <PainLabels pain={dataset.model?.painPoints} topics={dataset.model?.topics} ai={dataset.model?.ai} filtered={scoped.filtered} />
             </div>
           </div>
         </>
